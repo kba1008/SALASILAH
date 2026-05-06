@@ -240,13 +240,30 @@
     let searchResults = [];
     let currentSearchIndex = 0;
 
-    // Peta Salasilah Mock Data
+    // Peta Salasilah Mock Data (Fallback jika API tiada)
     let treeData = [
       { id: "1", parentId: "", name: "Raja Dewa Basnu", birth: "1800", death: "1880", location: "Istana Lama", bio: "Leluhur utama keluarga.", image: "https://cdn-icons-png.flaticon.com/512/847/847969.png", editLogs: [{user: "Master Admin", date: "01/10/2023, 08:30:00"}] },
       { id: "2", parentId: "1", name: "Megat Terawis", birth: "1830", death: "1900", location: "Perak", bio: "Panglima perang.", image: "", editLogs: [] },
       { id: "3", parentId: "1", name: "Puteri Santubong", birth: "1835", death: "1910", location: "Sarawak", bio: "Keturunan diraja timur.", image: "", editLogs: [] },
       { id: "4", parentId: "2", name: "Megat Alang", birth: "1860", death: "1930", location: "Kuala Kangsar", bio: "Pewaris tampuk pimpinan.", image: "", editLogs: [] }
     ];
+
+    // Fungsi Dapatkan Data dari Google Sheets
+    async function loadTreeData() {
+       if (API_URL && API_URL.startsWith("http")) {
+           try {
+               const res = await fetch(API_URL);
+               const data = await res.json();
+               if (data && data.length > 0) {
+                   renderTree(data);
+                   return;
+               }
+           } catch (error) {
+               console.log("Gagal mengambil data dari API, menggunakan mock data.", error);
+           }
+       }
+       renderTree(treeData);
+    }
 
     // Render D3 Tree
     let svg, g, zoom;
@@ -370,7 +387,7 @@
        const payload = { action: "REGISTER_PENDING", fullname: fname, username: uname, password: pass, phone: phone, reason: reason };
 
        try {
-         if (API_URL === "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") {
+         if (!API_URL.startsWith("http")) {
             alert("Demo: Permohonan pendaftaran dihantar. Sila tunggu temuduga & kelulusan Admin.");
          } else {
             const res = await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) });
@@ -392,12 +409,12 @@
       const pass = document.getElementById('authPassword').value;
       if(user === 'admin' && pass === '101010') { currentUser = { role: 'admin', name: 'Master Admin', memberId: 'AHLI-0000' }; alert('Log masuk berjaya sebagai Master Admin'); closeAuthModal(); updateUI(); return; }
       if(user !== '' && pass !== '') {
-         if (API_URL !== "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") {
+         if (API_URL.startsWith("http")) {
              try {
                  const res = await fetch(API_URL, { method: "POST", body: JSON.stringify({ action: "LOGIN", username: user, password: pass }) });
                  const data = await res.json();
                  if(data.status === 'success') { currentUser = { role: 'user', name: user, memberId: data.memberId }; alert('Berjaya log masuk. ID: ' + data.memberId); } else { alert(data.message); return; }
-             } catch (e) { alert('Ralat pelayan.'); return; }
+             } catch (e) { alert('Ralat pelayan. Kemungkinan URL API tidak sah atau CORS error.'); return; }
          } else {
              currentUser = { role: 'user', name: user, memberId: 'AHLI-DEMO' };
              alert('Demo: Log masuk berjaya.');
@@ -428,7 +445,7 @@
         if (currentLogs.length > 10) currentLogs = currentLogs.slice(0, 10);
         currentSelectedNodeData.editLogs = currentLogs;
         const payload = { action: "EDIT_PENDING", id: currentSelectedNodeId, name: name, birth: document.getElementById('eBirth').value, death: document.getElementById('eDeath').value, location: document.getElementById('eLocation').value, bio: document.getElementById('eBio').value, image: imagePayload, requestedBy: currentUser ? currentUser.name : "Pelawat", editLogs: JSON.stringify(currentLogs) };
-        if (API_URL === "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") alert('Demo: Pindaan berserta log dihantar!');
+        if (!API_URL.startsWith("http")) alert('Demo: Pindaan berserta log dihantar!');
         else { const res = await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) }); const data = await res.json(); alert(data.message); }
       } catch (err) { alert('Ralat: ' + err.message); } finally { text.innerText = "Simpan Perubahan Profil"; btn.disabled = false; closeEditProfileModal(); }
     }
@@ -442,13 +459,14 @@
         if (fileInput.files.length > 0) { const file = fileInput.files[0]; const base64Str = await toBase64(file); imagePayload = { filename: file.name, mimeType: file.type, data: base64Str.split(',')[1] }; }
         const initialLog = [{ user: currentUser ? currentUser.name : "Pelawat", date: new Date().toLocaleString('ms-MY') }];
         const payload = { action: "ADD_PENDING", parentId: currentSelectedNodeId, relation: relation, name: name, birth: document.getElementById('nBirth').value, death: document.getElementById('nDeath').value, location: document.getElementById('nLocation').value, bio: document.getElementById('nBio').value, image: imagePayload, requestedBy: currentUser ? currentUser.name : "Pelawat", editLogs: JSON.stringify(initialLog) };
-        if (API_URL === "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") alert(`Demo: Ahli baru dihantar!`);
+        if (!API_URL.startsWith("http")) alert(`Demo: Ahli baru dihantar!`);
         else { const res = await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) }); const data = await res.json(); alert(data.message); }
       } catch (err) { alert('Ralat: ' + err.message); } finally { text.innerText = "Hantar Penambahan"; btn.disabled = false; closeAddNodeModal(); }
     }
 
-    // Inisialisasi
-    renderTree(treeData);
+    // Laksana muat turun data apabila aplikasi sedia
+    loadTreeData();
+    
     if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js'); }); }
   </script>
 </body>
