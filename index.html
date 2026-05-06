@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Sistem Salasilah Keluarga Digital</title>
+  <link rel="manifest" href="manifest.json">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; overflow: hidden; background-color: #f8fafc; }
+    .node circle { fill: #fff; stroke: #0f172a; stroke-width: 3px; cursor: pointer; transition: all 0.2s ease; }
+    .node circle:hover { stroke: #3b82f6; stroke-width: 4px; }
+    .node text { font: 12px sans-serif; font-weight: 600; fill: #0f172a; pointer-events: none; }
+    .link { fill: none; stroke: #cbd5e1; stroke-width: 2px; }
+    .modal { transition: opacity 0.25s ease; }
+    body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+  <!-- Top Navigation -->
+  <nav class="bg-slate-900 text-white shadow-lg z-10 flex-none">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-16">
+        <div class="flex items-center space-x-3">
+          <i data-lucide="network" class="text-blue-400"></i>
+          <span class="font-bold text-lg tracking-wide hidden sm:block">Salasilah Digital</span>
+        </div>
+        <div class="flex items-center space-x-4">
+          <div class="flex items-center bg-slate-800 rounded-md px-3 py-1">
+            <input type="text" id="searchInput" placeholder="Cari nama..." class="bg-transparent text-white outline-none text-sm w-32 sm:w-48" onkeypress="handleSearchKeyPress(event)">
+            <button onclick="searchNode()" class="text-slate-400 hover:text-white transition ml-2">
+              <i data-lucide="search" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <span id="userStatus" class="text-sm text-slate-300 hidden md:block">Mod Pelawat</span>
+          <button id="btnAuth" onclick="openLoginModal()" class="bg-blue-600 hover:bg-blue-700 px-3 py-2 sm:px-4 sm:py-2 rounded-md text-sm font-medium transition flex items-center space-x-2">
+            <i data-lucide="user" class="w-4 h-4"></i>
+            <span id="authText" class="hidden sm:block">Log Masuk</span>
+          </button>
+          <button id="btnAdmin" onclick="openAdminModal()" class="hidden bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-md text-sm font-medium transition flex items-center space-x-2">
+            <i data-lucide="shield" class="w-4 h-4"></i>
+            <span>Admin</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Tree Canvas -->
+  <div class="flex-grow relative bg-slate-50">
+    <div id="tree-container" class="w-full h-full cursor-move"></div>
+    <div class="absolute bottom-6 right-6 flex flex-col space-y-2">
+      <button onclick="zoomIn()" class="bg-white p-3 rounded-full shadow-lg text-slate-700 hover:text-blue-600 hover:bg-slate-50">
+        <i data-lucide="zoom-in"></i>
+      </button>
+      <button onclick="zoomOut()" class="bg-white p-3 rounded-full shadow-lg text-slate-700 hover:text-blue-600 hover:bg-slate-50">
+        <i data-lucide="zoom-out"></i>
+      </button>
+      <button onclick="resetZoom()" class="bg-white p-3 rounded-full shadow-lg text-slate-700 hover:text-blue-600 hover:bg-slate-50">
+        <i data-lucide="maximize"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Profile Modal -->
+  <div id="profileModal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+    <div class="modal-overlay absolute w-full h-full bg-slate-900 opacity-50" onclick="closeProfileModal()"></div>
+    <div class="modal-container bg-white w-11/12 md:max-w-2xl mx-auto rounded-xl shadow-2xl z-50 overflow-y-auto max-h-[90vh] custom-scrollbar">
+      <div class="modal-content py-6 text-left px-6">
+        <div class="flex justify-between items-center pb-3 border-b border-slate-200">
+          <p class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <i data-lucide="contact" class="text-blue-600"></i> Profil Individu
+          </p>
+          <div class="cursor-pointer z-50" onclick="closeProfileModal()">
+            <i data-lucide="x" class="text-slate-500 hover:text-red-500"></i>
+          </div>
+        </div>
+        <div class="my-5 flex flex-col md:flex-row gap-6 items-start">
+          <div class="w-full md:w-1/3 flex flex-col items-center">
+            <img id="pImage" src="https://cdn-icons-png.flaticon.com/512/847/847969.png" alt="Gambar Profil" class="w-40 h-40 rounded-full object-cover border-4 border-slate-200 shadow-md">
+          </div>
+          <div class="w-full md:w-2/3 space-y-4">
+            <div><p class="text-xs text-slate-500 font-semibold uppercase">Nama Penuh</p><p id="pName" class="text-xl font-bold text-slate-900">-</p></div>
+            <div class="flex gap-4">
+              <div class="w-1/2"><p class="text-xs text-slate-500 font-semibold uppercase">Tahun Lahir</p><p id="pBirth" class="text-slate-800 font-medium">-</p></div>
+              <div class="w-1/2"><p class="text-xs text-slate-500 font-semibold uppercase">Tahun Meninggal</p><p id="pDeath" class="text-slate-800 font-medium">-</p></div>
+            </div>
+            <div><p class="text-xs text-slate-500 font-semibold uppercase">Lokasi Kediaman / Makam</p><p id="pLocation" class="text-slate-800 font-medium">-</p></div>
+            <div><p class="text-xs text-slate-500 font-semibold uppercase">Sejarah & Latar Belakang</p><p id="pBio" class="text-slate-700 text-sm bg-slate-50 p-4 rounded-lg mt-1 border">-</p></div>
+            <div id="editLogsSection" class="mt-4 border-t border-slate-200 pt-3 hidden">
+              <p class="text-xs text-slate-500 font-semibold uppercase mb-2 flex items-center gap-1">
+                <i data-lucide="history" class="w-3 h-3"></i> Sejarah Suntingan
+              </p>
+              <ul id="pEditLogs" class="text-xs space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-100 max-h-32 overflow-y-auto custom-scrollbar"></ul>
+            </div>
+          </div>
+        </div>
+        <div id="actionButtons" class="flex flex-wrap justify-end pt-4 space-x-3 hidden border-t border-slate-200 mt-4">
+          <button onclick="openEditProfileModal()" class="bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 transition flex items-center gap-2 text-sm mb-2 md:mb-0">
+            <i data-lucide="edit-3" class="w-4 h-4"></i> Sunting Profil
+          </button>
+          <button onclick="openAddNodeModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm mb-2 md:mb-0">
+            <i data-lucide="user-plus" class="w-4 h-4"></i> Tambah Ahli Keluarga
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Profile Modal -->
+  <div id="editProfileModal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+    <div class="modal-overlay absolute w-full h-full bg-slate-900 opacity-50" onclick="closeEditProfileModal()"></div>
+    <div class="modal-container bg-white w-11/12 md:max-w-lg mx-auto rounded-xl shadow-2xl z-50 p-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
+      <h2 class="text-xl font-bold mb-4 text-slate-800 border-b pb-2 flex items-center gap-2">
+        <i data-lucide="edit" class="text-amber-500"></i> Sunting Profil Keseluruhan
+      </h2>
+      <div class="space-y-3">
+        <div><label class="text-xs font-semibold text-slate-600">Nama Penuh</label><input type="text" id="eName" class="w-full p-2 border rounded outline-none"></div>
+        <div><label class="text-xs font-semibold text-slate-600">Muat Naik Gambar Wajah (Pilihan)</label><input type="file" id="eImageFile" accept="image/*" class="w-full p-2 border rounded outline-none bg-white"></div>
+        <div class="flex gap-3">
+          <div class="w-1/2"><label class="text-xs font-semibold text-slate-600">Tahun Lahir</label><input type="text" id="eBirth" class="w-full p-2 border rounded outline-none"></div>
+          <div class="w-1/2"><label class="text-xs font-semibold text-slate-600">Tahun Meninggal</label><input type="text" id="eDeath" class="w-full p-2 border rounded outline-none"></div>
+        </div>
+        <div><label class="text-xs font-semibold text-slate-600">Lokasi Kediaman</label><input type="text" id="eLocation" class="w-full p-2 border rounded outline-none"></div>
+        <div><label class="text-xs font-semibold text-slate-600">Info Sejarah Lengkap</label><textarea id="eBio" class="w-full p-2 border rounded outline-none h-24"></textarea></div>
+        <button id="btnSubmitEdit" onclick="submitEditProfile()" class="w-full bg-amber-500 text-white p-3 rounded-lg font-semibold hover:bg-amber-600 mt-4">
+          <span id="btnSubmitEditText">Simpan Perubahan Profil</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Node Modal -->
+  <div id="addNodeModal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+    <div class="modal-overlay absolute w-full h-full bg-slate-900 opacity-50" onclick="closeAddNodeModal()"></div>
+    <div class="modal-container bg-white w-11/12 md:max-w-lg mx-auto rounded-xl shadow-2xl z-50 p-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
+      <h2 class="text-xl font-bold mb-4 text-slate-800 border-b pb-2 flex items-center gap-2">
+        <i data-lucide="user-plus" class="text-blue-600"></i> Tambah Ahli Keluarga
+      </h2>
+      <p class="text-sm text-slate-500 mb-4">Menambah ahli keluarga untuk: <strong id="addRelName" class="text-slate-800">-</strong></p>
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs font-semibold text-slate-600">Kaitan Hubungan</label>
+          <select id="nRelation" onchange="handleRelationChange()" class="w-full p-2 border rounded outline-none bg-white">
+            <option value="Anak">Anak</option>
+            <option value="Suami">Suami</option>
+            <option value="Isteri">Isteri</option>
+            <option value="Menantu">Menantu</option>
+            <option value="Sepupu">Sepupu</option>
+            <option value="Bapa">Bapa</option>
+            <option value="Ibu">Ibu</option>
+            <option value="Lain-lain">Lain-lain Kaitan</option>
+          </select>
+        </div>
+        <div id="nRelationOtherDiv" class="hidden">
+          <label class="text-xs font-semibold text-slate-600">Sila Nyatakan Kaitan Lain</label>
+          <input type="text" id="nRelationOther" placeholder="Contoh: Anak Angkat" class="w-full p-2 border rounded outline-none">
+        </div>
+        <div><label class="text-xs font-semibold text-slate-600">Nama Penuh Ahli Baru (Wajib)</label><input type="text" id="nName" class="w-full p-2 border rounded outline-none"></div>
+        <div><label class="text-xs font-semibold text-slate-600">Muat Naik Gambar Wajah (Pilihan)</label><input type="file" id="nImageFile" accept="image/*" class="w-full p-2 border rounded outline-none bg-white"></div>
+        <div class="flex gap-3">
+          <div class="w-1/2"><label class="text-xs font-semibold text-slate-600">Tahun Lahir</label><input type="text" id="nBirth" class="w-full p-2 border rounded outline-none"></div>
+          <div class="w-1/2"><label class="text-xs font-semibold text-slate-600">Tahun Meninggal</label><input type="text" id="nDeath" class="w-full p-2 border rounded outline-none"></div>
+        </div>
+        <div><label class="text-xs font-semibold text-slate-600">Lokasi</label><input type="text" id="nLocation" class="w-full p-2 border rounded outline-none"></div>
+        <div><label class="text-xs font-semibold text-slate-600">Latar Belakang Singkat</label><textarea id="nBio" class="w-full p-2 border rounded outline-none h-16"></textarea></div>
+        <button id="btnSubmitAdd" onclick="submitAddNode()" class="w-full bg-blue-600 text-white p-3 rounded-lg font-semibold hover:bg-blue-700 mt-4">
+          <span id="btnSubmitAddText">Hantar Penambahan</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div id="authModal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+    <div class="modal-overlay absolute w-full h-full bg-slate-900 opacity-50" onclick="closeAuthModal()"></div>
+    <div class="modal-container bg-white w-11/12 md:max-w-md mx-auto rounded-xl shadow-2xl z-50 p-6">
+      <h2 id="authTitle" class="text-2xl font-bold mb-4 text-center">Log Masuk Sistem</h2>
+      <div class="space-y-4">
+        <input type="text" id="authUsername" placeholder="Nama Samaran / Username" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+        <input type="password" id="authPassword" placeholder="Kata Laluan" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+        <button onclick="handleAuth()" class="w-full bg-blue-600 text-white p-3 rounded-lg font-semibold hover:bg-blue-700">Log Masuk</button>
+        <div class="text-center mt-4 border-t pt-4">
+          <p class="text-sm text-slate-600 mb-2">Belum menjadi ahli berdaftar?</p>
+          <button onclick="closeAuthModal(); openRegisterModal()" class="w-full bg-slate-100 text-slate-700 p-3 rounded-lg font-semibold hover:bg-slate-200 border">Daftar Sebagai Ahli</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Register Modal -->
+  <div id="registerModal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+    <div class="modal-overlay absolute w-full h-full bg-slate-900 opacity-50" onclick="closeRegisterModal()"></div>
+    <div class="modal-container bg-white w-11/12 md:max-w-md mx-auto rounded-xl shadow-2xl z-50 p-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
+      <h2 class="text-2xl font-bold mb-4 text-center text-emerald-600">Permohonan Ahli Baru</h2>
+      <p class="text-xs text-center text-slate-500 mb-4">Semua ahli baru akan dinilai dan ditemuduga oleh Master Admin untuk pengesahan keluarga. ID Ahli akan dijana secara automatik selepas diluluskan.</p>
+      <div class="space-y-3">
+        <input type="text" id="regFullName" placeholder="Nama Penuh Sebenar" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none">
+        <input type="text" id="regUsername" placeholder="Nama Samaran (Username)" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none">
+        <input type="password" id="regPassword" placeholder="Kata Laluan Pilihan" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none">
+        <input type="text" id="regPhone" placeholder="No. Telefon (Untuk dihubungi)" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none">
+        <textarea id="regReason" placeholder="Nyatakan kaitan/keturunan anda dengan keluarga ini..." class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none h-20"></textarea>
+        <button id="btnSubmitReg" onclick="submitRegistration()" class="w-full bg-emerald-600 text-white p-3 rounded-lg font-semibold hover:bg-emerald-700">
+          <span id="btnSubmitRegText">Hantar Permohonan</span>
+        </button>
+        <button onclick="closeRegisterModal(); openLoginModal();" class="w-full text-sm text-center text-slate-600 mt-2 hover:text-blue-600">Telah mendaftar? Log Masuk</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Editor Profile Mock Modal -->
+  <div id="editorProfileModal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+    <div class="modal-overlay absolute w-full h-full bg-slate-900 opacity-50" onclick="closeEditorProfileModal()"></div>
+    <div class="modal-container bg-white w-11/12 md:max-w-sm mx-auto rounded-xl shadow-2xl z-50 p-6 text-center">
+      <div class="mx-auto w-20 h-20 bg-slate-200 rounded-full flex items-center justify-center mb-4">
+         <i data-lucide="user-check" class="w-10 h-10 text-slate-500"></i>
+      </div>
+      <h3 class="text-xl font-bold text-slate-800" id="epName">Nama Penyunting</h3>
+      <p class="text-sm text-slate-500 mt-1" id="epMemberId">Pengguna Berdaftar Sistem</p>
+      <button onclick="closeEditorProfileModal()" class="mt-6 w-full bg-slate-800 text-white py-2 rounded-lg font-medium">Tutup</button>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // KONFIGURASI UTAMA (PASTIKAN DIISI)
+    // ==========================================
+    const API_URL = "https://script.google.com/macros/s/AKfycbzD9Jtmymlc6uzxYq4lZCrbjjhjz07BjzKoLKTweqM7CTWj3GCeki8w4ZQ7r0HAaNFO_g/exec"; // GANTIKAN DENGAN URL WEB APP GAS ANDA
+    
+    lucide.createIcons();
+    let currentUser = null;
+    let currentSelectedNodeId = null;
+    let currentSelectedNodeData = null;
+    let d3RootNode = null;
+    let searchResults = [];
+    let currentSearchIndex = 0;
+
+    // Peta Salasilah Mock Data
+    let treeData = [
+      { id: "1", parentId: "", name: "Raja Dewa Basnu", birth: "1800", death: "1880", location: "Istana Lama", bio: "Leluhur utama keluarga.", image: "https://cdn-icons-png.flaticon.com/512/847/847969.png", editLogs: [{user: "Master Admin", date: "01/10/2023, 08:30:00"}] },
+      { id: "2", parentId: "1", name: "Megat Terawis", birth: "1830", death: "1900", location: "Perak", bio: "Panglima perang.", image: "", editLogs: [] },
+      { id: "3", parentId: "1", name: "Puteri Santubong", birth: "1835", death: "1910", location: "Sarawak", bio: "Keturunan diraja timur.", image: "", editLogs: [] },
+      { id: "4", parentId: "2", name: "Megat Alang", birth: "1860", death: "1930", location: "Kuala Kangsar", bio: "Pewaris tampuk pimpinan.", image: "", editLogs: [] }
+    ];
+
+    // Render D3 Tree
+    let svg, g, zoom;
+    function renderTree(data) {
+      document.getElementById('tree-container').innerHTML = '';
+      const width = document.getElementById('tree-container').clientWidth;
+      const height = document.getElementById('tree-container').clientHeight;
+      d3RootNode = d3.stratify().id(d => d.id).parentId(d => d.parentId)(data);
+      const treeLayout = d3.tree().nodeSize([120, 200]);
+      treeLayout(d3RootNode);
+
+      zoom = d3.zoom().scaleExtent([0.1, 3]).on("zoom", (e) => { g.attr("transform", e.transform); });
+      svg = d3.select("#tree-container").append("svg").attr("width", width).attr("height", height).call(zoom);
+      g = svg.append("g");
+      svg.call(zoom.transform, d3.zoomIdentity.translate(width/2, 50).scale(1));
+
+      g.selectAll('.link').data(d3RootNode.links()).enter().append('path').attr('class', 'link').attr('d', d3.linkVertical().x(d => d.x).y(d => d.y));
+      const node = g.selectAll('.node').data(d3RootNode.descendants()).enter().append('g').attr('class', 'node').attr("transform", d => `translate(${d.x},${d.y})`).on("click", (e, d) => openProfileModal(d.data));
+
+      const defs = svg.append("defs");
+      node.each(function(d) {
+        if(d.data.image) {
+          defs.append("pattern").attr("id", "img-" + d.data.id).attr("patternContentUnits", "objectBoundingBox").attr("width", 1).attr("height", 1).append("image").attr("href", d.data.image).attr("width", 1).attr("height", 1).attr("preserveAspectRatio", "xMidYMid slice");
+        }
+      });
+      node.append('circle').attr('r', 25).style("fill", d => d.data.image ? `url(#img-${d.data.id})` : "#fff");
+      node.append('text').attr("dy", 40).attr("text-anchor", "middle").text(d => d.data.name);
+    }
+
+    // Carian
+    function handleSearchKeyPress(e) { if (e.key === 'Enter') searchNode(); }
+    function searchNode() {
+      const query = document.getElementById('searchInput').value.toLowerCase().trim();
+      if (!query || !d3RootNode) return;
+      d3.selectAll('.node circle').style('stroke', '#0f172a').style('stroke-width', '3px');
+      if (!(searchResults.length > 0 && currentSearchIndex > 0 && document.getElementById('searchInput').dataset.lastQuery === query)) {
+        searchResults = d3RootNode.descendants().filter(d => d.data.name.toLowerCase().includes(query));
+        currentSearchIndex = 0;
+        document.getElementById('searchInput').dataset.lastQuery = query;
+      }
+      if (searchResults.length === 0) { alert('Carian nama tidak dijumpai.'); return; }
+      const targetNode = searchResults[currentSearchIndex];
+      d3.selectAll('.node').filter(d => d.data.id === targetNode.data.id).select('circle').style('stroke', '#ef4444').style('stroke-width', '5px');
+      const width = document.getElementById('tree-container').clientWidth, height = document.getElementById('tree-container').clientHeight, scale = 1.5; 
+      svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity.translate(width/2 - targetNode.x * scale, height/2 - targetNode.y * scale).scale(scale));
+      currentSearchIndex = (currentSearchIndex + 1) % searchResults.length;
+      if(searchResults.length > 1) document.getElementById('searchInput').placeholder = `Carian: ${currentSearchIndex === 0 ? searchResults.length : currentSearchIndex}/${searchResults.length}`;
+    }
+    function zoomIn() { svg.transition().call(zoom.scaleBy, 1.5); }
+    function zoomOut() { svg.transition().call(zoom.scaleBy, 0.75); }
+    function resetZoom() { svg.transition().call(zoom.transform, d3.zoomIdentity.translate(document.getElementById('tree-container').clientWidth/2, 50).scale(1)); }
+
+    // Pengurusan Modal
+    function toggleModal(id, show) {
+      const el = document.getElementById(id);
+      if(show) { el.classList.remove('opacity-0', 'pointer-events-none'); document.body.classList.add('modal-active'); }
+      else { el.classList.add('opacity-0', 'pointer-events-none'); document.body.classList.remove('modal-active'); }
+    }
+    function openProfileModal(data) {
+      currentSelectedNodeData = data; currentSelectedNodeId = data.id;
+      document.getElementById('pName').innerText = data.name || '-';
+      document.getElementById('pBirth').innerText = data.birth || '-';
+      document.getElementById('pDeath').innerText = data.death || '-';
+      document.getElementById('pLocation').innerText = data.location || '-';
+      document.getElementById('pBio').innerText = data.bio || '-';
+      document.getElementById('pImage').src = data.image ? data.image : "https://cdn-icons-png.flaticon.com/512/847/847969.png";
+      
+      const logsSection = document.getElementById('editLogsSection');
+      const logsList = document.getElementById('pEditLogs');
+      logsList.innerHTML = '';
+      if (data.editLogs && data.editLogs.length > 0) {
+         logsSection.classList.remove('hidden');
+         data.editLogs.forEach(log => {
+             const li = document.createElement('li');
+             li.className = "flex items-center gap-2 text-slate-700 bg-white p-2 rounded shadow-sm";
+             li.innerHTML = `<i data-lucide="edit-2" class="w-3 h-3 text-amber-500"></i> <span>Disunting oleh <a href="#" onclick="showEditorProfile('${log.user}')" class="text-blue-600 font-bold hover:underline cursor-pointer">${log.user}</a> pada ${log.date}</span>`;
+             logsList.appendChild(li);
+         });
+         lucide.createIcons();
+      } else { logsSection.classList.add('hidden'); }
+      if(currentUser) document.getElementById('actionButtons').classList.remove('hidden');
+      else document.getElementById('actionButtons').classList.add('hidden');
+      toggleModal('profileModal', true);
+    }
+    function closeProfileModal() { toggleModal('profileModal', false); }
+    function openEditProfileModal() { closeProfileModal(); const data = currentSelectedNodeData; document.getElementById('eName').value = data.name || ''; document.getElementById('eImageFile').value = ''; document.getElementById('eBirth').value = data.birth || ''; document.getElementById('eDeath').value = data.death || ''; document.getElementById('eLocation').value = data.location || ''; document.getElementById('eBio').value = data.bio || ''; toggleModal('editProfileModal', true); }
+    function closeEditProfileModal() { toggleModal('editProfileModal', false); }
+    function openAddNodeModal() { closeProfileModal(); document.getElementById('addRelName').innerText = currentSelectedNodeData.name; document.getElementById('nRelation').value = 'Anak'; handleRelationChange(); document.getElementById('nName').value = ''; document.getElementById('nImageFile').value = ''; toggleModal('addNodeModal', true); }
+    function closeAddNodeModal() { toggleModal('addNodeModal', false); }
+    function handleRelationChange() { const rel = document.getElementById('nRelation').value; const otherDiv = document.getElementById('nRelationOtherDiv'); if(rel === 'Lain-lain') otherDiv.classList.remove('hidden'); else otherDiv.classList.add('hidden'); }
+    function showEditorProfile(userName) { document.getElementById('epName').innerText = userName; document.getElementById('epMemberId').innerText = "Pengguna Berdaftar"; toggleModal('editorProfileModal', true); }
+    function closeEditorProfileModal() { toggleModal('editorProfileModal', false); }
+    function openLoginModal() { if(currentUser) { logout(); return; } toggleModal('authModal', true); }
+    function closeAuthModal() { toggleModal('authModal', false); }
+    function openRegisterModal() { toggleModal('registerModal', true); }
+    function closeRegisterModal() { toggleModal('registerModal', false); }
+
+    function toBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader(); reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+      });
+    }
+
+    // Pendaftaran Baru
+    async function submitRegistration() {
+       const btn = document.getElementById('btnSubmitReg');
+       const text = document.getElementById('btnSubmitRegText');
+       const fname = document.getElementById('regFullName').value;
+       const uname = document.getElementById('regUsername').value;
+       const pass = document.getElementById('regPassword').value;
+       const phone = document.getElementById('regPhone').value;
+       const reason = document.getElementById('regReason').value;
+
+       if(!fname || !uname || !pass || !phone) { alert("Sila lengkapkan maklumat asas."); return; }
+       
+       text.innerText = "Menghantar...";
+       btn.disabled = true;
+
+       const payload = { action: "REGISTER_PENDING", fullname: fname, username: uname, password: pass, phone: phone, reason: reason };
+
+       try {
+         if (API_URL === "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") {
+            alert("Demo: Permohonan pendaftaran dihantar. Sila tunggu temuduga & kelulusan Admin.");
+         } else {
+            const res = await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) });
+            const data = await res.json();
+            alert(data.message);
+         }
+       } catch (err) {
+         alert('Ralat: ' + err.message);
+       } finally {
+         text.innerText = "Hantar Permohonan";
+         btn.disabled = false;
+         closeRegisterModal();
+       }
+    }
+
+    // Auth
+    async function handleAuth() {
+      const user = document.getElementById('authUsername').value;
+      const pass = document.getElementById('authPassword').value;
+      if(user === 'admin' && pass === '101010') { currentUser = { role: 'admin', name: 'Master Admin', memberId: 'AHLI-0000' }; alert('Log masuk berjaya sebagai Master Admin'); closeAuthModal(); updateUI(); return; }
+      if(user !== '' && pass !== '') {
+         if (API_URL !== "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") {
+             try {
+                 const res = await fetch(API_URL, { method: "POST", body: JSON.stringify({ action: "LOGIN", username: user, password: pass }) });
+                 const data = await res.json();
+                 if(data.status === 'success') { currentUser = { role: 'user', name: user, memberId: data.memberId }; alert('Berjaya log masuk. ID: ' + data.memberId); } else { alert(data.message); return; }
+             } catch (e) { alert('Ralat pelayan.'); return; }
+         } else {
+             currentUser = { role: 'user', name: user, memberId: 'AHLI-DEMO' };
+             alert('Demo: Log masuk berjaya.');
+         }
+      } else { alert('Sila isi maklumat log masuk.'); return; }
+      closeAuthModal(); updateUI();
+    }
+    function logout() { currentUser = null; alert('Telah log keluar.'); updateUI(); }
+    function updateUI() {
+      const btnAuth = document.getElementById('btnAuth'), btnAdmin = document.getElementById('btnAdmin'), userStatus = document.getElementById('userStatus');
+      if(currentUser) {
+        document.getElementById('authText').innerText = 'Log Keluar';
+        userStatus.innerText = `${currentUser.name} (${currentUser.memberId})`;
+        if(currentUser.role === 'admin') btnAdmin.classList.remove('hidden'); else btnAdmin.classList.add('hidden');
+      } else {
+        document.getElementById('authText').innerText = 'Log Masuk'; userStatus.innerText = 'Mod Pelawat'; btnAdmin.classList.add('hidden');
+      }
+    }
+
+    async function submitEditProfile() {
+      const btn = document.getElementById('btnSubmitEdit'), text = document.getElementById('btnSubmitEditText'); text.innerText = "Memuat naik & Menyimpan..."; btn.disabled = true;
+      try {
+        const name = document.getElementById('eName').value, fileInput = document.getElementById('eImageFile');
+        let imagePayload = currentSelectedNodeData.image || "";
+        if (fileInput.files.length > 0) { const file = fileInput.files[0]; const base64Str = await toBase64(file); imagePayload = { filename: file.name, mimeType: file.type, data: base64Str.split(',')[1] }; }
+        let currentLogs = currentSelectedNodeData.editLogs || [];
+        currentLogs.unshift({ user: currentUser ? currentUser.name : "Pelawat", date: new Date().toLocaleString('ms-MY') });
+        if (currentLogs.length > 10) currentLogs = currentLogs.slice(0, 10);
+        currentSelectedNodeData.editLogs = currentLogs;
+        const payload = { action: "EDIT_PENDING", id: currentSelectedNodeId, name: name, birth: document.getElementById('eBirth').value, death: document.getElementById('eDeath').value, location: document.getElementById('eLocation').value, bio: document.getElementById('eBio').value, image: imagePayload, requestedBy: currentUser ? currentUser.name : "Pelawat", editLogs: JSON.stringify(currentLogs) };
+        if (API_URL === "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") alert('Demo: Pindaan berserta log dihantar!');
+        else { const res = await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) }); const data = await res.json(); alert(data.message); }
+      } catch (err) { alert('Ralat: ' + err.message); } finally { text.innerText = "Simpan Perubahan Profil"; btn.disabled = false; closeEditProfileModal(); }
+    }
+
+    async function submitAddNode() {
+      const btn = document.getElementById('btnSubmitAdd'), text = document.getElementById('btnSubmitAddText'); text.innerText = "Memuat naik & Menyimpan..."; btn.disabled = true;
+      try {
+        let relation = document.getElementById('nRelation').value; if (relation === 'Lain-lain') relation = document.getElementById('nRelationOther').value;
+        const name = document.getElementById('nName').value, fileInput = document.getElementById('nImageFile');
+        let imagePayload = "";
+        if (fileInput.files.length > 0) { const file = fileInput.files[0]; const base64Str = await toBase64(file); imagePayload = { filename: file.name, mimeType: file.type, data: base64Str.split(',')[1] }; }
+        const initialLog = [{ user: currentUser ? currentUser.name : "Pelawat", date: new Date().toLocaleString('ms-MY') }];
+        const payload = { action: "ADD_PENDING", parentId: currentSelectedNodeId, relation: relation, name: name, birth: document.getElementById('nBirth').value, death: document.getElementById('nDeath').value, location: document.getElementById('nLocation').value, bio: document.getElementById('nBio').value, image: imagePayload, requestedBy: currentUser ? currentUser.name : "Pelawat", editLogs: JSON.stringify(initialLog) };
+        if (API_URL === "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") alert(`Demo: Ahli baru dihantar!`);
+        else { const res = await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) }); const data = await res.json(); alert(data.message); }
+      } catch (err) { alert('Ralat: ' + err.message); } finally { text.innerText = "Hantar Penambahan"; btn.disabled = false; closeAddNodeModal(); }
+    }
+
+    // Inisialisasi
+    renderTree(treeData);
+    if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js'); }); }
+  </script>
+</body>
+</html>
