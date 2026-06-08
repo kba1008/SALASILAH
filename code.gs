@@ -42,6 +42,7 @@ function ensureFolder_() {
 /* ============ ENTRY ============ */
 function doPost(e) {
   try {
+    ensureInit_(); // auto-init pada panggilan pertama
     const req = JSON.parse(e.postData.contents);
     const handler = ACTIONS[req.action];
     if (!handler) throw new Error("Unknown action: " + req.action);
@@ -49,20 +50,33 @@ function doPost(e) {
     const data = handler(req.payload || {}, auth);
     return out_({ ok: true, data });
   } catch (err) {
-    return out_({ ok: false, error: err.message });
+    return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){return out_({ok:true,data:"Salasilah API live"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
+
+function ensureInit_() {
+  const ss = SpreadsheetApp.getActive();
+  if (!ss.getSheetByName(SHEET_USERS) || !ss.getSheetByName(SHEET_TREE) || !ss.getSheetByName(SHEET_PENDING)) {
+    INITIALIZE_SYSTEM();
+    return;
+  }
+  // pastikan master admin wujud
+  const u = findUserBy_("username", MASTER_USER);
+  if (!u) {
+    sheet_(SHEET_USERS).appendRow([0, MASTER_USER, "Master Admin", "", "", hash_(MASTER_PASS), "", "admin", "", new Date()]);
+  }
+}
 
 /* ============ AUTH ============ */
 function authenticate_(auth) {
-  if (!auth) return null;
+  if (!auth || !auth.username || !auth.token) return null;
   const u = findUserBy_("username", auth.username);
-  if (u && u.token && u.token === auth.token) return u;
+  if (u && u.token && String(u.token) === String(auth.token)) return u;
   return null;
 }
-function requireAuth_(a){if(!a)throw new Error("Sila log masuk");return a;}
+function requireAuth_(a){if(!a)throw new Error("Sesi tamat. Sila log masuk semula.");return a;}
 function requireAdmin_(a){requireAuth_(a);if(a.role!=="admin")throw new Error("Hak admin diperlukan");return a;}
 
 function hash_(s){return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s+"|salasilah"));}
@@ -72,16 +86,23 @@ function genToken_(){return Utilities.getUuid().replace(/-/g,"");}
 const ACTIONS = {
   register(p) {
     if (!p.username || !p.password) throw new Error("Maklumat tidak lengkap");
+    if (String(p.username).toLowerCase() === MASTER_USER) throw new Error("Nama samaran ini dilindungi");
     if (findUserBy_("username", p.username)) throw new Error("Nama samaran sudah wujud");
     const sh = sheet_(SHEET_USERS);
-    const no = sh.getLastRow(); // master=0 → next = lastRow
+    const no = Math.max(0, sh.getLastRow() - 1) + 1; // master kira sbg 0
     const photoUrl = p.photo ? saveImage_(p.photo, "user_"+p.username) : "";
     sh.appendRow([no, p.username, p.fullname||"", p.email||"", p.phone||"", hash_(p.password), photoUrl, "ahli", "", new Date()]);
     return { no };
   },
   login(p) {
-    if (p.username === MASTER_USER && p.password === MASTER_PASS) {
-      const u = findUserBy_("username", MASTER_USER);
+    if (!p || !p.username || !p.password) throw new Error("Sila isi nama samaran dan password");
+    // Master admin: terima walau baris sheet hilang
+    if (String(p.username).toLowerCase() === MASTER_USER && String(p.password) === MASTER_PASS) {
+      let u = findUserBy_("username", MASTER_USER);
+      if (!u) {
+        sheet_(SHEET_USERS).appendRow([0, MASTER_USER, "Master Admin", "", "", hash_(MASTER_PASS), "", "admin", "", new Date()]);
+        u = findUserBy_("username", MASTER_USER);
+      }
       const token = genToken_();
       updateUserField_(u.row, "token", token);
       return { username: MASTER_USER, role: "admin", no: 0, token };
@@ -90,7 +111,7 @@ const ACTIONS = {
     if (!u || u.passwordHash !== hash_(p.password)) throw new Error("Nama samaran atau password salah");
     const token = genToken_();
     updateUserField_(u.row, "token", token);
-    return { username: u.username, role: u.role, no: u.no, token, photo: u.photo };
+    return { username: u.username, role: u.role || "ahli", no: u.no, token, photo: u.photo };
   },
   getTree() {
     const rows = readSheet_(SHEET_TREE);
