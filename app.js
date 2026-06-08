@@ -1,5 +1,5 @@
 /* Salasilah Keluarga Elit — app.js */
-const DEFAULT_GAS_URL = ""; // isi URL deploy Apps Script di sini atau via ⚙
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec"; // isi URL deploy Apps Script di sini atau via ⚙
 const State = {
   gasUrl: localStorage.getItem("gasUrl") || DEFAULT_GAS_URL,
   user: JSON.parse(localStorage.getItem("user") || "null"),
