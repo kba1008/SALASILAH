@@ -4,7 +4,7 @@
  */
 
 // MASUKKAN URL GOOGLE APPS SCRIPT WEB APP DI SINI (Selepas Deploy)
-const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycby_INSERT_YOUR_DEPLOYMENT_ID_HERE/exec';
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwUmJQtXW_wa3596DmF_6QvkZNw1vI1z4Zi7mti5-UqC34jCb9dq3YAjlCU9JrocRNk/exec';
 
 // --- STATE MANAGEMENT ---
 let currentUser = JSON.parse(localStorage.getItem('salasilah_user')) || null;
