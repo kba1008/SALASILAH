@@ -1,222 +1,189 @@
 <!DOCTYPE html>
 <html lang="ms">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-  <title>Salasilah Keluarga Elit</title>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#1e293b">
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- Panzoom for Map Navigation -->
-  <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
-  
-  <style>
-    /* Custom CSS for Tree Lines and Layout */
-    body { overflow: hidden; background-color: #f8fafc; }
-    #tree-container { width: 100vw; height: 100vh; cursor: grab; }
-    #tree-container:active { cursor: grabbing; }
-    
-    .family-group { display: flex; flex-direction: column; align-items: center; position: relative; padding-top: 20px; }
-    .parents { display: flex; flex-direction: row; justify-content: center; position: relative; }
-    .children { display: flex; flex-direction: row; justify-content: center; padding-top: 20px; position: relative; }
-    
-    /* Connecting Lines */
-    .family-group::before { content: ''; position: absolute; top: 0; left: 50%; border-left: 2px solid #94a3b8; width: 0; height: 20px; }
-    .children::before { content: ''; position: absolute; top: 0; left: 50%; border-left: 2px solid #94a3b8; width: 0; height: 20px; }
-    .child-wrapper { display: flex; flex-direction: column; align-items: center; position: relative; padding: 20px 10px 0 10px; }
-    .child-wrapper::before { content: ''; position: absolute; top: 0; border-top: 2px solid #94a3b8; width: 100%; height: 20px; }
-    .child-wrapper:first-child::before { left: 50%; width: 50%; }
-    .child-wrapper:last-child::before { right: 50%; width: 50%; }
-    .child-wrapper:only-child::before { display: none; }
-    
-    .spouse-line { position: absolute; top: 50%; left: 0; right: 0; border-top: 2px dashed #cbd5e1; z-index: -1; }
-
-    .node-card {
-      background: white;
-      border: 2px solid #cbd5e1;
-      border-radius: 0.75rem;
-      padding: 0.5rem;
-      min-width: 120px;
-      text-align: center;
-      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-      position: relative;
-      margin: 0 10px;
-      transition: transform 0.2s;
-      cursor: pointer;
-      z-index: 10;
-    }
-    .node-card:hover { transform: scale(1.05); border-color: #3b82f6; }
-    .node-card.pending { border-color: #ef4444; border-width: 3px; } /* Red for pending */
-    .node-card.spouse-node { border-style: dashed; }
-    
-    .node-img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; margin: 0 auto 0.5rem auto; border: 2px solid #f1f5f9; }
-    .context-menu { display: none; position: absolute; background: white; border: 1px solid #e2e8f0; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); border-radius: 0.5rem; z-index: 50; width: 160px; text-align: left; }
-    .context-menu.active { display: block; }
-    .context-item { padding: 0.5rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: #334155; }
-    .context-item:hover { background-color: #f1f5f9; }
-    
-    /* Hide elements initially */
-    .hidden { display: none !important; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+<meta name="theme-color" content="#0f172a" />
+<title>Salasilah Keluarga Elit</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='50'%3E%F0%9F%8C%B3%3C/text%3E%3C/svg%3E" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+<style>
+  :root{--bg:#0b1220;--card:#111a2e;--line:#1e293b;--gold:#d4af37;--accent:#38bdf8;}
+  html,body{height:100%;background:var(--bg);color:#e2e8f0;font-family:'Inter',system-ui,sans-serif;}
+  .glass{background:rgba(17,26,46,.75);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.06);}
+  .node{position:relative;display:flex;flex-direction:column;align-items:center;padding:10px 14px;border-radius:14px;background:linear-gradient(160deg,#152038,#0e1730);border:1px solid #233355;min-width:140px;box-shadow:0 8px 24px -10px rgba(0,0,0,.6);cursor:pointer;transition:.2s;}
+  .node:hover{transform:translateY(-2px);border-color:var(--gold);}
+  .node.pending{border-color:#ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.25);}
+  .node.root{border-color:var(--gold);background:linear-gradient(160deg,#3a2d10,#1a1405);}
+  .node img{width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #2d3a55;margin-bottom:6px;background:#0b1220;}
+  .node .name{font-weight:600;font-size:13px;text-align:center;line-height:1.2;}
+  .node .meta{font-size:10px;color:#94a3b8;margin-top:2px;}
+  ul.tree, ul.tree ul{list-style:none;margin:0;padding:0;position:relative;}
+  ul.tree{display:flex;justify-content:center;}
+  ul.tree li{display:flex;flex-direction:column;align-items:center;padding:30px 12px 0;position:relative;}
+  ul.tree li::before,ul.tree li::after{content:'';position:absolute;top:0;height:30px;width:50%;border-top:2px solid #334155;}
+  ul.tree li::before{left:0;border-right:2px solid #334155;}
+  ul.tree li::after{left:50%;}
+  ul.tree li:only-child::before,ul.tree li:only-child::after{display:none;}
+  ul.tree li:only-child{padding-top:30px;}
+  ul.tree li:first-child::before,ul.tree li:last-child::after{border:0 none;}
+  ul.tree li:last-child::before{border-right:2px solid #334155;border-radius:0 6px 0 0;}
+  ul.tree li:first-child::after{border-radius:6px 0 0 0;}
+  ul.tree li > .branch{display:flex;gap:8px;}
+  ul.tree > li::before,ul.tree > li::after{display:none;}
+  .children-row{display:flex;}
+  .children-row > li{position:relative;}
+  .modal-bg{background:rgba(0,0,0,.65);backdrop-filter:blur(4px);}
+  .btn{padding:8px 14px;border-radius:10px;font-weight:500;font-size:13px;transition:.15s;}
+  .btn-primary{background:var(--gold);color:#0b1220;}
+  .btn-primary:hover{filter:brightness(1.1);}
+  .btn-ghost{background:#1e293b;color:#e2e8f0;}
+  .btn-ghost:hover{background:#293548;}
+  .input{width:100%;padding:9px 12px;border-radius:10px;background:#0b1220;border:1px solid #233355;color:#e2e8f0;font-size:13px;}
+  .input:focus{outline:none;border-color:var(--accent);}
+  .ctx{position:fixed;z-index:60;background:#111a2e;border:1px solid #233355;border-radius:10px;padding:6px;min-width:180px;box-shadow:0 12px 32px rgba(0,0,0,.6);}
+  .ctx button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:6px;font-size:13px;color:#e2e8f0;}
+  .ctx button:hover{background:#1e293b;}
+  #stage{cursor:grab;}
+  #stage:active{cursor:grabbing;}
+  .tab.active{background:var(--gold);color:#0b1220;}
+  @media(max-width:640px){.node{min-width:110px;padding:8px;}.node img{width:50px;height:50px;}}
+</style>
 </head>
-<body class="text-slate-800 antialiased">
+<body class="overflow-hidden">
 
-  <!-- Header Navigation -->
-  <header class="fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 flex justify-between items-center z-40 shadow-lg">
-    <div class="flex items-center gap-2">
-      <i data-lucide="network" class="w-6 h-6 text-blue-400"></i>
-      <h1 class="text-xl font-bold tracking-wide">Salasilah<span class="text-blue-400">Elit</span></h1>
+<header class="fixed top-0 inset-x-0 z-40 glass px-4 py-2 flex items-center justify-between">
+  <div class="flex items-center gap-2">
+    <span class="text-2xl">🌳</span>
+    <div>
+      <h1 class="text-sm font-bold tracking-wide">SALASILAH ELIT</h1>
+      <p id="user-info" class="text-[10px] text-slate-400">Tidak log masuk</p>
     </div>
-    <div class="flex items-center gap-4">
-      <button id="btn-zoom-in" class="p-2 bg-slate-800 rounded hover:bg-slate-700"><i data-lucide="zoom-in" class="w-5 h-5"></i></button>
-      <button id="btn-zoom-out" class="p-2 bg-slate-800 rounded hover:bg-slate-700"><i data-lucide="zoom-out" class="w-5 h-5"></i></button>
-      <div id="user-info" class="hidden flex items-center gap-2 text-sm">
-        <span id="display-username" class="font-medium text-blue-300"></span>
-        <button id="btn-admin-panel" class="hidden p-2 bg-red-600 rounded hover:bg-red-700 text-white" title="Panel Admin">
-          <i data-lucide="shield" class="w-5 h-5"></i>
-        </button>
-        <button id="btn-logout" class="p-2 bg-slate-800 rounded hover:bg-slate-700 text-red-400"><i data-lucide="log-out" class="w-5 h-5"></i></button>
-      </div>
-      <button id="btn-show-login" class="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 text-sm font-semibold transition-colors">
-        Log Masuk
-      </button>
-    </div>
-  </header>
-
-  <!-- Main Canvas for Panzoom Tree -->
-  <main class="pt-16">
-    <div id="tree-container">
-      <!-- The Tree will be generated here by app.js -->
-      <div id="tree-root" class="flex justify-center items-center w-full h-full min-w-max min-h-max p-20 origin-top-left">
-        <!-- Recursive DOM injection target -->
-      </div>
-    </div>
-  </main>
-
-  <!-- Context Menu (Floating Action) -->
-  <div id="context-menu" class="context-menu">
-    <div class="context-item" id="ctx-add-spouse"><i data-lucide="heart" class="w-4 h-4 text-pink-500"></i> Tambah Pasangan</div>
-    <div class="context-item" id="ctx-add-child"><i data-lucide="baby" class="w-4 h-4 text-blue-500"></i> Tambah Anak</div>
-    <div class="context-item" id="ctx-edit-node"><i data-lucide="edit" class="w-4 h-4 text-orange-500"></i> Sunting Profil</div>
   </div>
+  <div class="flex items-center gap-1">
+    <button id="btn-zoom-in" class="btn btn-ghost px-2">＋</button>
+    <button id="btn-zoom-out" class="btn btn-ghost px-2">−</button>
+    <button id="btn-reset" class="btn btn-ghost px-2">⟳</button>
+    <button id="btn-admin" class="btn btn-ghost hidden">Admin</button>
+    <button id="btn-settings" class="btn btn-ghost px-2">⚙</button>
+    <button id="btn-auth" class="btn btn-primary">Log Masuk</button>
+  </div>
+</header>
 
-  <!-- Modals (Login/Register, Add Node, Admin) - Omitted verbose classes for brevity but functioning -->
-  
-  <!-- Overlay -->
-  <div id="modal-overlay" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden"></div>
-
-  <!-- Auth Modal -->
-  <div id="auth-modal" class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-xl shadow-2xl z-50 w-11/12 max-w-md hidden">
-    <div class="flex justify-between items-center mb-4">
-      <h2 id="auth-title" class="text-2xl font-bold">Log Masuk</h2>
-      <button class="close-modal text-slate-400 hover:text-slate-600"><i data-lucide="x"></i></button>
+<main id="stage" class="absolute inset-0 pt-16">
+  <div id="canvas" class="origin-center p-10 flex justify-center items-start min-h-full">
+    <div id="tree-root" class="text-slate-300 mt-32 text-center">
+      <p class="text-lg">Memuatkan salasilah…</p>
+      <p class="text-xs text-slate-500 mt-2">Sila tetapkan URL GAS dalam ⚙ jika kosong.</p>
     </div>
-    <form id="auth-form" class="space-y-4">
-      <div id="reg-fields" class="hidden space-y-4">
-        <input type="text" id="reg-fullname" placeholder="Nama Penuh" class="w-full p-3 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
-        <input type="email" id="reg-email" placeholder="Emel" class="w-full p-3 border rounded outline-none">
-        <input type="tel" id="reg-phone" placeholder="No Telefon" class="w-full p-3 border rounded outline-none">
-        <label class="block text-sm text-slate-500">Gambar Wajah (Pilihan)</label>
-        <input type="file" id="reg-photo" accept="image/*" class="w-full text-sm">
-      </div>
-      <input type="text" id="auth-username" placeholder="Nama Samaran (Username)" required class="w-full p-3 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
-      <input type="password" id="auth-password" placeholder="Kata Laluan" required class="w-full p-3 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
-      <button type="submit" id="auth-submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 transition">Log Masuk</button>
+  </div>
+</main>
+
+<div id="ctx-menu" class="ctx hidden"></div>
+
+<!-- AUTH MODAL -->
+<div id="modal-auth" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+  <div class="glass rounded-2xl w-full max-w-md p-6">
+    <div class="flex gap-2 mb-4">
+      <button data-tab="login" class="tab btn btn-ghost flex-1 active">Log Masuk</button>
+      <button data-tab="register" class="tab btn btn-ghost flex-1">Daftar</button>
+    </div>
+    <form id="form-login" class="space-y-3">
+      <input class="input" name="username" placeholder="Nama Samaran" required />
+      <input class="input" name="password" type="password" placeholder="Password" required />
+      <button class="btn btn-primary w-full">Masuk</button>
+      <p class="text-[11px] text-slate-400 text-center">Lupa password? Hubungi Master Admin.</p>
     </form>
-    <p class="mt-4 text-center text-sm text-slate-600">
-      <span id="auth-toggle-text">Belum mendaftar?</span> 
-      <a href="#" id="btn-toggle-auth" class="text-blue-600 font-semibold">Daftar Sini</a>
-    </p>
+    <form id="form-register" class="space-y-3 hidden">
+      <input class="input" name="fullname" placeholder="Nama Penuh" required />
+      <input class="input" name="username" placeholder="Nama Samaran (unik)" required />
+      <input class="input" name="email" type="email" placeholder="Email" required />
+      <input class="input" name="phone" placeholder="No. Telefon" required />
+      <input class="input" name="password" type="password" placeholder="Password" required />
+      <label class="text-xs text-slate-400 block">Gambar Wajah</label>
+      <input class="input" name="photo" type="file" accept="image/*" />
+      <button class="btn btn-primary w-full">Daftar</button>
+    </form>
+    <button onclick="closeModal('modal-auth')" class="mt-3 text-xs text-slate-400 w-full">Tutup</button>
   </div>
+</div>
 
-  <!-- Add/Edit Node Modal -->
-  <div id="node-modal" class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-xl shadow-2xl z-50 w-11/12 max-w-md hidden max-h-[90vh] overflow-y-auto">
-    <div class="flex justify-between items-center mb-4">
-      <h2 id="node-modal-title" class="text-xl font-bold">Tambah Ahli</h2>
-      <button class="close-modal text-slate-400 hover:text-slate-600"><i data-lucide="x"></i></button>
-    </div>
-    <form id="node-form" class="space-y-4">
-      <input type="hidden" id="node-action"> <!-- add-child, add-spouse, edit -->
-      <input type="hidden" id="node-target-id">
-      
-      <div>
-        <label class="block text-sm font-medium mb-1">Nama Ahli</label>
-        <input type="text" id="node-name" required class="w-full p-3 border rounded outline-none uppercase">
-      </div>
-      <div>
-        <label class="block text-sm font-medium mb-1">Jantina</label>
-        <select id="node-gender" class="w-full p-3 border rounded outline-none">
+<!-- NODE EDITOR -->
+<div id="modal-node" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+  <div class="glass rounded-2xl w-full max-w-md p-6">
+    <h2 id="node-title" class="text-lg font-bold mb-3">Ahli</h2>
+    <form id="form-node" class="space-y-3">
+      <input type="hidden" name="id" />
+      <input type="hidden" name="parentId" />
+      <input type="hidden" name="relation" />
+      <input class="input" name="name" placeholder="Nama Penuh" required />
+      <div class="grid grid-cols-2 gap-2">
+        <select class="input" name="gender">
           <option value="L">Lelaki</option>
           <option value="P">Perempuan</option>
         </select>
+        <select class="input" name="status">
+          <option value="hidup">Hidup</option>
+          <option value="mati">Almarhum</option>
+        </select>
       </div>
-      <div>
-        <label class="block text-sm font-medium mb-1">Gambar Profil (Pilihan)</label>
-        <input type="file" id="node-photo" accept="image/*" class="w-full text-sm border p-2 rounded">
+      <div class="grid grid-cols-2 gap-2">
+        <input class="input" name="birth" placeholder="Tahun Lahir" />
+        <input class="input" name="death" placeholder="Tahun Mati" />
       </div>
-      <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700">Simpan & Hantar Permohonan</button>
+      <input class="input" name="spouse" placeholder="Pasangan (opsyenal)" />
+      <textarea class="input" name="notes" placeholder="Catatan" rows="2"></textarea>
+      <label class="text-xs text-slate-400 block">Gambar</label>
+      <input class="input" name="photo" type="file" accept="image/*" />
+      <div class="flex gap-2 pt-2">
+        <button type="button" onclick="closeModal('modal-node')" class="btn btn-ghost flex-1">Batal</button>
+        <button class="btn btn-primary flex-1">Simpan</button>
+      </div>
     </form>
   </div>
+</div>
 
-  <!-- Admin Dashboard Modal -->
-  <div id="admin-modal" class="fixed inset-4 bg-white p-6 rounded-xl shadow-2xl z-50 hidden flex-col">
-    <div class="flex justify-between items-center mb-6 pb-4 border-b">
-      <h2 class="text-2xl font-bold flex items-center gap-2"><i data-lucide="shield-check" class="text-red-600"></i> Panel Kawalan Admin</h2>
-      <button class="close-modal text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-6 h-6"></i></button>
+<!-- SETTINGS -->
+<div id="modal-settings" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+  <div class="glass rounded-2xl w-full max-w-md p-6 space-y-3">
+    <h2 class="text-lg font-bold">Tetapan</h2>
+    <label class="text-xs text-slate-400">URL Google Apps Script</label>
+    <input id="gas-url" class="input" placeholder="https://script.google.com/macros/s/.../exec" />
+    <div class="flex gap-2">
+      <button onclick="closeModal('modal-settings')" class="btn btn-ghost flex-1">Tutup</button>
+      <button id="btn-save-settings" class="btn btn-primary flex-1">Simpan</button>
     </div>
-    
-    <div class="flex border-b mb-4">
-      <button class="admin-tab px-4 py-2 border-b-2 border-blue-600 font-semibold text-blue-600" data-target="admin-pending">Kelulusan Tertangguh</button>
-      <button class="admin-tab px-4 py-2 text-slate-500 hover:text-slate-800" data-target="admin-settings">Tetapan Sistem</button>
-    </div>
-    
-    <!-- Pending Approvals Tab -->
-    <div id="admin-pending" class="flex-1 overflow-y-auto space-y-4">
-      <div id="pending-list-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- Rendered by JS -->
-        <p class="text-slate-500 col-span-2">Memuatkan data tertangguh...</p>
-      </div>
-    </div>
+    <p class="text-[11px] text-slate-500">Dapatkan URL dari Apps Script → Deploy → Web App.</p>
+  </div>
+</div>
 
-    <!-- System Settings Tab (Simulated per prompt) -->
-    <div id="admin-settings" class="flex-1 overflow-y-auto hidden">
-      <h3 class="font-bold mb-2">Pengurusan Kod & Fail Global</h3>
-      <p class="text-sm text-slate-600 mb-4">Sebagai Master Admin, anda memantau fail teras PWA. (Nota: Penukaran sebenar perlu dibuat pada server/host).</p>
-      <div class="space-y-4">
-        <div class="p-4 bg-slate-100 rounded border">
-          <h4 class="font-bold text-slate-800">1. Google Apps Script (Backend)</h4>
-          <p class="text-sm mt-1">URL Web App Semasa diletakkan di dalam <code>app.js</code>. Menguruskan sambungan ke Google Sheets & Drive.</p>
-        </div>
-        <div class="p-4 bg-slate-100 rounded border">
-          <h4 class="font-bold text-slate-800">2. Service Worker (sw.js)</h4>
-          <p class="text-sm mt-1">Mengawal cache dan membolehkan mod luar talian (offline) dipasang.</p>
-        </div>
-        <div class="p-4 bg-slate-100 rounded border">
-          <h4 class="font-bold text-slate-800">3. Maklumat PWA (manifest.json)</h4>
-          <p class="text-sm mt-1">Mengawal ikon, warna tema, dan pemasangan PWA ke skrin utama peranti.</p>
-        </div>
-      </div>
+<!-- ADMIN PANEL -->
+<div id="modal-admin" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+  <div class="glass rounded-2xl w-full max-w-2xl p-6 max-h-[85vh] overflow-y-auto">
+    <div class="flex justify-between items-center mb-3">
+      <h2 class="text-lg font-bold">Panel Admin</h2>
+      <button onclick="closeModal('modal-admin')" class="btn btn-ghost">✕</button>
+    </div>
+    <div class="flex gap-2 mb-4 flex-wrap">
+      <button data-atab="pending" class="tab btn btn-ghost active">Pending</button>
+      <button data-atab="users" class="tab btn btn-ghost">Pengguna</button>
+      <button data-atab="init" class="tab btn btn-ghost">Init Root</button>
+    </div>
+    <div id="admin-pending"></div>
+    <div id="admin-users" class="hidden"></div>
+    <div id="admin-init" class="hidden space-y-3">
+      <p class="text-sm text-slate-300">Tetapkan node induk pertama (cth: RAJA DEWA BASNU).</p>
+      <input id="root-name" class="input" placeholder="Nama Root" value="RAJA DEWA BASNU" />
+      <button id="btn-init-root" class="btn btn-primary w-full">Cipta Root</button>
     </div>
   </div>
+</div>
 
-  <!-- Loading Overlay -->
-  <div id="loading-overlay" class="fixed inset-0 bg-slate-900/80 z-[60] hidden flex-col justify-center items-center text-white">
-    <i data-lucide="loader-2" class="w-12 h-12 animate-spin mb-4"></i>
-    <p id="loading-text" class="font-medium">Memproses Data...</p>
-  </div>
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] hidden glass px-4 py-2 rounded-full text-sm"></div>
 
-  <script src="app.js"></script>
-  <script>
-    lucide.createIcons();
-    // Register Service Worker for PWA
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW fail: ', err));
-      });
-    }
-  </script>
+<script src="app.js"></script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});</script>
 </body>
 </html>

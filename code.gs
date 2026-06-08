@@ -1,291 +1,239 @@
 /**
- * GOOGLE APPS SCRIPT BACKEND (Code.gs)
- * Sila deploy skrip ini sebagai 'Web App'.
- * Access: 'Anyone' (Since auth is handled internally via POST).
+ * SALASILAH KELUARGA ELIT — Google Apps Script Backend
+ * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
+ *   Execute as: Me   |   Access: Anyone
+ * Pertama kali: Jalankan INITIALIZE_SYSTEM() secara manual sekali.
  */
 
-// 1. TETAPAN AWAL (MACRO/INIT)
-// Gunakan fungsi ini di dalam Apps Script Editor secara manual kali pertama
+const SHEET_USERS   = "PENGGUNA";
+const SHEET_TREE    = "SALASILAH";
+const SHEET_PENDING = "PENDING";
+const DRIVE_FOLDER  = "SalasilahImages";
+
+const MASTER_USER = "admin";
+const MASTER_PASS = "101010";
+
+/* ============ INIT ============ */
 function INITIALIZE_SYSTEM() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-  // Setup Tab Pengguna
-  let userSheet = ss.getSheetByName('PENGGUNA');
-  if (!userSheet) {
-    userSheet = ss.insertSheet('PENGGUNA');
-    userSheet.appendRow(['UserID', 'FullName', 'Username', 'Password', 'Role', 'MemberNo', 'Phone', 'Email', 'PhotoURL']);
-    // Masukkan Master Admin
-    userSheet.appendRow(['u_admin1', 'Master Admin', 'admin', '101010', 'MasterAdmin', 'Ahli #1', '-', '-', '']);
+  const ss = SpreadsheetApp.getActive();
+  ensureSheet_(ss, SHEET_USERS,   ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt"]);
+  ensureSheet_(ss, SHEET_TREE,    ["id","parentId","no","name","gender","status","birth","death","spouseName","spousePhoto","photo","notes","createdBy","createdAt","pending"]);
+  ensureSheet_(ss, SHEET_PENDING, ["id","action","targetId","payload","by","summary","createdAt"]);
+  ensureFolder_();
+  // master admin row
+  const users = ss.getSheetByName(SHEET_USERS);
+  if (users.getLastRow() < 2) {
+    users.appendRow([0, MASTER_USER, "Master Admin", "", "", hash_(MASTER_PASS), "", "admin", "", new Date()]);
   }
-
-  // Setup Tab Salasilah
-  let dataSheet = ss.getSheetByName('SALASILAH');
-  if (!dataSheet) {
-    dataSheet = ss.insertSheet('SALASILAH');
-    dataSheet.appendRow(['NodeID', 'Name', 'Gender', 'Type', 'LinkedTo', 'PhotoURL', 'Status', 'Creator', 'Editor', 'Timestamp']);
-    // Masukkan Akar Utama jika kosong
-    const rootId = 'n_root_' + new Date().getTime();
-    dataSheet.appendRow([rootId, 'RAJA DEWA BASNU', 'L', 'root', '', '', 'approved', 'admin', 'admin', new Date()]);
-  }
-
-  // Setup Tab Pending (Log Perubahan Tertangguh)
-  let pendingSheet = ss.getSheetByName('PENDING');
-  if (!pendingSheet) {
-    pendingSheet = ss.insertSheet('PENDING');
-    // ActionType: ADD_CHILD, ADD_SPOUSE, EDIT
-    pendingSheet.appendRow(['PendingID', 'ActionType', 'TargetNodeID', 'NewName', 'NewGender', 'NewPhotoURL', 'SubmittedBy', 'Timestamp']);
-  }
-
-  // Cipta Folder Drive untuk Gambar jika belum ada
-  const folders = DriveApp.getFoldersByName("Salasilah_Images");
-  if (!folders.hasNext()) {
-    DriveApp.createFolder("Salasilah_Images");
-  }
+  return "OK";
 }
 
-
-// 2. HTTP ENDPOINTS (API)
-// Handle Preflight CORS
-function doOptions(e) {
-  return ContentService.createTextOutput("")
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeader("Access-Control-Allow-Origin", "*")
-    .setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
-    .setHeader("Access-Control-Allow-Headers", "Content-Type");
+function ensureSheet_(ss, name, headers) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getLastRow() === 0) sh.appendRow(headers);
+}
+function ensureFolder_() {
+  const it = DriveApp.getFoldersByName(DRIVE_FOLDER);
+  if (it.hasNext()) return it.next();
+  return DriveApp.createFolder(DRIVE_FOLDER);
 }
 
-// Handle POST Requests
+/* ============ ENTRY ============ */
 function doPost(e) {
   try {
-    if (!e.postData || !e.postData.contents) {
-      return respondJSON({status: 'error', message: 'No payload'});
-    }
-    
-    const data = JSON.parse(e.postData.contents);
-    const action = data.action;
-
-    switch (action) {
-      case 'login': return processLogin(data);
-      case 'register': return processRegister(data);
-      case 'getTree': return getTreeData(data);
-      case 'submitNode': return submitNode(data);
-      case 'getPending': return getPendingData(data);
-      case 'resolvePending': return resolvePending(data);
-      default: return respondJSON({status: 'error', message: 'Unknown action'});
-    }
+    const req = JSON.parse(e.postData.contents);
+    const handler = ACTIONS[req.action];
+    if (!handler) throw new Error("Unknown action: " + req.action);
+    const auth = authenticate_(req.auth);
+    const data = handler(req.payload || {}, auth);
+    return out_({ ok: true, data });
   } catch (err) {
-    return respondJSON({status: 'error', message: err.toString()});
+    return out_({ ok: false, error: err.message });
   }
 }
+function doGet(){return out_({ok:true,data:"Salasilah API live"});}
+function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-// 3. LOGIK FUNGSI UTAMA
-
-function respondJSON(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+/* ============ AUTH ============ */
+function authenticate_(auth) {
+  if (!auth) return null;
+  const u = findUserBy_("username", auth.username);
+  if (u && u.token && u.token === auth.token) return u;
+  return null;
 }
+function requireAuth_(a){if(!a)throw new Error("Sila log masuk");return a;}
+function requireAdmin_(a){requireAuth_(a);if(a.role!=="admin")throw new Error("Hak admin diperlukan");return a;}
 
-function processLogin(data) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('PENGGUNA');
-  const rows = sheet.getDataRange().getValues();
-  
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][2] === data.username && rows[i][3] === data.password) {
-      return respondJSON({
-        status: 'success', 
-        user: {
-          userId: rows[i][0],
-          fullName: rows[i][1],
-          username: rows[i][2],
-          role: rows[i][4],
-          memberNo: rows[i][5]
-        }
-      });
+function hash_(s){return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s+"|salasilah"));}
+function genToken_(){return Utilities.getUuid().replace(/-/g,"");}
+
+/* ============ ACTIONS ============ */
+const ACTIONS = {
+  register(p) {
+    if (!p.username || !p.password) throw new Error("Maklumat tidak lengkap");
+    if (findUserBy_("username", p.username)) throw new Error("Nama samaran sudah wujud");
+    const sh = sheet_(SHEET_USERS);
+    const no = sh.getLastRow(); // master=0 → next = lastRow
+    const photoUrl = p.photo ? saveImage_(p.photo, "user_"+p.username) : "";
+    sh.appendRow([no, p.username, p.fullname||"", p.email||"", p.phone||"", hash_(p.password), photoUrl, "ahli", "", new Date()]);
+    return { no };
+  },
+  login(p) {
+    if (p.username === MASTER_USER && p.password === MASTER_PASS) {
+      const u = findUserBy_("username", MASTER_USER);
+      const token = genToken_();
+      updateUserField_(u.row, "token", token);
+      return { username: MASTER_USER, role: "admin", no: 0, token };
     }
-  }
-  return respondJSON({status: 'error', message: 'Username atau Password salah.'});
-}
-
-function processRegister(data) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('PENGGUNA');
-  
-  // Check username exists
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][2] === data.username) return respondJSON({status: 'error', message: 'Username telah wujud.'});
-  }
-
-  const userId = 'u_' + new Date().getTime();
-  const memberNo = 'Ahli #' + rows.length;
-  let photoUrl = '';
-  
-  if (data.photoBase64) {
-    photoUrl = uploadImageToDrive(data.photoBase64, data.username + '_profile');
-  }
-
-  sheet.appendRow([userId, data.fullname, data.username, data.password, 'User', memberNo, data.phone, data.email, photoUrl]);
-  return respondJSON({status: 'success', message: 'Pendaftaran berjaya. Sila log masuk.'});
-}
-
-function getTreeData(data) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SALASILAH');
-  const rows = sheet.getDataRange().getValues();
-  const treeData = [];
-  
-  // Format: ['NodeID', 'Name', 'Gender', 'Type', 'LinkedTo', 'PhotoURL', 'Status', 'Creator', 'Editor', 'Timestamp']
-  for (let i = 1; i < rows.length; i++) {
-    treeData.push({
-      id: rows[i][0],
-      name: rows[i][1],
-      gender: rows[i][2],
-      type: rows[i][3],     // 'root', 'child', 'spouse'
-      linkedTo: rows[i][4], // ParentID or SpouseID
-      photoUrl: rows[i][5],
-      status: rows[i][6],
-      creator: rows[i][7],
-      editor: rows[i][8]
-    });
-  }
-  return respondJSON({status: 'success', data: treeData});
-}
-
-function submitNode(data) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const pendingSheet = ss.getSheetByName('PENDING');
-  
-  let photoUrl = '';
-  if (data.photoBase64) {
-    photoUrl = uploadImageToDrive(data.photoBase64, data.newName + '_' + new Date().getTime());
-  }
-
-  const pendingId = 'p_' + new Date().getTime();
-  
-  // Save to PENDING table for Admin moderation
-  pendingSheet.appendRow([
-    pendingId, 
-    data.nodeAction,   // 'add-child', 'add-spouse', 'edit'
-    data.targetId, 
-    data.newName, 
-    data.newGender, 
-    photoUrl, 
-    data.username, 
-    new Date()
-  ]);
-
-  return respondJSON({status: 'success', message: 'Data berjaya dihantar dan menunggu kelulusan Admin (Pending).'});
-}
-
-function getPendingData(data) {
-  // Secure check: Should verify token/role here in production. Assuming simple check for this scope.
-  if (data.role !== 'MasterAdmin' && data.role !== 'SubAdmin') return respondJSON({status: 'error', message: 'Akses Ditolak.'});
-  
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('PENDING');
-  const rows = sheet.getDataRange().getValues();
-  const pendingData = [];
-  
-  for (let i = 1; i < rows.length; i++) {
-    pendingData.push({
-      pendingId: rows[i][0],
-      actionType: rows[i][1],
-      targetId: rows[i][2],
-      newName: rows[i][3],
-      newGender: rows[i][4],
-      newPhotoUrl: rows[i][5],
-      submittedBy: rows[i][6],
-      timestamp: rows[i][7]
-    });
-  }
-  return respondJSON({status: 'success', data: pendingData});
-}
-
-function resolvePending(data) {
-  // data.resolution = 'Approve' | 'Reject'
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const pendingSheet = ss.getSheetByName('PENDING');
-  const dataSheet = ss.getSheetByName('SALASILAH');
-  
-  const pRows = pendingSheet.getDataRange().getValues();
-  let targetRowIndex = -1;
-  let pendingRecord = null;
-
-  for (let i = 1; i < pRows.length; i++) {
-    if (pRows[i][0] === data.pendingId) {
-      targetRowIndex = i + 1;
-      pendingRecord = pRows[i];
-      break;
-    }
-  }
-
-  if (!pendingRecord) return respondJSON({status: 'error', message: 'Rekod tidak dijumpai.'});
-
-  if (data.resolution === 'Approve') {
-    const actionType = pendingRecord[1];
-    const targetNodeId = pendingRecord[2];
-    const newName = pendingRecord[3];
-    const newGender = pendingRecord[4];
-    const newPhotoUrl = pendingRecord[5];
-    const submittedBy = pendingRecord[6];
-
-    if (actionType === 'edit') {
-      // Find node in SALASILAH and update
-      const dRows = dataSheet.getDataRange().getValues();
-      for (let j = 1; j < dRows.length; j++) {
-        if (dRows[j][0] === targetNodeId) {
-          dataSheet.getRange(j+1, 2).setValue(newName); // Name
-          dataSheet.getRange(j+1, 3).setValue(newGender); // Gender
-          if (newPhotoUrl) dataSheet.getRange(j+1, 6).setValue(newPhotoUrl);
-          dataSheet.getRange(j+1, 9).setValue(submittedBy); // Editor
-          break;
-        }
+    const u = findUserBy_("username", p.username);
+    if (!u || u.passwordHash !== hash_(p.password)) throw new Error("Nama samaran atau password salah");
+    const token = genToken_();
+    updateUserField_(u.row, "token", token);
+    return { username: u.username, role: u.role, no: u.no, token, photo: u.photo };
+  },
+  getTree() {
+    const rows = readSheet_(SHEET_TREE);
+    return { nodes: rows.map(r => ({ ...r, pending: !!r.pending })) };
+  },
+  initRoot(p, auth) {
+    requireAdmin_(auth);
+    const sh = sheet_(SHEET_TREE);
+    if (sh.getLastRow() > 1) throw new Error("Root sudah wujud");
+    const id = Utilities.getUuid();
+    sh.appendRow([id, "", 1, p.name, "L", "hidup", "", "", "", "", "", "", auth.username, new Date(), false]);
+    return { id };
+  },
+  saveNode(p, auth) {
+    requireAuth_(auth);
+    const isAdmin = auth.role === "admin";
+    const photoUrl = p.photo ? saveImage_(p.photo, "node_"+Date.now()) : null;
+    if (p.id) {
+      // UPDATE
+      if (isAdmin) {
+        applyNodeUpdate_(p, photoUrl, auth);
+        return { ok: true };
       }
-    } else {
-      // Add Child or Add Spouse
-      const newNodeId = 'n_' + new Date().getTime();
-      const type = (actionType === 'add-child') ? 'child' : 'spouse';
-      
-      dataSheet.appendRow([
-        newNodeId, 
-        newName, 
-        newGender, 
-        type, 
-        targetNodeId, // LinkedTo
-        newPhotoUrl, 
-        'approved', 
-        submittedBy, 
-        submittedBy, 
-        new Date()
-      ]);
+      addPending_({ action: "edit", targetId: p.id, payload: { ...p, photoUrl }, by: auth.username, summary: "Edit "+p.name });
+      markNodePending_(p.id, true);
+      return { pending: true };
     }
+    // INSERT
+    if (p.relation === "spouse" && p.parentId) {
+      if (isAdmin) {
+        updateNodeSpouse_(p.parentId, p.name, photoUrl);
+        return { ok: true };
+      }
+      addPending_({ action: "spouse", targetId: p.parentId, payload: { ...p, photoUrl }, by: auth.username, summary: "Pasangan utk "+p.parentId });
+      return { pending: true };
+    }
+    // child or root-less new
+    if (isAdmin) {
+      insertNode_(p, photoUrl, auth);
+      return { ok: true };
+    }
+    addPending_({ action: "add", targetId: p.parentId||"", payload: { ...p, photoUrl }, by: auth.username, summary: "Tambah "+p.name });
+    return { pending: true };
+  },
+  deleteNode(p, auth) {
+    requireAdmin_(auth);
+    deleteRowById_(SHEET_TREE, p.id);
+    return { ok: true };
+  },
+  adminData(_, auth) {
+    requireAdmin_(auth);
+    return {
+      pending: readSheet_(SHEET_PENDING),
+      users: readSheet_(SHEET_USERS).map(u => ({ no: u.no, username: u.username, fullname: u.fullname, role: u.role })),
+    };
+  },
+  moderate(p, auth) {
+    requireAdmin_(auth);
+    const sh = sheet_(SHEET_PENDING);
+    const rows = readSheet_(SHEET_PENDING);
+    const item = rows.find(r => r.id === p.id);
+    if (!item) throw new Error("Item tidak dijumpai");
+    if (p.decision === "approve") {
+      const data = JSON.parse(item.payload);
+      if (item.action === "edit") { applyNodeUpdate_(data, data.photoUrl, auth); markNodePending_(item.targetId,false); }
+      else if (item.action === "spouse") { updateNodeSpouse_(item.targetId, data.name, data.photoUrl); }
+      else if (item.action === "add") { insertNode_(data, data.photoUrl, auth); }
+    }
+    deleteRowById_(SHEET_PENDING, p.id);
+    return { ok: true };
   }
+};
 
-  // Remove from pending sheet regardless of Approve or Reject
-  pendingSheet.deleteRow(targetRowIndex);
-
-  return respondJSON({status: 'success', message: 'Tindakan berjaya dilaksanakan.'});
+/* ============ HELPERS ============ */
+function sheet_(n){return SpreadsheetApp.getActive().getSheetByName(n);}
+function readSheet_(name) {
+  const sh = sheet_(name);
+  const v = sh.getDataRange().getValues();
+  if (v.length < 2) return [];
+  const h = v[0];
+  return v.slice(1).map((r,i) => { const o={_row:i+2}; h.forEach((k,j)=>o[k]=r[j]); return o; });
 }
-
-// 4. BANTUAN GOOGLE DRIVE (STORAN GAMBAR)
-function uploadImageToDrive(base64Data, filename) {
+function findUserBy_(field, val) {
+  const rows = readSheet_(SHEET_USERS);
+  const u = rows.find(r => String(r[field]) === String(val));
+  if (!u) return null;
+  return { ...u, row: u._row };
+}
+function updateUserField_(row, field, value) {
+  const sh = sheet_(SHEET_USERS);
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  const col = h.indexOf(field)+1;
+  sh.getRange(row,col).setValue(value);
+}
+function insertNode_(p, photoUrl, auth) {
+  const sh = sheet_(SHEET_TREE);
+  const id = Utilities.getUuid();
+  const no = sh.getLastRow();
+  sh.appendRow([id, p.parentId||"", no, p.name, p.gender||"L", p.status||"hidup", p.birth||"", p.death||"", p.spouse||"", "", photoUrl||"", p.notes||"", auth.username, new Date(), false]);
+}
+function applyNodeUpdate_(p, photoUrl, auth) {
+  const sh = sheet_(SHEET_TREE);
+  const rows = readSheet_(SHEET_TREE);
+  const n = rows.find(r=>r.id===p.id);
+  if (!n) throw new Error("Node tidak dijumpai");
+  const map = { name:p.name, gender:p.gender, status:p.status, birth:p.birth, death:p.death, spouseName:p.spouse, notes:p.notes };
+  if (photoUrl) map.photo = photoUrl;
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  Object.keys(map).forEach(k=>{const c=h.indexOf(k)+1;if(c>0&&map[k]!==undefined&&map[k]!=="")sh.getRange(n._row,c).setValue(map[k]);});
+}
+function updateNodeSpouse_(parentId, name, photoUrl) {
+  const sh = sheet_(SHEET_TREE);
+  const rows = readSheet_(SHEET_TREE);
+  const n = rows.find(r=>r.id===parentId);
+  if (!n) throw new Error("Node tidak dijumpai");
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  sh.getRange(n._row, h.indexOf("spouseName")+1).setValue(name);
+  if (photoUrl) sh.getRange(n._row, h.indexOf("spousePhoto")+1).setValue(photoUrl);
+}
+function markNodePending_(id, val) {
+  const sh = sheet_(SHEET_TREE);
+  const rows = readSheet_(SHEET_TREE);
+  const n = rows.find(r=>r.id===id); if(!n) return;
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  sh.getRange(n._row, h.indexOf("pending")+1).setValue(val);
+}
+function addPending_(o) {
+  const sh = sheet_(SHEET_PENDING);
+  const id = Utilities.getUuid();
+  sh.appendRow([id, o.action, o.targetId, JSON.stringify(o.payload), o.by, o.summary, new Date()]);
+}
+function deleteRowById_(sheetName, id) {
+  const sh = sheet_(sheetName);
+  const rows = readSheet_(sheetName);
+  const r = rows.find(x=>x.id===id);
+  if (r) sh.deleteRow(r._row);
+}
+function saveImage_(file, baseName) {
   try {
-    const folders = DriveApp.getFoldersByName("Salasilah_Images");
-    let folder;
-    if (folders.hasNext()) {
-      folder = folders.next();
-    } else {
-      folder = DriveApp.createFolder("Salasilah_Images");
-      folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    }
-
-    const splitBase = base64Data.split(',');
-    const type = splitBase[0].split(';')[0].replace('data:', '');
-    const byteCharacters = Utilities.base64Decode(splitBase[1]);
-    const blob = Utilities.newBlob(byteCharacters, type, filename + '.jpg');
-    
-    const file = folder.createFile(blob);
-    return file.getUrl(); // Save URL to Sheet
-  } catch (e) {
-    Logger.log("Drive Upload Error: " + e);
-    return "";
-  }
+    const folder = ensureFolder_();
+    const blob = Utilities.newBlob(Utilities.base64Decode(file.data), file.type, baseName+"_"+file.name);
+    const f = folder.createFile(blob);
+    f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return "https://drive.google.com/uc?export=view&id=" + f.getId();
+  } catch (e) { return ""; }
 }

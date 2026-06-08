@@ -1,427 +1,246 @@
-/**
- * PWA LOGIK PENGHANTARAN DATA (app.js)
- * Menguruskan UI, rendering peta salasilah, form offline/online, dan API calls.
- */
-
-// MASUKKAN URL GOOGLE APPS SCRIPT WEB APP DI SINI (Selepas Deploy)
-const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwUmJQtXW_wa3596DmF_6QvkZNw1vI1z4Zi7mti5-UqC34jCb9dq3YAjlCU9JrocRNk/exec';
-
-// --- STATE MANAGEMENT ---
-let currentUser = JSON.parse(localStorage.getItem('salasilah_user')) || null;
-let treeData = [];
-let panzoomInstance = null;
-let selectedNodeId = null;
-
-// --- DOM ELEMENTS ---
-const ui = {
-  btnShowLogin: document.getElementById('btn-show-login'),
-  userInfo: document.getElementById('user-info'),
-  displayUsername: document.getElementById('display-username'),
-  btnLogout: document.getElementById('btnLogout'),
-  btnAdminPanel: document.getElementById('btn-admin-panel'),
-  
-  authModal: document.getElementById('auth-modal'),
-  nodeModal: document.getElementById('node-modal'),
-  adminModal: document.getElementById('admin-modal'),
-  overlay: document.getElementById('modal-overlay'),
-  loading: document.getElementById('loading-overlay'),
-  
-  contextMenu: document.getElementById('context-menu'),
-  treeRoot: document.getElementById('tree-root'),
-  treeContainer: document.getElementById('tree-container')
+/* Salasilah Keluarga Elit — app.js */
+const DEFAULT_GAS_URL = ""; // isi URL deploy Apps Script di sini atau via ⚙
+const State = {
+  gasUrl: localStorage.getItem("gasUrl") || DEFAULT_GAS_URL,
+  user: JSON.parse(localStorage.getItem("user") || "null"),
+  nodes: [],
+  pending: [],
+  panzoom: null,
 };
 
-// --- INITIALIZATION ---
-document.addEventListener('DOMContentLoaded', () => {
-  initPanzoom();
-  checkAuthStatus();
-  fetchTreeData();
-  setupEventListeners();
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2400);}
+function openModal(id){$("#"+id).classList.remove("hidden");$("#"+id).classList.add("flex");}
+function closeModal(id){$("#"+id).classList.add("hidden");$("#"+id).classList.remove("flex");}
+window.closeModal = closeModal;
+
+/* ---------- API ---------- */
+async function api(action, payload={}){
+  if(!State.gasUrl){toast("Tetapkan URL GAS dahulu");openModal("modal-settings");throw new Error("no-url");}
+  const body = JSON.stringify({action, payload, auth: State.user ? {username:State.user.username,token:State.user.token}:null});
+  const res = await fetch(State.gasUrl, {method:"POST", body, headers:{"Content-Type":"text/plain;charset=utf-8"}});
+  const json = await res.json();
+  if(!json.ok) throw new Error(json.error||"API error");
+  return json.data;
+}
+
+async function fileToBase64(f){
+  if(!f) return null;
+  return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({name:f.name,type:f.type,data:r.result.split(",")[1]});r.onerror=rej;r.readAsDataURL(f);});
+}
+
+/* ---------- Render Tree ---------- */
+function buildTree(){
+  const root = State.nodes.find(n=>!n.parentId);
+  const host = $("#tree-root");
+  if(!root){host.innerHTML='<p class="text-slate-400 text-center mt-32">Belum ada data. Admin perlu Init Root.</p>';return;}
+  host.className=""; host.innerHTML="";
+  const ul = document.createElement("ul");
+  ul.className="tree";
+  ul.appendChild(renderNode(root));
+  host.appendChild(ul);
+}
+function renderNode(n){
+  const li = document.createElement("li");
+  const branch = document.createElement("div");
+  branch.className="branch";
+  branch.appendChild(card(n));
+  if(n.spouseName){
+    const sp = document.createElement("div");
+    sp.className="node";
+    sp.innerHTML=`<img src="${n.spousePhoto||placeholder(n.gender==='L'?'P':'L')}"/><div class="name">${escape(n.spouseName)}</div><div class="meta">Pasangan</div>`;
+    branch.appendChild(sp);
+  }
+  li.appendChild(branch);
+  const kids = State.nodes.filter(x=>x.parentId===n.id);
+  if(kids.length){
+    const cu = document.createElement("ul");
+    cu.className="children-row";
+    kids.forEach(k=>cu.appendChild(renderNode(k)));
+    li.appendChild(cu);
+  }
+  return li;
+}
+function card(n){
+  const d = document.createElement("div");
+  d.className = "node"+(n.pending?" pending":"")+(!n.parentId?" root":"");
+  d.innerHTML = `<img src="${n.photo||placeholder(n.gender)}" alt=""/>
+    <div class="name">${escape(n.name)}</div>
+    <div class="meta">#${n.no||"-"} ${n.birth||""}${n.death?" – "+n.death:""}</div>`;
+  d.addEventListener("click",e=>{e.stopPropagation();showCtx(e.clientX,e.clientY,n);});
+  return d;
+}
+function placeholder(g){
+  const c = g==="P" ? "%23ec4899" : "%2338bdf8";
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='${c}'/%3E%3Ctext x='32' y='40' font-size='28' text-anchor='middle' fill='white'%3E${g==='P'?'♀':'♂'}%3C/text%3E%3C/svg%3E`;
+}
+function escape(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+/* ---------- Context Menu ---------- */
+function showCtx(x,y,n){
+  const m = $("#ctx-menu");
+  const canEdit = State.user;
+  m.innerHTML = "";
+  const items = [
+    {l:"👁 Lihat Profil", fn:()=>viewProfile(n)},
+    canEdit && {l:"✎ Edit", fn:()=>openNodeEditor(n)},
+    canEdit && {l:"➕ Tambah Anak", fn:()=>openNodeEditor(null,n.id,"child")},
+    canEdit && !n.spouseName && {l:"💍 Tambah Pasangan", fn:()=>openNodeEditor(null,n.id,"spouse")},
+    State.user?.role==="admin" && {l:"🗑 Padam", fn:()=>delNode(n)},
+  ].filter(Boolean);
+  items.forEach(i=>{const b=document.createElement("button");b.textContent=i.l;b.onclick=()=>{m.classList.add("hidden");i.fn();};m.appendChild(b);});
+  m.style.left = Math.min(x, innerWidth-200)+"px";
+  m.style.top = Math.min(y, innerHeight-items.length*40)+"px";
+  m.classList.remove("hidden");
+}
+document.addEventListener("click",()=>$("#ctx-menu").classList.add("hidden"));
+
+function viewProfile(n){alert(`${n.name}\n#${n.no||"-"}\n${n.notes||""}`);}
+
+/* ---------- Node Editor ---------- */
+function openNodeEditor(node, parentId=null, relation="child"){
+  const f = $("#form-node");
+  f.reset();
+  f.id.value = node?.id||"";
+  f.parentId.value = parentId||node?.parentId||"";
+  f.relation.value = relation;
+  if(node){
+    f.name.value=node.name; f.gender.value=node.gender||"L"; f.status.value=node.status||"hidup";
+    f.birth.value=node.birth||""; f.death.value=node.death||"";
+    f.spouse.value=node.spouseName||""; f.notes.value=node.notes||"";
+  }
+  $("#node-title").textContent = node?"Edit Ahli":(relation==="spouse"?"Tambah Pasangan":"Tambah Anak");
+  openModal("modal-node");
+}
+
+$("#form-node").addEventListener("submit", async e=>{
+  e.preventDefault();
+  if(!State.user){toast("Sila log masuk");return;}
+  const fd = new FormData(e.target);
+  const photo = await fileToBase64(fd.get("photo"));
+  const payload = Object.fromEntries(fd.entries());
+  delete payload.photo;
+  if(photo) payload.photo = photo;
+  try{
+    await api("saveNode", payload);
+    toast(State.user.role==="admin"?"Disimpan":"Dihantar untuk semakan admin");
+    closeModal("modal-node");
+    await refresh();
+  }catch(err){toast(err.message);}
 });
 
-function initPanzoom() {
-  panzoomInstance = Panzoom(ui.treeRoot, {
-    maxScale: 5,
-    minScale: 0.1,
-    step: 0.2,
-    contain: 'outside'
-  });
-  // Mouse wheel scroll to zoom
-  ui.treeContainer.parentElement.addEventListener('wheel', panzoomInstance.zoomWithWheel);
+async function delNode(n){
+  if(!confirm("Padam "+n.name+"?")) return;
+  try{await api("deleteNode",{id:n.id});await refresh();}catch(e){toast(e.message);}
 }
 
-function checkAuthStatus() {
-  if (currentUser) {
-    ui.btnShowLogin.classList.add('hidden');
-    ui.userInfo.classList.remove('hidden');
-    ui.displayUsername.textContent = currentUser.username;
-    if (currentUser.role === 'MasterAdmin' || currentUser.role === 'SubAdmin') {
-      ui.btnAdminPanel.classList.remove('hidden');
-    }
-  } else {
-    ui.btnShowLogin.classList.remove('hidden');
-    ui.userInfo.classList.add('hidden');
-    ui.btnAdminPanel.classList.add('hidden');
-  }
-}
-
-// --- API & DATA FETCHING ---
-async function apiRequest(payload) {
-  showLoading('Memproses...');
-  try {
-    const response = await fetch(GAS_WEBAPP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Avoid CORS preflight issues sometimes
-      body: JSON.stringify(payload)
-    });
-    const result = await response.json();
-    hideLoading();
-    return result;
-  } catch (error) {
-    hideLoading();
-    alert('Ralat Rangkaian. Pastikan anda berada dalam talian.');
-    console.error(error);
-    return { status: 'error' };
-  }
-}
-
-async function fetchTreeData() {
-  const res = await apiRequest({ action: 'getTree' });
-  if (res.status === 'success') {
-    treeData = res.data;
-    renderTree();
-  }
-}
-
-// --- TREE RENDERING LOGIC (Complex due to Spouses & Children) ---
-function renderTree() {
-  ui.treeRoot.innerHTML = '';
-  
-  if (treeData.length === 0) {
-    ui.treeRoot.innerHTML = '<p class="text-2xl text-slate-400">Data Salasilah Kosong. Admin perlu mulakan akar.</p>';
-    return;
-  }
-
-  const rootNode = treeData.find(n => n.type === 'root');
-  if (rootNode) {
-    const treeHTML = buildFamilyDOM(rootNode.id);
-    ui.treeRoot.appendChild(treeHTML);
-  }
-}
-
-// Recursive function to build the tree DOM structure
-function buildFamilyDOM(primaryId) {
-  const primary = treeData.find(n => n.id === primaryId);
-  if (!primary) return document.createElement('div');
-
-  const familyGroup = document.createElement('div');
-  familyGroup.className = 'family-group';
-
-  // 1. Build Parents Section (Primary + Spouses)
-  const parentsDiv = document.createElement('div');
-  parentsDiv.className = 'parents';
-
-  // Add Primary Node
-  parentsDiv.appendChild(createNodeCard(primary));
-
-  // Find Spouses linked to Primary
-  const spouses = treeData.filter(n => n.type === 'spouse' && n.linkedTo === primaryId);
-  
-  if (spouses.length > 0) {
-    // Create a connecting line for spouses
-    const spouseLine = document.createElement('div');
-    spouseLine.className = 'spouse-line';
-    parentsDiv.appendChild(spouseLine);
-
-    spouses.forEach(spouse => {
-      parentsDiv.appendChild(createNodeCard(spouse, true));
-    });
-  }
-  familyGroup.appendChild(parentsDiv);
-
-  // 2. Build Children Section
-  // Find children linked to this primary node (for simplicity in this scope, children link to primary parent)
-  const children = treeData.filter(n => n.type === 'child' && n.linkedTo === primaryId);
-
-  if (children.length > 0) {
-    const childrenDiv = document.createElement('div');
-    childrenDiv.className = 'children';
-    
-    children.forEach(child => {
-      const childWrapper = document.createElement('div');
-      childWrapper.className = 'child-wrapper';
-      // Recursively build the family group for the child
-      childWrapper.appendChild(buildFamilyDOM(child.id));
-      childrenDiv.appendChild(childWrapper);
-    });
-    
-    familyGroup.appendChild(childrenDiv);
-  }
-
-  return familyGroup;
-}
-
-function createNodeCard(node, isSpouse = false) {
-  const card = document.createElement('div');
-  card.className = `node-card ${node.status === 'pending' ? 'pending' : ''} ${isSpouse ? 'spouse-node' : ''}`;
-  card.dataset.id = node.id;
-
-  const defaultAvatar = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
-  const imgUrl = node.photoUrl ? node.photoUrl : defaultAvatar;
-
-  card.innerHTML = `
-    <img src="${imgUrl}" class="node-img" alt="Avatar">
-    <h3 class="font-bold text-sm uppercase leading-tight">${node.name}</h3>
-    <p class="text-xs text-slate-500 mt-1">Disunting oleh: <br><span class="font-medium text-slate-700">${node.editor}</span></p>
-  `;
-
-  // Click event for Context Menu
-  card.addEventListener('click', (e) => {
-    e.stopPropagation(); // Prevent document click from closing it immediately
-    if (!currentUser) {
-      alert('Sila Log Masuk untuk berinteraksi dengan data.');
-      return;
-    }
-    selectedNodeId = node.id;
-    showContextMenu(e.clientX, e.clientY);
-  });
-
-  return card;
-}
-
-// --- UI & INTERACTION LOGIC ---
-function showContextMenu(x, y) {
-  ui.contextMenu.style.left = `${x}px`;
-  ui.contextMenu.style.top = `${y}px`;
-  ui.contextMenu.classList.add('active');
-}
-
-document.addEventListener('click', () => {
-  ui.contextMenu.classList.remove('active');
+/* ---------- Auth ---------- */
+$("#btn-auth").addEventListener("click",()=>{
+  if(State.user){
+    if(confirm("Log keluar?")){localStorage.removeItem("user");State.user=null;updateUserUI();}
+  } else openModal("modal-auth");
+});
+$$("#modal-auth .tab").forEach(b=>b.addEventListener("click",()=>{
+  $$("#modal-auth .tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");
+  $("#form-login").classList.toggle("hidden",b.dataset.tab!=="login");
+  $("#form-register").classList.toggle("hidden",b.dataset.tab!=="register");
+}));
+$("#form-login").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const fd = Object.fromEntries(new FormData(e.target));
+  try{
+    const u = await api("login",fd);
+    State.user = u; localStorage.setItem("user",JSON.stringify(u));
+    updateUserUI(); closeModal("modal-auth"); toast("Selamat datang, "+u.username);
+    refresh();
+  }catch(err){toast(err.message);}
+});
+$("#form-register").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const photo = await fileToBase64(fd.get("photo"));
+  const data = Object.fromEntries(fd.entries()); delete data.photo;
+  if(photo) data.photo = photo;
+  try{await api("register",data);toast("Berjaya daftar! Sila log masuk.");
+    $$("#modal-auth .tab")[0].click();
+  }catch(err){toast(err.message);}
 });
 
-function openModal(modalEl) {
-  ui.overlay.classList.remove('hidden');
-  modalEl.classList.remove('hidden');
+function updateUserUI(){
+  const u = State.user;
+  $("#user-info").textContent = u?`${u.username} • ${u.role==="admin"?"ADMIN":"Ahli #"+u.no}`:"Tidak log masuk";
+  $("#btn-auth").textContent = u?"Keluar":"Log Masuk";
+  $("#btn-admin").classList.toggle("hidden", u?.role!=="admin");
 }
 
-function closeAllModals() {
-  ui.overlay.classList.add('hidden');
-  ui.authModal.classList.add('hidden');
-  ui.nodeModal.classList.add('hidden');
-  ui.adminModal.classList.add('hidden');
-}
-
-function showLoading(text) {
-  document.getElementById('loading-text').innerText = text;
-  ui.loading.classList.remove('hidden');
-}
-function hideLoading() { ui.loading.classList.add('hidden'); }
-
-// --- EVENT LISTENERS SETUP ---
-function setupEventListeners() {
-  // Header Buttons
-  ui.btnShowLogin.addEventListener('click', () => openModal(ui.authModal));
-  document.getElementById('btn-logout').addEventListener('click', () => {
-    localStorage.removeItem('salasilah_user');
-    currentUser = null;
-    checkAuthStatus();
-    location.reload();
-  });
-  ui.btnAdminPanel.addEventListener('click', () => {
-    openModal(ui.adminModal);
-    fetchPendingData();
-  });
-
-  // Zoom Controls
-  document.getElementById('btn-zoom-in').addEventListener('click', panzoomInstance.zoomIn);
-  document.getElementById('btn-zoom-out').addEventListener('click', panzoomInstance.zoomOut);
-
-  // Close Modals
-  document.querySelectorAll('.close-modal').forEach(btn => {
-    btn.addEventListener('click', closeAllModals);
-  });
-  ui.overlay.addEventListener('click', closeAllModals);
-
-  // Context Menu Actions
-  document.getElementById('ctx-add-spouse').addEventListener('click', () => prepareNodeForm('add-spouse'));
-  document.getElementById('ctx-add-child').addEventListener('click', () => prepareNodeForm('add-child'));
-  document.getElementById('ctx-edit-node').addEventListener('click', () => prepareNodeForm('edit'));
-
-  // Auth Form Logic
-  let isLogin = true;
-  document.getElementById('btn-toggle-auth').addEventListener('click', (e) => {
-    e.preventDefault();
-    isLogin = !isLogin;
-    document.getElementById('auth-title').innerText = isLogin ? 'Log Masuk' : 'Daftar Akaun';
-    document.getElementById('reg-fields').classList.toggle('hidden');
-    document.getElementById('auth-submit').innerText = isLogin ? 'Log Masuk' : 'Daftar';
-    document.getElementById('auth-toggle-text').innerText = isLogin ? 'Belum mendaftar?' : 'Sudah ada akaun?';
-    e.target.innerText = isLogin ? 'Daftar Sini' : 'Log Masuk';
-  });
-
-  document.getElementById('auth-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const payload = {
-      action: isLogin ? 'login' : 'register',
-      username: document.getElementById('auth-username').value,
-      password: document.getElementById('auth-password').value,
-    };
-    if (!isLogin) {
-      payload.fullname = document.getElementById('reg-fullname').value;
-      payload.email = document.getElementById('reg-email').value;
-      payload.phone = document.getElementById('reg-phone').value;
-      // Handle photo logic here if needed (read as base64)
-    }
-    
-    const res = await apiRequest(payload);
-    if (res.status === 'success') {
-      if (isLogin) {
-        localStorage.setItem('salasilah_user', JSON.stringify(res.user));
-        currentUser = res.user;
-        checkAuthStatus();
-        closeAllModals();
-      } else {
-        alert('Pendaftaran Berjaya. Sila Log Masuk.');
-        document.getElementById('btn-toggle-auth').click(); // Switch back to login
-      }
-    } else {
-      alert(res.message);
-    }
-  });
-
-  // Node Form Submit (Add/Edit)
-  document.getElementById('node-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fileInput = document.getElementById('node-photo');
-    let base64Photo = null;
-    
-    if (fileInput.files.length > 0) {
-      base64Photo = await fileToBase64(fileInput.files[0]);
-    }
-
-    const payload = {
-      action: 'submitNode',
-      nodeAction: document.getElementById('node-action').value,
-      targetId: document.getElementById('node-target-id').value,
-      newName: document.getElementById('node-name').value,
-      newGender: document.getElementById('node-gender').value,
-      photoBase64: base64Photo,
-      username: currentUser.username
-    };
-
-    const res = await apiRequest(payload);
-    if (res.status === 'success') {
-      alert('Tindakan dihantar kepada Admin untuk kelulusan (Pending).');
-      closeAllModals();
-      // Refresh tree to potentially show user's pending nodes (if backend supports returning them, currently backend returns all approved)
-    }
-  });
-
-  // Admin Tabs
-  document.querySelectorAll('.admin-tab').forEach(tab => {
-    tab.addEventListener('click', (e) => {
-      document.querySelectorAll('.admin-tab').forEach(t => {
-        t.classList.remove('border-b-2', 'border-blue-600', 'text-blue-600');
-        t.classList.add('text-slate-500');
-      });
-      e.target.classList.add('border-b-2', 'border-blue-600', 'text-blue-600');
-      e.target.classList.remove('text-slate-500');
-      
-      document.getElementById('admin-pending').classList.add('hidden');
-      document.getElementById('admin-settings').classList.add('hidden');
-      document.getElementById(e.target.dataset.target).classList.remove('hidden');
+/* ---------- Admin ---------- */
+$("#btn-admin").addEventListener("click",async()=>{openModal("modal-admin");await loadAdmin();});
+$$("#modal-admin [data-atab]").forEach(b=>b.addEventListener("click",()=>{
+  $$("#modal-admin [data-atab]").forEach(x=>x.classList.remove("active"));b.classList.add("active");
+  ["pending","users","init"].forEach(t=>$("#admin-"+t).classList.toggle("hidden",t!==b.dataset.atab));
+}));
+async function loadAdmin(){
+  try{
+    const d = await api("adminData",{});
+    const p = $("#admin-pending");
+    p.innerHTML = d.pending.length?"":'<p class="text-slate-400 text-sm">Tiada item pending.</p>';
+    d.pending.forEach(it=>{
+      const div=document.createElement("div");
+      div.className="glass rounded-lg p-3 mb-2 flex justify-between items-center gap-2";
+      div.innerHTML=`<div class="text-sm"><b>${escape(it.action)}</b> oleh ${escape(it.by)}<br><span class="text-xs text-slate-400">${escape(it.summary)}</span></div>`;
+      const ok=document.createElement("button");ok.className="btn btn-primary";ok.textContent="✓";
+      const no=document.createElement("button");no.className="btn btn-ghost";no.textContent="✕";
+      ok.onclick=async()=>{await api("moderate",{id:it.id,decision:"approve"});loadAdmin();refresh();};
+      no.onclick=async()=>{await api("moderate",{id:it.id,decision:"reject"});loadAdmin();};
+      const wrap=document.createElement("div");wrap.className="flex gap-1";wrap.append(ok,no);
+      div.appendChild(wrap);p.appendChild(div);
     });
-  });
+    const u=$("#admin-users");
+    u.innerHTML='<table class="w-full text-xs"><thead><tr class="text-left text-slate-400"><th>#</th><th>Username</th><th>Nama</th><th>Peranan</th></tr></thead><tbody></tbody></table>';
+    const tb=u.querySelector("tbody");
+    d.users.forEach(x=>{const tr=document.createElement("tr");tr.innerHTML=`<td>${x.no}</td><td>${escape(x.username)}</td><td>${escape(x.fullname)}</td><td>${x.role}</td>`;tb.appendChild(tr);});
+  }catch(e){toast(e.message);}
+}
+$("#btn-init-root").addEventListener("click",async()=>{
+  const name = $("#root-name").value.trim();
+  if(!name) return;
+  try{await api("initRoot",{name});toast("Root dicipta");closeModal("modal-admin");refresh();}catch(e){toast(e.message);}
+});
+
+/* ---------- Settings ---------- */
+$("#btn-settings").addEventListener("click",()=>{$("#gas-url").value=State.gasUrl;openModal("modal-settings");});
+$("#btn-save-settings").addEventListener("click",()=>{
+  State.gasUrl = $("#gas-url").value.trim();
+  localStorage.setItem("gasUrl",State.gasUrl);
+  closeModal("modal-settings"); refresh();
+});
+
+/* ---------- Panzoom ---------- */
+function initPanzoom(){
+  const el = $("#canvas");
+  State.panzoom = Panzoom(el,{maxScale:3,minScale:.3,canvas:true,contain:false});
+  $("#stage").addEventListener("wheel",State.panzoom.zoomWithWheel);
+  $("#btn-zoom-in").onclick=()=>State.panzoom.zoomIn();
+  $("#btn-zoom-out").onclick=()=>State.panzoom.zoomOut();
+  $("#btn-reset").onclick=()=>State.panzoom.reset();
 }
 
-function prepareNodeForm(action) {
-  document.getElementById('node-action').value = action;
-  document.getElementById('node-target-id').value = selectedNodeId;
-  
-  const titles = {
-    'add-spouse': 'Tambah Pasangan',
-    'add-child': 'Tambah Anak',
-    'edit': 'Sunting Profil'
-  };
-  document.getElementById('node-modal-title').innerText = titles[action];
-  document.getElementById('node-name').value = '';
-  
-  if (action === 'edit') {
-    const node = treeData.find(n => n.id === selectedNodeId);
-    if (node) {
-      document.getElementById('node-name').value = node.name;
-      document.getElementById('node-gender').value = node.gender;
-    }
-  }
-  
-  openModal(ui.nodeModal);
-}
-
-// --- ADMIN MODERATION LOGIC ---
-async function fetchPendingData() {
-  const container = document.getElementById('pending-list-container');
-  container.innerHTML = '<p class="text-slate-500">Memuatkan...</p>';
-  
-  const res = await apiRequest({ action: 'getPending', role: currentUser.role });
-  if (res.status === 'success') {
-    if (res.data.length === 0) {
-      container.innerHTML = '<p class="text-slate-500 col-span-2">Tiada permohonan tertangguh setakat ini.</p>';
-      return;
-    }
-    
-    container.innerHTML = '';
-    res.data.forEach(req => {
-      const div = document.createElement('div');
-      div.className = 'border p-4 rounded-lg bg-slate-50 relative';
-      
-      let actionText = req.actionType === 'add-child' ? 'Tambah Anak' : (req.actionType === 'add-spouse' ? 'Tambah Pasangan' : 'Sunting');
-      
-      div.innerHTML = `
-        <div class="flex justify-between items-start">
-          <div>
-            <span class="bg-yellow-200 text-yellow-800 text-xs font-bold px-2 py-1 rounded uppercase">${actionText}</span>
-            <h4 class="font-bold mt-2 uppercase">${req.newName}</h4>
-            <p class="text-sm text-slate-600">Oleh: ${req.submittedBy}</p>
-          </div>
-          ${req.newPhotoUrl ? `<img src="${req.newPhotoUrl}" class="w-12 h-12 rounded object-cover border">` : ''}
-        </div>
-        <div class="flex gap-2 mt-4">
-          <button class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded font-medium" onclick="resolvePending('${req.pendingId}', 'Approve')">Lulus</button>
-          <button class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded font-medium" onclick="resolvePending('${req.pendingId}', 'Reject')">Tolak</button>
-        </div>
-      `;
-      container.appendChild(div);
-    });
-  } else {
-    container.innerHTML = `<p class="text-red-500 col-span-2">${res.message}</p>`;
+/* ---------- Refresh ---------- */
+async function refresh(){
+  try{
+    const d = await api("getTree",{});
+    State.nodes = d.nodes||[];
+    buildTree();
+  }catch(e){
+    if(e.message!=="no-url") toast(e.message);
   }
 }
 
-// Must be in global scope for inline onclick
-window.resolvePending = async function(pendingId, resolution) {
-  if(!confirm(`Adakah anda pasti untuk ${resolution} data ini?`)) return;
-  
-  const res = await apiRequest({ 
-    action: 'resolvePending', 
-    pendingId: pendingId, 
-    resolution: resolution 
-  });
-  
-  if (res.status === 'success') {
-    fetchPendingData(); // Refresh list
-    fetchTreeData();    // Refresh Map
-  } else {
-    alert(res.message);
-  }
-};
-
-// --- UTILS ---
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = error => reject(error);
-  });
-}
+/* ---------- Boot ---------- */
+window.addEventListener("DOMContentLoaded",()=>{
+  initPanzoom(); updateUserUI();
+  if(State.gasUrl) refresh();
+  else { $("#tree-root").innerHTML='<div class="text-center mt-32"><p class="text-slate-300">Tetapkan URL Google Apps Script untuk mula.</p><button onclick="document.getElementById(\'btn-settings\').click()" class="btn btn-primary mt-3">Buka Tetapan</button></div>'; }
+});
