@@ -148,30 +148,44 @@ const ACTIONS = {
     updateUserField_(u.row, "token", token);
     return { username: u.username, role: u.role || "ahli", no: u.no, token, photo: u.photo, isMaster:false };
   },
-  getTree() {
-    const rows = readSheet_(SHEET_TREE);
-    const notes = readSheet_(SHEET_NOTES).map(n=>({
-      ...n,
-      x: Number(n.x)||0, y: Number(n.y)||0,
-      size: Number(n.size)||16,
-      pinned: n.pinned===true||n.pinned==="TRUE"||n.pinned==="true"||n.pinned===1,
-      pending: n.pending===true||n.pending==="TRUE"||n.pending==="true"||n.pending===1,
-    }));
-    // Senarai pengguna ringkas — untuk auto-link kotak salasilah dengan pengguna berdaftar
+  getTree(_, auth) {
+    const nodeRows = readSheet_(SHEET_TREE);
+    const noteRows = readSheet_(SHEET_NOTES);
+    const pendingRows = readSheet_(SHEET_PENDING).map(p=>({ ...p, payloadObj: parseJsonSafe_(p.payload, {}) }));
+    const canSeePending = !!auth;
+    const pendingNodeAdds = new Set(pendingRows.filter(p=>p.action === "add").map(p=>String(p.targetId||"")));
+    const pendingNoteAdds = new Set(pendingRows.filter(p=>p.action === "note-add").map(p=>String(p.targetId||"")));
+    const nodePendingMap = {};
+    const notePendingMap = {};
+    pendingRows.forEach(it=>{
+      const key = String(it.targetId || "");
+      if (!key) return;
+      const bucket = String(it.action||"").indexOf("note") === 0 ? notePendingMap : nodePendingMap;
+      (bucket[key] = bucket[key] || []).push(it);
+    });
+
+    let nodes = nodeRows.map(normalizeNodeClient_);
+    let notes = noteRows.map(normalizeNoteClient_);
+
+    if (canSeePending) {
+      nodes = nodes.map(n=>applyPendingPreviewToNode_(n, nodePendingMap[String(n.id)] || []));
+      notes = notes.map(n=>applyPendingPreviewToNote_(n, notePendingMap[String(n.id)] || []));
+    } else {
+      nodes = nodes
+        .filter(n=>!pendingNodeAdds.has(String(n.id)))
+        .map(n=>({ ...n, pending:false, pendingDelete:false, pendingItems:[] }));
+      notes = notes
+        .filter(n=>!pendingNoteAdds.has(String(n.id)))
+        .map(n=>({ ...n, pending:false, pendingDelete:false, pendingItems:[] }));
+    }
+
     const users = readSheet_(SHEET_USERS).map(u=>({
       username: u.username, fullname: u.fullname||"", role: u.role||"ahli",
       fatherName: u.fatherName||"", motherName: u.motherName||"",
       photo: u.photo||"",
     }));
-    return { nodes: rows.map(r => {
-      let spouses = [];
-      if (r.spousesJson) { try { spouses = JSON.parse(r.spousesJson)||[]; } catch(e){} }
-      else if (r.spouseName) spouses = [{name:r.spouseName, photo:r.spousePhoto||"", status:"hidup", order:1, death:""}];
-      return { ...r, spouses,
-        pending: !!r.pending,
-        hanging: r.hanging===true||r.hanging==="TRUE"||r.hanging==="true"||r.hanging===1,
-      };
-    }), notes, users };
+
+    return { nodes, notes, users };
   },
   initRoot(p, auth) {
     requireAdmin_(auth);
@@ -371,33 +385,20 @@ const ACTIONS = {
   },
   moderate(p, auth) {
     requireAdmin_(auth);
-    const rows = readSheet_(SHEET_PENDING);
-    const item = rows.find(r => r.id === p.id);
-    if (!item) throw new Error("Item tidak dijumpai");
-    if (p.decision === "approve") {
-      const data = JSON.parse(item.payload);
-      if (item.action === "edit") { applyNodeUpdate_(data, data.photoUrl, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
-      else if (item.action === "spouse") { addSpouse_(item.targetId, data, data.photoUrl, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
-      else if (item.action === "spouse-edit") { applySpouseEdit_(item.targetId, Number(data.order), { name:data.name, nickname:data.nickname||"", gender:data.gender||"", status:data.status, birth:data.birth||"", death:data.death||"", birthplace:data.birthplace||"", deathplace:data.deathplace||"", notes:data.notes||"", newOrder:Number(data.newOrder)||Number(data.order), photo:data.photoUrl }, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
-      else if (item.action === "spouse-delete") { applySpouseDelete_(item.targetId, Number(data.order), auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
-      else if (item.action === "add") { markNodePending_(item.targetId, false); stampEdit_(item.targetId, auth); stampApprove_(item.targetId, auth); }
-      else if (item.action === "delete") { deleteRowById_(SHEET_TREE, item.targetId); }
-      else if (item.action === "note-add") { markNotePending_(item.targetId, false); stampNoteApprove_(item.targetId, auth); }
-      else if (item.action === "note-edit") { applyNoteUpdate_(item.targetId, data, auth); markNotePending_(item.targetId, false); stampNoteApprove_(item.targetId, auth); }
-      else if (item.action === "note-delete") { deleteRowById_(SHEET_NOTES, item.targetId); }
-    } else {
-      if (item.action === "add") { deleteRowById_(SHEET_TREE, item.targetId); }
-      else if (item.action === "note-add") { deleteRowById_(SHEET_NOTES, item.targetId); }
-      else {
-        const others = rows.filter(r=>r.id!==item.id && r.targetId===item.targetId);
-        if (others.length===0) {
-          if (item.action.indexOf("note")===0) markNotePending_(item.targetId, false);
-          else markNodePending_(item.targetId, false);
-        }
-      }
-    }
-    deleteRowById_(SHEET_PENDING, p.id);
+    resolvePendingById_(p.id, p.decision, auth);
     return { ok: true };
+  },
+  moderateTarget(p, auth) {
+    requireAdmin_(auth);
+    if (!p.targetId) throw new Error("Target diperlukan");
+    const isNote = String(p.targetType||"").toLowerCase() === "note";
+    const rows = readSheet_(SHEET_PENDING)
+      .filter(r => String(r.targetId) === String(p.targetId))
+      .filter(r => isNote ? String(r.action||"").indexOf("note") === 0 : String(r.action||"").indexOf("note") !== 0)
+      .sort((a,b)=>(a._row||0)-(b._row||0));
+    if (!rows.length) throw new Error("Tiada perubahan belum disahkan untuk item ini");
+    rows.forEach(r=>resolvePendingById_(r.id, p.decision || "approve", auth));
+    return { ok:true, count: rows.length };
   },
   setRole(p, auth) {
     requireMaster_(auth);
@@ -421,6 +422,151 @@ const ACTIONS = {
     return { ok:true };
   }
 };
+
+function toBool_(v){
+  return v === true || v === "TRUE" || v === "true" || v === 1;
+}
+function parseJsonSafe_(text, fallback){
+  try { return text ? JSON.parse(text) : fallback; }
+  catch (e) { return fallback; }
+}
+function normalizeNodeClient_(r){
+  let spouses = [];
+  if (r.spousesJson) spouses = parseJsonSafe_(r.spousesJson, []) || [];
+  else if (r.spouseName) spouses = [{name:r.spouseName, photo:r.spousePhoto||"", status:"hidup", order:1, death:""}];
+  return {
+    ...r,
+    spouses: Array.isArray(spouses) ? spouses : [],
+    pending: toBool_(r.pending),
+    hanging: toBool_(r.hanging),
+    pendingDelete: false,
+    pendingItems: [],
+  };
+}
+function normalizeNoteClient_(n){
+  return {
+    ...n,
+    x: Number(n.x)||0,
+    y: Number(n.y)||0,
+    size: Number(n.size)||16,
+    pinned: toBool_(n.pinned),
+    pending: toBool_(n.pending),
+    pendingDelete: false,
+    pendingItems: [],
+  };
+}
+function safePendingItem_(item){
+  return {
+    id: item.id,
+    action: item.action,
+    by: item.by,
+    summary: item.summary,
+    createdAt: item.createdAt,
+  };
+}
+function applyPendingPreviewToNode_(node, items){
+  if (!items.length) return { ...node, pending: toBool_(node.pending), pendingDelete:false, pendingItems:[] };
+  const out = { ...node, spouses: (node.spouses||[]).map(s=>({ ...s })) };
+  const sorted = items.slice().sort((a,b)=>new Date(a.createdAt||0).getTime()-new Date(b.createdAt||0).getTime());
+  sorted.forEach(item=>{
+    const p = item.payloadObj || {};
+    if (item.action === "edit") {
+      ["name","nickname","gender","status","birth","death","birthplace","deathplace","notes","spouseIndex"].forEach(k=>{
+        if (Object.prototype.hasOwnProperty.call(p, k)) out[k] = p[k];
+      });
+      if (p.photoUrl) out.photo = p.photoUrl;
+    } else if (item.action === "spouse") {
+      let order = Number(p.spouseOrder) > 0 ? Number(p.spouseOrder) : (out.spouses.length + 1);
+      const taken = {};
+      out.spouses.forEach(s=>{ if (s.order) taken[Number(s.order)] = true; });
+      while (taken[order]) order++;
+      out.spouses.push({
+        name: p.name || "",
+        nickname: p.nickname || "",
+        gender: p.gender || "",
+        birth: p.birth || "",
+        birthplace: p.birthplace || "",
+        photo: p.photoUrl || "",
+        status: p.spouseStatus || "hidup",
+        death: p.spouseDeath || "",
+        deathplace: p.deathplace || "",
+        notes: p.notes || "",
+        order: order,
+      });
+      out.spouses.sort((a,b)=>(a.order||99)-(b.order||99));
+    } else if (item.action === "spouse-edit") {
+      const idx = out.spouses.findIndex(s=>Number(s.order||0) === Number(p.order||0));
+      if (idx >= 0) {
+        ["name","nickname","gender","status","birth","death","birthplace","deathplace","notes"].forEach(k=>{
+          if (Object.prototype.hasOwnProperty.call(p, k)) out.spouses[idx][k] = p[k];
+        });
+        if (p.photoUrl) out.spouses[idx].photo = p.photoUrl;
+        if (Number(p.newOrder) > 0 && Number(p.newOrder) !== Number(p.order)) {
+          const taken = {};
+          out.spouses.forEach((s,i)=>{ if (i !== idx && s.order) taken[Number(s.order)] = true; });
+          let nextOrder = Number(p.newOrder);
+          while (taken[nextOrder]) nextOrder++;
+          out.spouses[idx].order = nextOrder;
+        }
+        out.spouses.sort((a,b)=>(a.order||99)-(b.order||99));
+      }
+    } else if (item.action === "spouse-delete") {
+      out.spouses = out.spouses.filter(s=>Number(s.order||0) !== Number(p.order||0));
+    } else if (item.action === "delete") {
+      out.pendingDelete = true;
+    }
+  });
+  out.pending = true;
+  out.pendingItems = sorted.map(safePendingItem_);
+  return out;
+}
+function applyPendingPreviewToNote_(note, items){
+  if (!items.length) return { ...note, pending: toBool_(note.pending), pendingDelete:false, pendingItems:[] };
+  const out = { ...note };
+  const sorted = items.slice().sort((a,b)=>new Date(a.createdAt||0).getTime()-new Date(b.createdAt||0).getTime());
+  sorted.forEach(item=>{
+    const p = item.payloadObj || {};
+    if (item.action === "note-edit") {
+      ["text","x","y","font","size","color"].forEach(k=>{
+        if (Object.prototype.hasOwnProperty.call(p, k)) out[k] = p[k];
+      });
+      if (Object.prototype.hasOwnProperty.call(p, "pinned")) out.pinned = !!p.pinned;
+    } else if (item.action === "note-delete") {
+      out.pendingDelete = true;
+    }
+  });
+  out.pending = true;
+  out.pendingItems = sorted.map(safePendingItem_);
+  return out;
+}
+function resolvePendingById_(pendingId, decision, auth) {
+  const rows = readSheet_(SHEET_PENDING);
+  const item = rows.find(r => r.id === pendingId);
+  if (!item) throw new Error("Item tidak dijumpai");
+  const data = parseJsonSafe_(item.payload, {});
+  if (decision === "approve") {
+    if (item.action === "edit") { applyNodeUpdate_(data, data.photoUrl, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
+    else if (item.action === "spouse") { addSpouse_(item.targetId, data, data.photoUrl, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
+    else if (item.action === "spouse-edit") { applySpouseEdit_(item.targetId, Number(data.order), { name:data.name, nickname:data.nickname||"", gender:data.gender||"", status:data.status, birth:data.birth||"", death:data.death||"", birthplace:data.birthplace||"", deathplace:data.deathplace||"", notes:data.notes||"", newOrder:Number(data.newOrder)||Number(data.order), photo:data.photoUrl }, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
+    else if (item.action === "spouse-delete") { applySpouseDelete_(item.targetId, Number(data.order), auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
+    else if (item.action === "add") { markNodePending_(item.targetId, false); stampEdit_(item.targetId, auth); stampApprove_(item.targetId, auth); }
+    else if (item.action === "delete") { deleteRowById_(SHEET_TREE, item.targetId); }
+    else if (item.action === "note-add") { markNotePending_(item.targetId, false); stampNoteApprove_(item.targetId, auth); }
+    else if (item.action === "note-edit") { applyNoteUpdate_(item.targetId, data, auth); markNotePending_(item.targetId, false); stampNoteApprove_(item.targetId, auth); }
+    else if (item.action === "note-delete") { deleteRowById_(SHEET_NOTES, item.targetId); }
+  } else {
+    if (item.action === "add") { deleteRowById_(SHEET_TREE, item.targetId); }
+    else if (item.action === "note-add") { deleteRowById_(SHEET_NOTES, item.targetId); }
+    else {
+      const others = rows.filter(r=>r.id!==item.id && r.targetId===item.targetId);
+      if (others.length===0) {
+        if (String(item.action||"").indexOf("note")===0) markNotePending_(item.targetId, false);
+        else markNodePending_(item.targetId, false);
+      }
+    }
+  }
+  deleteRowById_(SHEET_PENDING, item.id);
+}
 
 /* ============ SPOUSE LOGIC ============ */
 function validateSpouseRule_(parentId, p){

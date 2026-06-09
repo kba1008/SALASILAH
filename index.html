@@ -83,6 +83,7 @@
     -webkit-backdrop-filter:blur(22px) saturate(160%);
     border:1px solid rgba(255,255,255,.28);
     box-shadow: 0 12px 40px -12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35);
+    color:var(--ink);
   }
 
   /* === NODE (kad ahli) — Liquid Glass 3D === */
@@ -114,7 +115,22 @@
       0 28px 50px -20px rgba(0,0,0,.55),
       0 10px 24px -10px color-mix(in oklab, var(--gold) 60%, transparent),
       inset 0 1px 0 rgba(255,255,255,.55);}
-  .node.pending{border-color:#e85d3a;box-shadow:0 0 0 2px rgba(232,93,58,.25), 0 18px 40px -16px rgba(232,93,58,.35);}
+  .node.pending,
+  .node.pending.is-user,
+  .node.pending.is-admin,
+  .node.pending.root,
+  .node.pending.hanging{
+    background:
+      linear-gradient(160deg, rgba(255,255,255,.32), rgba(255,255,255,.08) 60%),
+      linear-gradient(160deg, #e5e7eb, #cbd5e1);
+    border-color:#64748b;
+    box-shadow:
+      0 0 0 2px rgba(100,116,139,.22),
+      0 20px 40px -18px rgba(71,85,105,.34),
+      inset 0 1px 0 rgba(255,255,255,.62);
+  }
+  .node.pending .name{color:#1f2937;text-shadow:0 1px 0 rgba(255,255,255,.35);}
+  .node.pending .meta{color:#475569;font-weight:600;}
   .node.root{
     border-color:var(--gold-dark);
     background:
@@ -215,7 +231,11 @@
     user-select:none;
   }
   .map-note:hover{ box-shadow:0 8px 22px -6px rgba(120,80,10,.55); transform:translateY(-1px); }
-  .map-note.pending{ border-color:#c0392b; background:rgba(255,235,235,.92); }
+  .map-note.pending{
+    border-color:#64748b;
+    background:rgba(226,232,240,.95);
+    color:#1f2937 !important;
+  }
   .map-note.pinned{ border-style:double; border-width:3px; }
   .note-pin, .note-pending{
     display:inline-block; margin-left:6px; font-size:0.8em;
@@ -229,8 +249,22 @@
     width:64px;height:64px;border-radius:50%;object-fit:cover;
     border:2px solid var(--line-soft);margin-bottom:6px;background:#fff8e3;
   }
-  .node .name{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:15px;text-align:center;line-height:1.15;color:var(--ink);}
-  .node .meta{font-size:10px;color:var(--ink-soft);margin-top:3px;letter-spacing:.02em;}
+  .node .name{
+    font-family:'Cormorant Garamond',serif;
+    font-weight:700;
+    font-size:15px;
+    text-align:center;
+    line-height:1.15;
+    color:var(--ink);
+    text-shadow:0 1px 0 rgba(255,255,255,.28);
+  }
+  .node .meta{
+    font-size:10px;
+    color:var(--ink-soft);
+    margin-top:3px;
+    letter-spacing:.02em;
+    font-weight:600;
+  }
 
   /* === COUPLE (suami + isteri) === */
   .couple{
@@ -519,11 +553,11 @@
     </div>
     <hr style="border-color:var(--line-soft)"/>
     <div class="text-[11px] space-y-1" style="color:var(--ink-soft)">
-      <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid #c0392b;background:#fde2e2"></span> Memerlukan kelulusan admin</div>
+      <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid #64748b;background:#dbe3ee"></span> Belum disahkan admin</div>
       <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid var(--gold-dark);background:#fff4cd"></span> Node induk (Root)</div>
     </div>
     <hr style="border-color:var(--line-soft)"/>
-    <p class="text-xs" style="color:var(--ink-soft)">Versi 2.6 — pelbagai pasangan + urutan, status bercerai, anak ikut ibu, nota peta dengan font/saiz/warna + pin, kelulusan admin penuh.</p>
+    <p class="text-xs" style="color:var(--ink-soft)">Versi 2.7 — mod pelawat hanya lihat data disahkan, pratonton perubahan pending untuk ahli/admin, kotak pending kelabu, dan pengesahan terus dari profil admin.</p>
     <div class="flex gap-2">
       <button onclick="closeModal('modal-settings')" class="btn btn-primary flex-1">Tutup</button>
     </div>

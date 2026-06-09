@@ -269,14 +269,18 @@ function card(n){
   d.innerHTML = `${badges?`<div class="node-badges">${badges}</div>`:""}
     <img src="${fixPhoto(n.photo)||fixPhoto(linked?.photo)||placeholder(n.gender)}" alt="" onerror="this.src='${placeholder(n.gender)}'"/>
     <div class="name" dir="auto">${escape(n.name)}</div>
-    <div class="meta">#${n.no||"-"} ${n.birth||""}${n.death?" – "+n.death:""}</div>`;
+    <div class="meta">#${n.no||"-"} ${n.birth||""}${n.death?" – "+n.death:""}</div>
+    ${n.pending?'<div class="meta" style="font-weight:700">Belum disahkan admin</div>':''}`;
   d.addEventListener("click",e=>{
     e.stopPropagation();
-    // Mod reparent: klik node mana-mana untuk jadikan parent baharu
     if(State.reparentMode){
       const targetId = State.reparentMode.nodeId;
       if(targetId === n.id){ toast("Tidak boleh pilih diri sendiri"); return; }
       doReparent(targetId, n.id);
+      return;
+    }
+    if(State.user?.role === "admin" && n.pending){
+      viewProfile(n);
       return;
     }
     showCtx(e.clientX,e.clientY,n);
@@ -345,6 +349,20 @@ function fmtDateTime(v){
   if(!v) return "";
   try{ const d=new Date(v); if(isNaN(d.getTime())) return String(v); return d.toLocaleString("ms-MY"); }catch(e){ return String(v); }
 }
+function pendingActionLabel(action){
+  const map = {
+    add:"Ahli baharu",
+    edit:"Kemaskini profil",
+    delete:"Permintaan padam",
+    spouse:"Pasangan baharu",
+    "spouse-edit":"Kemaskini pasangan",
+    "spouse-delete":"Padam pasangan",
+    "note-add":"Nota baharu",
+    "note-edit":"Kemaskini nota",
+    "note-delete":"Padam nota",
+  };
+  return map[action] || action || "Perubahan";
+}
 function viewProfile(n){
   const sp = getSpouses(n);
   const photo = fixPhoto(n.photo) || placeholder(n.gender);
@@ -352,13 +370,15 @@ function viewProfile(n){
   const editedAt = fmtDateTime(n.lastEditAt || n.createdAt);
   const approvedBy = n.approvedBy || "";
   const approvedAt = fmtDateTime(n.approvedAt);
+  const pendingItems = Array.isArray(n.pendingItems) ? n.pendingItems : [];
+  const canApprove = State.user?.role === "admin" && pendingItems.length;
   $("#profile-body").innerHTML = `
     <div class="flex flex-col items-center mb-4">
       <img src="${photo}" onerror="this.src='${placeholder(n.gender)}'" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--gold)"/>
       <h2 class="text-2xl font-bold text-center serif" dir="auto">${escape(n.name)}</h2>
       ${n.nickname?`<p class="text-sm serif italic" dir="auto" style="color:var(--gold-dark)">"${escape(n.nickname)}"</p>`:""}
       <p class="text-xs" style="color:var(--ink-soft)">#${n.no||"-"} • ${n.gender==='P'?'Perempuan':'Lelaki'} • ${n.status==='mati'?'Almarhum':'Hidup'}</p>
-      ${n.pending?'<p class="text-[11px] mt-1 font-semibold" style="color:#c0392b">⏳ Menunggu kelulusan admin</p>':''}
+      ${n.pending?'<p class="text-[11px] mt-1 font-semibold" style="color:#475569">● Belum disahkan admin</p>':''}
     </div>
     <div class="space-y-2 text-sm" dir="auto">
       ${rowField("Tahun Lahir", n.birth)}
@@ -373,15 +393,28 @@ function viewProfile(n){
       <div class="font-semibold serif" style="color:var(--gold-dark);font-size:12px">📜 Log Pengesahan</div>
       <div>📝 Terakhir dikemaskini oleh: <b style="color:var(--ink)">${escape(editedBy||"—")}</b></div>
       ${editedAt?`<div>🕒 ${escape(editedAt)}</div>`:""}
-      ${approvedBy?`<div>✅ Disahkan oleh admin: <b style="color:#1e7a3b">${escape(approvedBy)}</b>${approvedAt?` • ${escape(approvedAt)}`:""}</div>`:(n.pending?'<div style="color:#c0392b">⏳ Belum disahkan</div>':'')}
+      ${approvedBy?`<div>✅ Disahkan oleh admin: <b style="color:#1e7a3b">${escape(approvedBy)}</b>${approvedAt?` • ${escape(approvedAt)}`:""}</div>`:(n.pending?'<div style="color:#475569">● Menunggu pengesahan</div>':'')}
       ${n.createdBy && n.createdBy!==editedBy?`<div>👤 Dicipta oleh: ${escape(n.createdBy)}</div>`:""}
     </div>
+    ${pendingItems.length?`
+      <div class="mt-4 pt-3 border-t text-[11px] flex flex-col gap-2" style="border-color:var(--line-soft);color:var(--ink-soft)">
+        <div class="font-semibold serif" style="color:#475569;font-size:12px">🩶 Perubahan belum disahkan</div>
+        ${pendingItems.map(it=>`<div class="rounded-lg px-3 py-2" style="background:rgba(148,163,184,.14);border:1px solid rgba(100,116,139,.28)">
+          <div style="color:var(--ink)"><b>${escape(pendingActionLabel(it.action))}</b> • ${escape(it.summary||"Perubahan baharu")}</div>
+          <div class="mt-1">Dihantar oleh <b style="color:var(--ink)">${escape(it.by||"-")}</b>${it.createdAt?` • ${escape(fmtDateTime(it.createdAt))}`:""}</div>
+        </div>`).join("")}
+        ${n.pendingDelete?'<div style="color:#8b1e1e;font-weight:700">⚠ Profil ini mempunyai permintaan padam yang masih menunggu keputusan admin.</div>':''}
+      </div>`:""}
     ${!State.user?'<p class="text-[11px] mt-3 text-center" style="color:var(--ink-soft)">Mod pelawat — lihat sahaja.</p>':`
       <div class="flex gap-2 mt-4">
         <button class="btn btn-primary flex-1" id="profile-edit-btn">✎ Edit Maklumat</button>
         <button class="btn btn-ghost flex-1" id="profile-addchild-btn">➕ Tambah Anak</button>
         <button class="btn btn-ghost flex-1" id="profile-addspouse-btn">💍 Tambah Pasangan</button>
       </div>
+      ${canApprove?`<div class="flex gap-2 mt-3">
+        <button class="btn btn-primary flex-1" id="profile-approve-btn">✓ Sahkan Data Ini</button>
+        <button class="btn btn-ghost flex-1" id="profile-reject-btn" style="color:#8b1e1e">✕ Tolak Perubahan</button>
+      </div>`:''}
     `}
   `;
   openModal("modal-profile");
@@ -392,6 +425,10 @@ function viewProfile(n){
     if(ab) ab.onclick = ()=>{ closeModal("modal-profile"); openNodeEditor(null, n.id, "child", n); };
     const sb = document.getElementById("profile-addspouse-btn");
     if(sb) sb.onclick = ()=>{ closeModal("modal-profile"); openSpouseEditor(n); };
+    const ap = document.getElementById("profile-approve-btn");
+    if(ap) ap.onclick = ()=>moderateTarget(n.id, "node", "approve");
+    const rp = document.getElementById("profile-reject-btn");
+    if(rp) rp.onclick = ()=>moderateTarget(n.id, "node", "reject");
   }
 }
 function rowField(label,val){
@@ -437,6 +474,20 @@ async function deleteSpouseEntry(parent, sp){
     closeModal("modal-profile");
     await refresh();
   }catch(e){ showError(e,{title:"Gagal padam pasangan",context:"deleteSpouse"}); }
+}
+
+async function moderateTarget(targetId, targetType, decision="approve"){
+  const isReject = decision === "reject";
+  if(isReject && !confirm("Tolak semua perubahan belum disahkan untuk profil ini?")) return;
+  try{
+    await api("moderateTarget", { targetId, targetType, decision });
+    showInfo(isReject ? "Perubahan ditolak" : "Data berjaya disahkan");
+    closeModal("modal-profile");
+    if(State.user?.role === "admin") loadAdmin();
+    await refresh();
+  }catch(err){
+    showError(err,{title:isReject?"Gagal tolak perubahan":"Gagal sahkan data",context:"moderateTarget"});
+  }
 }
 
 /* ---------- Node Editor ---------- */
