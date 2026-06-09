@@ -1,5 +1,5 @@
 /**
- * SALASILAH KELUARGA ELIT — Google Apps Script Backend v2.5
+ * SALASILAH KELUARGA ELIT — Apps Script Backend v2.6
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
  *   Execute as: Me   |   Access: Anyone
  * Pertama kali: Jalankan INITIALIZE_SYSTEM() secara manual sekali.
@@ -8,15 +8,17 @@
 const SHEET_USERS   = "PENGGUNA";
 const SHEET_TREE    = "SALASILAH";
 const SHEET_PENDING = "PENDING";
+const SHEET_NOTES   = "NOTA";
 const DRIVE_FOLDER  = "SalasilahImages";
 
 const MASTER_USER = "admin";
 const MASTER_PASS = "101010";
 
-// Skema v2.5: tambah approvedBy, approvedAt pada TREE
-const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","photo","notes","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
-// Skema v2.5: tambah fatherName, motherName, banned pada PENGGUNA
+// v2.6: spouseIndex (anak dari pasangan keberapa)
+const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","photo","notes","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned"];
+// v2.6: NOTA pada map
+const NOTE_HEADERS = ["id","text","x","y","font","size","color","pinned","pending","createdBy","createdAt","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 
 /* ============ INIT ============ */
 function INITIALIZE_SYSTEM() {
@@ -24,8 +26,10 @@ function INITIALIZE_SYSTEM() {
   ensureSheet_(ss, SHEET_USERS,   USER_HEADERS);
   ensureSheet_(ss, SHEET_TREE,    TREE_HEADERS);
   ensureSheet_(ss, SHEET_PENDING, ["id","action","targetId","payload","by","summary","createdAt"]);
+  ensureSheet_(ss, SHEET_NOTES,   NOTE_HEADERS);
   migrateHeaders_(SHEET_TREE, TREE_HEADERS);
   migrateHeaders_(SHEET_USERS, USER_HEADERS);
+  migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
   ensureFolder_();
   const users = ss.getSheetByName(SHEET_USERS);
   if (users.getLastRow() < 2) {
@@ -69,17 +73,18 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.5"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.6"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
 function ensureInit_() {
   const ss = SpreadsheetApp.getActive();
-  if (!ss.getSheetByName(SHEET_USERS) || !ss.getSheetByName(SHEET_TREE) || !ss.getSheetByName(SHEET_PENDING)) {
+  if (!ss.getSheetByName(SHEET_USERS) || !ss.getSheetByName(SHEET_TREE) || !ss.getSheetByName(SHEET_PENDING) || !ss.getSheetByName(SHEET_NOTES)) {
     INITIALIZE_SYSTEM();
     return;
   }
   migrateHeaders_(SHEET_TREE, TREE_HEADERS);
   migrateHeaders_(SHEET_USERS, USER_HEADERS);
+  migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
   const u = findUserBy_("username", MASTER_USER);
   if (!u) {
     appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date() });
@@ -145,12 +150,19 @@ const ACTIONS = {
   },
   getTree() {
     const rows = readSheet_(SHEET_TREE);
+    const notes = readSheet_(SHEET_NOTES).map(n=>({
+      ...n,
+      x: Number(n.x)||0, y: Number(n.y)||0,
+      size: Number(n.size)||16,
+      pinned: n.pinned===true||n.pinned==="TRUE"||n.pinned==="true"||n.pinned===1,
+      pending: n.pending===true||n.pending==="TRUE"||n.pending==="true"||n.pending===1,
+    }));
     return { nodes: rows.map(r => {
       let spouses = [];
       if (r.spousesJson) { try { spouses = JSON.parse(r.spousesJson)||[]; } catch(e){} }
-      else if (r.spouseName) spouses = [{name:r.spouseName, photo:r.spousePhoto||"", status:"hidup", death:""}];
+      else if (r.spouseName) spouses = [{name:r.spouseName, photo:r.spousePhoto||"", status:"hidup", order:1, death:""}];
       return { ...r, spouses, pending: !!r.pending };
-    })};
+    }), notes };
   },
   initRoot(p, auth) {
     requireAdmin_(auth);
@@ -166,9 +178,9 @@ const ACTIONS = {
     const photoUrl = p.photo ? saveImage_(p.photo, "node_"+Date.now()) : null;
 
     if (p.relation === "spouse" && p.parentId) {
-      validateSpouseRule_(p.parentId);
+      validateSpouseRule_(p.parentId, p);
       if (isAdmin) { addSpouse_(p.parentId, p, photoUrl, auth); stampApprove_(p.parentId, auth); return { ok: true }; }
-      addPending_({ action: "spouse", targetId: p.parentId, payload: { ...p, photoUrl }, by: auth.username, summary: "Pasangan: "+(p.name||"") });
+      addPending_({ action: "spouse", targetId: p.parentId, payload: { ...p, photoUrl }, by: auth.username, summary: "Pasangan ke-"+(p.spouseOrder||"?")+": "+(p.name||"") });
       markNodePending_(p.parentId, true);
       return { pending: true };
     }
@@ -204,6 +216,65 @@ const ACTIONS = {
     markNodePending_(p.id, true);
     return { pending: true };
   },
+
+  /* ===== NOTA pada map ===== */
+  saveNote(p, auth) {
+    requireAuth_(auth);
+    const isAdmin = auth.role === "admin";
+    const data = {
+      text: String(p.text||"").slice(0,500),
+      x: Number(p.x)||0, y: Number(p.y)||0,
+      font: p.font||"Cormorant Garamond",
+      size: Math.max(8, Math.min(72, Number(p.size)||16)),
+      color: p.color||"#3b2a14",
+      pinned: !!p.pinned,
+    };
+    if (p.id) {
+      // edit nota sedia ada
+      const existing = readSheet_(SHEET_NOTES).find(n=>String(n.id)===String(p.id));
+      if (!existing) throw new Error("Nota tidak dijumpai");
+      const isOwner = existing.createdBy === auth.username;
+      const wasPinned = existing.pinned===true||existing.pinned==="TRUE"||existing.pinned==="true";
+      if (wasPinned && !isAdmin) throw new Error("Nota ini telah dipin oleh admin — tidak boleh diubah.");
+      if (isAdmin) {
+        applyNoteUpdate_(p.id, data, auth);
+        markNotePending_(p.id, false);
+        stampNoteApprove_(p.id, auth);
+        return { ok:true };
+      }
+      if (!isOwner) throw new Error("Hanya pemilik atau admin yang boleh edit nota ini.");
+      addPending_({ action:"note-edit", targetId:p.id, payload:{ ...data, id:p.id }, by:auth.username, summary:"Edit nota: "+data.text.slice(0,40) });
+      markNotePending_(p.id, true);
+      return { pending:true };
+    }
+    // nota baharu
+    const id = Utilities.getUuid();
+    appendNoteRow_({ id, ...data, pending: !isAdmin, createdBy: auth.username, createdAt: new Date(), lastEditBy: auth.username, lastEditAt: new Date(), approvedBy: isAdmin?auth.username:"", approvedAt: isAdmin?new Date():"" });
+    if (!isAdmin) {
+      addPending_({ action:"note-add", targetId:id, payload:{ id }, by:auth.username, summary:"Nota baharu: "+data.text.slice(0,40) });
+      return { pending:true, id };
+    }
+    return { ok:true, id };
+  },
+  deleteNote(p, auth) {
+    requireAuth_(auth);
+    const isAdmin = auth.role === "admin";
+    const existing = readSheet_(SHEET_NOTES).find(n=>String(n.id)===String(p.id));
+    if (!existing) throw new Error("Nota tidak dijumpai");
+    const wasPinned = existing.pinned===true||existing.pinned==="TRUE"||existing.pinned==="true";
+    if (wasPinned && !isAdmin) throw new Error("Nota ini dipin oleh admin — tidak boleh dipadam.");
+    if (isAdmin) {
+      deleteRowById_(SHEET_NOTES, p.id);
+      const pend = readSheet_(SHEET_PENDING).filter(x=>x.targetId===p.id);
+      pend.forEach(x=>deleteRowById_(SHEET_PENDING, x.id));
+      return { ok:true };
+    }
+    if (existing.createdBy !== auth.username) throw new Error("Hanya pemilik atau admin yang boleh padam nota ini.");
+    addPending_({ action:"note-delete", targetId:p.id, payload:{ id:p.id }, by:auth.username, summary:"Padam nota: "+String(existing.text||"").slice(0,40) });
+    markNotePending_(p.id, true);
+    return { pending:true };
+  },
+
   adminData(_, auth) {
     requireAdmin_(auth);
     const usersAll = readSheet_(SHEET_USERS);
@@ -234,17 +305,23 @@ const ACTIONS = {
       else if (item.action === "spouse") { addSpouse_(item.targetId, data, data.photoUrl, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
       else if (item.action === "add") { markNodePending_(item.targetId, false); stampEdit_(item.targetId, auth); stampApprove_(item.targetId, auth); }
       else if (item.action === "delete") { deleteRowById_(SHEET_TREE, item.targetId); }
+      else if (item.action === "note-add") { markNotePending_(item.targetId, false); stampNoteApprove_(item.targetId, auth); }
+      else if (item.action === "note-edit") { applyNoteUpdate_(item.targetId, data, auth); markNotePending_(item.targetId, false); stampNoteApprove_(item.targetId, auth); }
+      else if (item.action === "note-delete") { deleteRowById_(SHEET_NOTES, item.targetId); }
     } else {
       if (item.action === "add") { deleteRowById_(SHEET_TREE, item.targetId); }
-      else if (item.action === "edit" || item.action === "spouse" || item.action === "delete") {
+      else if (item.action === "note-add") { deleteRowById_(SHEET_NOTES, item.targetId); }
+      else {
         const others = rows.filter(r=>r.id!==item.id && r.targetId===item.targetId);
-        if (others.length===0) markNodePending_(item.targetId, false);
+        if (others.length===0) {
+          if (item.action.indexOf("note")===0) markNotePending_(item.targetId, false);
+          else markNodePending_(item.targetId, false);
+        }
       }
     }
     deleteRowById_(SHEET_PENDING, p.id);
     return { ok: true };
   },
-  // === Master sahaja: lantik admin ===
   setRole(p, auth) {
     requireMaster_(auth);
     if (!p.username) throw new Error("Username diperlukan");
@@ -255,23 +332,21 @@ const ACTIONS = {
     updateUserField_(u.row, "role", role);
     return { ok:true, username:p.username, role };
   },
-  // === Admin: ban / unban pengguna ===
   setBan(p, auth) {
     requireAdmin_(auth);
     if (!p.username) throw new Error("Username diperlukan");
     if (p.username === MASTER_USER) throw new Error("Master tidak boleh disekat");
     const u = findUserBy_("username", p.username);
     if (!u) throw new Error("Pengguna tidak dijumpai");
-    // Admin biasa tidak boleh ban admin lain — hanya master
     if (u.role === "admin" && auth.username !== MASTER_USER) throw new Error("Hanya Master Admin boleh menyekat admin lain");
     updateUserField_(u.row, "banned", !!p.banned);
-    if (p.banned) updateUserField_(u.row, "token", ""); // paksa keluar
+    if (p.banned) updateUserField_(u.row, "token", "");
     return { ok:true };
   }
 };
 
 /* ============ SPOUSE LOGIC ============ */
-function validateSpouseRule_(parentId){
+function validateSpouseRule_(parentId, p){
   const rows = readSheet_(SHEET_TREE);
   const n = rows.find(r=>r.id===parentId);
   if(!n) throw new Error("Node tidak dijumpai");
@@ -279,9 +354,12 @@ function validateSpouseRule_(parentId){
   if (n.spousesJson) { try { spouses = JSON.parse(n.spousesJson)||[]; } catch(e){} }
   else if (n.spouseName) spouses = [{name:n.spouseName, status:"hidup"}];
   if (spouses.length === 0) return;
-  if (String(n.gender).toUpperCase()==="L") return;
-  const allDead = spouses.every(s => s.status === "mati");
-  if (!allDead) throw new Error("Wanita hanya boleh ada satu suami pada satu masa. Tetapkan status suami terdahulu sebagai 'Almarhum' dahulu.");
+  // Wanita: hanya boleh ada satu suami HIDUP semasa. Boleh tambah jika sebelumnya mati/cerai.
+  if (String(n.gender).toUpperCase()==="P") {
+    const adaHidup = spouses.some(s => s.status !== "mati" && s.status !== "cerai");
+    if (adaHidup) throw new Error("Wanita hanya boleh ada satu suami pada satu masa. Tetapkan suami terdahulu sebagai 'Almarhum' atau 'Bercerai' dahulu.");
+  }
+  // Lelaki: bebas (poligami)
 }
 function addSpouse_(parentId, p, photoUrl, auth){
   const sh = sheet_(SHEET_TREE);
@@ -290,12 +368,15 @@ function addSpouse_(parentId, p, photoUrl, auth){
   if(!n) throw new Error("Node tidak dijumpai");
   let spouses = [];
   if (n.spousesJson) { try { spouses = JSON.parse(n.spousesJson)||[]; } catch(e){} }
-  else if (n.spouseName) spouses = [{name:n.spouseName, photo:n.spousePhoto||"", status:"hidup", death:""}];
+  else if (n.spouseName) spouses = [{name:n.spouseName, photo:n.spousePhoto||"", status:"hidup", order:1, death:""}];
+  const order = Number(p.spouseOrder)>0 ? Number(p.spouseOrder) : (spouses.length+1);
   spouses.push({
     name: p.name, photo: photoUrl || "",
     status: p.spouseStatus || "hidup",
     death: p.spouseDeath || "",
+    order: order,
   });
+  spouses.sort((a,b)=>(a.order||99)-(b.order||99));
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
   sh.getRange(n._row, h.indexOf("spousesJson")+1).setValue(JSON.stringify(spouses));
   sh.getRange(n._row, h.indexOf("spouseName")+1).setValue(spouses.map(s=>s.name).join(" / "));
@@ -338,6 +419,12 @@ function appendNodeRow_(sh, data){
   });
   sh.appendRow(row);
 }
+function appendNoteRow_(data){
+  const sh = sheet_(SHEET_NOTES);
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  const row = h.map(col => data[col] !== undefined ? data[col] : "");
+  sh.appendRow(row);
+}
 function insertNode_(p, photoUrl, auth, pending) {
   const sh = sheet_(SHEET_TREE);
   const id = Utilities.getUuid();
@@ -348,6 +435,7 @@ function insertNode_(p, photoUrl, auth, pending) {
     gender: p.gender||"L", status: p.status||"hidup",
     birth: p.birth||"", death: p.death||"",
     birthplace: p.birthplace||"", deathplace: p.deathplace||"",
+    spouseIndex: p.spouseIndex||"",
     photo: photoUrl||"", notes: p.notes||"",
     createdBy: auth.username,
     pending: !!pending,
@@ -364,7 +452,8 @@ function applyNodeUpdate_(p, photoUrl, auth) {
   const map = {
     name:p.name, nickname:p.nickname, gender:p.gender, status:p.status,
     birth:p.birth, death:p.death, birthplace:p.birthplace, deathplace:p.deathplace,
-    notes:p.notes, lastEditBy: auth.username, lastEditAt: new Date(),
+    notes:p.notes, spouseIndex:p.spouseIndex,
+    lastEditBy: auth.username, lastEditAt: new Date(),
   };
   if (photoUrl) map.photo = photoUrl;
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
@@ -373,6 +462,18 @@ function applyNodeUpdate_(p, photoUrl, auth) {
     if (c <= 0) return;
     if (map[k] === undefined) return;
     sh.getRange(n._row, c).setValue(map[k]);
+  });
+}
+function applyNoteUpdate_(id, data, auth){
+  const sh = sheet_(SHEET_NOTES);
+  const rows = readSheet_(SHEET_NOTES);
+  const n = rows.find(r=>String(r.id)===String(id));
+  if (!n) return;
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  const map = { text:data.text, x:data.x, y:data.y, font:data.font, size:data.size, color:data.color, pinned:!!data.pinned, lastEditBy:auth.username, lastEditAt:new Date() };
+  Object.keys(map).forEach(k=>{
+    const c = h.indexOf(k)+1;
+    if (c>0 && map[k]!==undefined) sh.getRange(n._row,c).setValue(map[k]);
   });
 }
 function stampEdit_(id, auth){
@@ -391,9 +492,24 @@ function stampApprove_(id, auth){
   const cB = h.indexOf("approvedBy")+1; if(cB>0) sh.getRange(n._row,cB).setValue(auth.username);
   const cA = h.indexOf("approvedAt")+1; if(cA>0) sh.getRange(n._row,cA).setValue(new Date());
 }
+function stampNoteApprove_(id, auth){
+  const sh = sheet_(SHEET_NOTES);
+  const rows = readSheet_(SHEET_NOTES);
+  const n = rows.find(r=>String(r.id)===String(id)); if(!n) return;
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  const cB = h.indexOf("approvedBy")+1; if(cB>0) sh.getRange(n._row,cB).setValue(auth.username);
+  const cA = h.indexOf("approvedAt")+1; if(cA>0) sh.getRange(n._row,cA).setValue(new Date());
+}
 function markNodePending_(id, val) {
   const sh = sheet_(SHEET_TREE);
   const rows = readSheet_(SHEET_TREE);
+  const n = rows.find(r=>r.id===id); if(!n) return;
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  sh.getRange(n._row, h.indexOf("pending")+1).setValue(val);
+}
+function markNotePending_(id, val) {
+  const sh = sheet_(SHEET_NOTES);
+  const rows = readSheet_(SHEET_NOTES);
   const n = rows.find(r=>r.id===id); if(!n) return;
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
   sh.getRange(n._row, h.indexOf("pending")+1).setValue(val);

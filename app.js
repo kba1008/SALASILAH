@@ -1,13 +1,15 @@
-/* Salasilah Keluarga Elit — app.js v2.1 */
+/* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyDlDCUnw84cC6RW43f7PNf6Xmdf4m2S9uTpUHK3hChrJFZrDJAJ4bPLh7BRqYDz0zr/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
   nodes: [],
+  notes: [],
   panzoom: null,
   searchResults: [],
   searchIndex: 0,
+  noteAddMode: false,
 };
 
 const $ = (s, r=document) => r.querySelector(s);
@@ -15,8 +17,7 @@ const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2800);}
 
-
-/* ---------- Error Notifier (canggih) ---------- */
+/* ---------- Error Notifier ---------- */
 const ErrUI = {
   stack: null,
   ensure(){ if(!this.stack) this.stack = document.getElementById("err-stack"); return this.stack; },
@@ -45,7 +46,6 @@ const ErrUI = {
       const b = card.querySelector('[data-act="copy"]'); const old=b.textContent; b.textContent="✓ Disalin"; setTimeout(()=>b.textContent=old,1500);
     };
     host.appendChild(card);
-    // Auto-tutup hanya untuk info/warn
     if(level!=="error"){ setTimeout(()=>card.remove(), 6000); }
     return card;
   },
@@ -87,7 +87,6 @@ async function api(action, payload={}){
   catch{ const e=new Error("Respons bukan JSON dari pelayan:\n"+raw.slice(0,400)); e.action=action; throw e; }
   if(!json.ok){
     const e=new Error(json.error||"API error"); e.action=action;
-    // Auto-logout jika akaun disekat atau sesi tamat
     if(/disekat|Sesi tamat/i.test(json.error||"")){
       localStorage.removeItem("user"); State.user=null;
       try{ updateUserUI(); }catch(_){}
@@ -112,51 +111,66 @@ function fixPhoto(url){
 
 /* ---------- Spouses helper ---------- */
 function getSpouses(n){
-  if(Array.isArray(n.spouses) && n.spouses.length) return n.spouses;
-  if(n.spousesJson){
-    try{ const a = JSON.parse(n.spousesJson); if(Array.isArray(a)) return a; }catch(e){}
+  let a=[];
+  if(Array.isArray(n.spouses) && n.spouses.length) a=n.spouses;
+  else if(n.spousesJson){
+    try{ const x = JSON.parse(n.spousesJson); if(Array.isArray(x)) a=x; }catch(e){}
   }
-  if(n.spouseName) return [{name:n.spouseName, photo:n.spousePhoto||"", status:n.spouseStatus||"hidup", death:""}];
-  return [];
+  else if(n.spouseName) a=[{name:n.spouseName, photo:n.spousePhoto||"", status:n.spouseStatus||"hidup", order:1, death:""}];
+  a.forEach((s,i)=>{ if(!s.order) s.order=i+1; });
+  a.sort((x,y)=>(x.order||99)-(y.order||99));
+  return a;
 }
 function canAddSpouse(n){
   const sp = getSpouses(n);
   if(sp.length===0) return true;
-  if(n.gender==="L") return true;
-  return sp.every(s=>s.status==="mati");
+  if(n.gender==="L") return true; // lelaki bebas
+  // wanita: boleh jika semua suami terdahulu mati atau cerai
+  return sp.every(s=>s.status==="mati"||s.status==="cerai");
+}
+function spouseStatusLabel(s){
+  if(s.status==="mati") return "Almarhum"+(s.death?" "+s.death:"");
+  if(s.status==="cerai") return "Bercerai";
+  return "Hidup";
+}
+function spouseOrdinal(n){
+  const map={1:"Pertama",2:"Kedua",3:"Ketiga",4:"Keempat",5:"Kelima",6:"Keenam"};
+  return map[n]||("Ke-"+n);
 }
 
 /* ---------- Render Tree ---------- */
 function buildTree(){
   const root = State.nodes.find(n=>!n.parentId);
   const host = $("#tree-root");
-  if(!root){host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Belum ada data. Admin perlu Init Root.</p>';return;}
+  if(!root){host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Belum ada data. Admin perlu Init Root.</p>';renderNotes();return;}
   host.className=""; host.innerHTML="";
   const ul = document.createElement("ul");
   ul.className="tree";
   ul.appendChild(renderNode(root));
   host.appendChild(ul);
+  renderNotes();
 }
 function renderNode(n){
   const li = document.createElement("li");
   const branch = document.createElement("div");
   branch.className="branch";
 
-  // Couple: person + spouses
   const couple = document.createElement("div");
   couple.className = "couple";
   couple.appendChild(card(n));
-  getSpouses(n).forEach(sp=>{
+  const sps = getSpouses(n);
+  sps.forEach((sp,idx)=>{
     const link = document.createElement("div");
     link.className = "couple-link";
-    link.title = "Pasangan";
+    link.title = "Pasangan "+spouseOrdinal(sp.order||idx+1);
     couple.appendChild(link);
 
     const el = document.createElement("div");
-    el.className = "node spouse";
+    el.className = "node spouse"+(sp.status==="cerai"?" divorced":"")+(sp.status==="mati"?" deceased":"");
+    const stLabel = sp.status==="mati"?"†":(sp.status==="cerai"?"⚊":"");
     el.innerHTML=`<img src="${fixPhoto(sp.photo)||placeholder(n.gender==='L'?'P':'L')}" onerror="this.src='${placeholder(n.gender==='L'?'P':'L')}'"/>
-      <div class="name">${escape(sp.name)}</div>
-      <div class="meta">Pasangan${sp.status==='mati'?' †':''}</div>`;
+      <div class="name" dir="auto">${escape(sp.name)} ${stLabel}</div>
+      <div class="meta">Pasangan ${spouseOrdinal(sp.order||idx+1)} • ${spouseStatusLabel(sp)}</div>`;
     el.addEventListener("click",e=>{e.stopPropagation();showSpouseProfile(n, sp);});
     couple.appendChild(el);
   });
@@ -165,9 +179,33 @@ function renderNode(n){
   li.appendChild(branch);
   const kids = State.nodes.filter(x=>x.parentId===n.id);
   if(kids.length){
+    // kumpul anak ikut spouseIndex jika ada spouses>1
     const cu = document.createElement("ul");
     cu.className="children-row";
-    kids.forEach(k=>cu.appendChild(renderNode(k)));
+    if(sps.length>1){
+      // tunjuk label kumpulan ibu
+      const groups = {};
+      kids.forEach(k=>{ const key = k.spouseIndex || "0"; (groups[key]=groups[key]||[]).push(k); });
+      Object.keys(groups).sort().forEach(key=>{
+        const grpLi = document.createElement("li");
+        grpLi.className="kid-group";
+        const lbl = document.createElement("div");
+        lbl.className = "kid-group-label";
+        if(key==="0") lbl.textContent = "Tidak ditandakan";
+        else {
+          const sp = sps.find(s=>String(s.order)===String(key)) || sps[Number(key)-1];
+          lbl.textContent = sp ? `Anak dengan ${sp.name} (Pasangan ${spouseOrdinal(sp.order||key)})` : `Pasangan ${spouseOrdinal(key)}`;
+        }
+        grpLi.appendChild(lbl);
+        const sub = document.createElement("ul");
+        sub.className = "children-row";
+        groups[key].forEach(k=>sub.appendChild(renderNode(k)));
+        grpLi.appendChild(sub);
+        cu.appendChild(grpLi);
+      });
+    } else {
+      kids.forEach(k=>cu.appendChild(renderNode(k)));
+    }
     li.appendChild(cu);
   }
   return li;
@@ -183,8 +221,6 @@ function card(n){
   return d;
 }
 function placeholder(g){
-  // PENTING: SEMUA petikan ' dalam data URL mesti %27, jika tidak ia akan memecahkan attribute onerror="this.src='...'"
-  // dan menyebabkan SyntaxError "Unexpected identifier 'http'" di browser.
   const c = g==="P" ? "%23b85a72" : "%233b6fa0";
   const sym = g==="P" ? "%E2%99%80" : "%E2%99%82";
   return "data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2064%2064%27%3E%3Crect%20width=%2764%27%20height=%2764%27%20fill=%27"+c+"%27/%3E%3Ctext%20x=%2732%27%20y=%2742%27%20font-size=%2730%27%20text-anchor=%27middle%27%20fill=%27white%27%20font-family=%27serif%27%3E"+sym+"%3C/text%3E%3C/svg%3E";
@@ -200,7 +236,7 @@ function showCtx(x,y,n){
   const items = [
     {l:"👁 Lihat Profil", fn:()=>viewProfile(n)},
     canEdit && {l:"✎ Edit Maklumat", fn:()=>openNodeEditor(n)},
-    canEdit && {l:"➕ Tambah Anak", fn:()=>openNodeEditor(null,n.id,"child")},
+    canEdit && {l:"➕ Tambah Anak", fn:()=>openNodeEditor(null,n.id,"child", n)},
     canEdit && canAddSpouse(n) && {l:"💍 Tambah Pasangan", fn:()=>openSpouseEditor(n)},
     canEdit && {l: isAdmin?"🗑 Padam":"🗑 Pohon Padam", fn:()=>delNode(n)},
   ].filter(Boolean);
@@ -237,7 +273,7 @@ function viewProfile(n){
       ${rowField("Tahun Wafat", n.death)}
       ${rowField("Tempat Wafat", n.deathplace)}
       ${sp.length?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Pasangan (${sp.length})</div>
-        <ul class="space-y-1" dir="auto">${sp.map(s=>`<li>• ${escape(s.name)} ${s.status==='mati'?'<span style="color:var(--ink-soft)">(almarhum'+(s.death?' '+escape(s.death):'')+')</span>':''}</li>`).join("")}</ul></div>`:""}
+        <ul class="space-y-1" dir="auto">${sp.map((s,i)=>`<li>• <b>${spouseOrdinal(s.order||i+1)}:</b> ${escape(s.name)} <span style="color:var(--ink-soft)">(${spouseStatusLabel(s)})</span></li>`).join("")}</ul></div>`:""}
       ${n.notes?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Catatan</div><p class="whitespace-pre-wrap" dir="auto">${escape(n.notes)}</p></div>`:""}
     </div>
     <div class="mt-4 pt-3 border-t text-[11px] flex flex-col gap-1" style="border-color:var(--line-soft);color:var(--ink-soft)">
@@ -259,23 +295,41 @@ function showSpouseProfile(parent, sp){
   $("#profile-body").innerHTML = `
     <div class="flex flex-col items-center mb-4">
       <img src="${fixPhoto(sp.photo)||placeholder(parent.gender==='L'?'P':'L')}" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--rose)"/>
-      <h2 class="text-2xl font-bold text-center serif">${escape(sp.name)}</h2>
-      <p class="text-xs" style="color:var(--ink-soft)">Pasangan kepada ${escape(parent.name)}</p>
-      <p class="text-xs" style="color:var(--ink-soft)">${sp.status==='mati'?'Almarhum'+(sp.death?' ('+escape(sp.death)+')':''):'Hidup'}</p>
+      <h2 class="text-2xl font-bold text-center serif" dir="auto">${escape(sp.name)}</h2>
+      <p class="text-xs" style="color:var(--ink-soft)">Pasangan ${spouseOrdinal(sp.order||1)} kepada ${escape(parent.name)}</p>
+      <p class="text-xs" style="color:var(--ink-soft)">Status: ${spouseStatusLabel(sp)}</p>
     </div>
   `;
   openModal("modal-profile");
 }
 
 /* ---------- Node Editor ---------- */
-function openNodeEditor(node, parentId=null, relation="child"){
+function openNodeEditor(node, parentId=null, relation="child", parentNode=null){
   if(!State.user){toast("Sila log masuk");return;}
   const f = $("#form-node");
   f.reset();
-  // FIX: pastikan id sentiasa ditetapkan untuk mod edit
   f.id.value = node?.id || "";
   f.parentId.value = parentId || node?.parentId || "";
   f.relation.value = node ? "edit" : relation;
+  // Dropdown ibu (jika parent ada >1 pasangan)
+  const wrap = $("#spouse-pick-wrap");
+  wrap.innerHTML = "";
+  const pid = f.parentId.value;
+  const pNode = parentNode || State.nodes.find(x=>x.id===pid);
+  if(pNode){
+    const sps = getSpouses(pNode);
+    if(sps.length>=1){
+      const lbl = document.createElement("label");
+      lbl.className = "text-xs block"; lbl.style.color = "var(--ink-soft)";
+      lbl.textContent = "Anak daripada pasangan yang mana?";
+      const sel = document.createElement("select");
+      sel.className = "input"; sel.name = "spouseIndex";
+      sel.innerHTML = `<option value="">— Tidak ditandakan —</option>` +
+        sps.map((s,i)=>`<option value="${s.order||i+1}">${spouseOrdinal(s.order||i+1)}: ${escape(s.name)}</option>`).join("");
+      if(node?.spouseIndex) sel.value = String(node.spouseIndex);
+      wrap.appendChild(lbl); wrap.appendChild(sel);
+    }
+  }
   if(node){
     f.name.value=node.name||"";
     f.nickname.value=node.nickname||"";
@@ -299,7 +353,6 @@ $("#form-node").addEventListener("submit", async e=>{
   const payload = Object.fromEntries(fd.entries());
   delete payload.photo;
   if(photo) payload.photo = photo;
-  // FIX: jika ada id, ini adalah edit — pastikan backend tahu
   if(payload.id) payload.relation = "edit";
   try{
     await api("saveNode", payload);
@@ -313,13 +366,15 @@ $("#form-node").addEventListener("submit", async e=>{
 function openSpouseEditor(parent){
   if(!State.user){toast("Sila log masuk");return;}
   if(!canAddSpouse(parent)){
-    if(parent.gender==="P") toast("Wanita hanya boleh ada satu suami pada satu masa. Tetapkan suami sedia ada sebagai 'Almarhum' dahulu.");
+    if(parent.gender==="P") toast("Wanita: tetapkan suami sedia ada sebagai 'Almarhum' atau 'Bercerai' dahulu.");
     else toast("Tidak boleh tambah pasangan.");
     return;
   }
   const f = $("#form-spouse"); f.reset();
   f.parentId.value = parent.id;
-  $("#spouse-title").textContent = `Tambah Pasangan untuk ${parent.name}`;
+  const sps = getSpouses(parent);
+  f.spouseOrder.value = sps.length+1;
+  $("#spouse-title").textContent = `Tambah Pasangan ${spouseOrdinal(sps.length+1)} untuk ${parent.name}`;
   openModal("modal-spouse");
 }
 $("#form-spouse").addEventListener("submit", async e=>{
@@ -335,6 +390,7 @@ $("#form-spouse").addEventListener("submit", async e=>{
     name: fd.get("name"),
     spouseStatus: fd.get("status"),
     spouseDeath: fd.get("death")||"",
+    spouseOrder: fd.get("spouseOrder")||"",
   };
   if(photo) payload.photo = photo;
   try{
@@ -355,6 +411,153 @@ async function delNode(n){
     await refresh();
   }catch(e){showError(e,{title:"Gagal padam",context:"deleteNode"});}
 }
+
+/* ---------- NOTA pada peta ---------- */
+function renderNotes(){
+  const canvas = $("#canvas");
+  // padam nota lama
+  $$(".map-note", canvas).forEach(el=>el.remove());
+  (State.notes||[]).forEach(n=>{
+    const el = document.createElement("div");
+    el.className = "map-note"+(n.pending?" pending":"")+(n.pinned?" pinned":"");
+    el.dataset.noteId = n.id;
+    el.style.left = (n.x||0)+"px";
+    el.style.top  = (n.y||0)+"px";
+    el.style.color = n.color || "var(--ink)";
+    el.style.fontFamily = n.font || "Cormorant Garamond";
+    el.style.fontSize = (n.size||16)+"px";
+    el.innerHTML = `<span class="note-text" dir="auto">${escape(n.text||"")}</span>
+      ${n.pinned?'<span class="note-pin" title="Dipin">📌</span>':''}
+      ${n.pending?'<span class="note-pending" title="Menunggu kelulusan">⏳</span>':''}`;
+    el.addEventListener("click",e=>{ e.stopPropagation(); openNoteCtx(e.clientX, e.clientY, n); });
+    enableNoteDrag(el, n);
+    canvas.appendChild(el);
+  });
+}
+function enableNoteDrag(el, n){
+  const isAdmin = State.user?.role==="admin";
+  const isOwner = State.user && n.createdBy===State.user.username;
+  if(n.pinned && !isAdmin) return; // tidak boleh seret
+  if(!isAdmin && !isOwner) return; // pelawat / orang lain — tidak boleh seret
+  el.style.cursor="move";
+  let drag=null;
+  el.addEventListener("pointerdown",ev=>{
+    if(ev.target.closest(".note-pin")||ev.target.closest(".note-pending")) return;
+    ev.stopPropagation();
+    const scale = State.panzoom ? State.panzoom.getScale() : 1;
+    drag={sx:ev.clientX, sy:ev.clientY, ox:parseFloat(el.style.left)||0, oy:parseFloat(el.style.top)||0, scale, moved:false};
+    el.setPointerCapture(ev.pointerId);
+  });
+  el.addEventListener("pointermove",ev=>{
+    if(!drag) return;
+    const dx=(ev.clientX-drag.sx)/drag.scale, dy=(ev.clientY-drag.sy)/drag.scale;
+    if(Math.abs(dx)>2||Math.abs(dy)>2) drag.moved=true;
+    el.style.left=(drag.ox+dx)+"px"; el.style.top=(drag.oy+dy)+"px";
+  });
+  el.addEventListener("pointerup",async ev=>{
+    if(!drag) return;
+    const moved = drag.moved;
+    const nx=parseFloat(el.style.left)||0, ny=parseFloat(el.style.top)||0;
+    drag=null;
+    if(moved){
+      try{
+        await api("saveNote",{id:n.id, text:n.text, x:nx, y:ny, font:n.font, size:n.size, color:n.color, pinned:n.pinned});
+        if(State.user.role!=="admin") toast("Kedudukan baharu — perlu kelulusan admin");
+        await refresh();
+      }catch(e){ showError(e,{title:"Gagal alih nota",context:"saveNote"}); }
+    }
+  });
+}
+function openNoteCtx(x,y,n){
+  const m = $("#ctx-menu");
+  const isAdmin = State.user?.role==="admin";
+  const isOwner = State.user && n.createdBy===State.user.username;
+  const canEdit = isAdmin || (isOwner && !n.pinned);
+  m.innerHTML = "";
+  const items = [
+    canEdit && {l:"✎ Edit Nota", fn:()=>openNoteEditor(n)},
+    isAdmin && {l: n.pinned ? "📍 Buka Pin" : "📌 Pin Nota", fn:()=>togglePin(n)},
+    canEdit && {l:"🗑 Padam Nota", fn:()=>deleteNote(n)},
+    {l:"ℹ Info", fn:()=>showInfo(`Dicipta oleh: ${n.createdBy||"-"}\nDikemaskini: ${fmtDateTime(n.lastEditAt)}\n${n.approvedBy?"Disahkan: "+n.approvedBy:"⏳ Belum disahkan"}`,{title:"Maklumat Nota"})},
+  ].filter(Boolean);
+  if(!items.length) return;
+  items.forEach(i=>{const b=document.createElement("button");b.textContent=i.l;b.onclick=()=>{m.classList.add("hidden");i.fn();};m.appendChild(b);});
+  m.style.left = Math.min(x, innerWidth-220)+"px";
+  m.style.top = Math.min(y, innerHeight-items.length*40)+"px";
+  m.classList.remove("hidden");
+}
+function openNoteEditor(n){
+  if(!State.user){toast("Sila log masuk untuk tambah/edit nota");return;}
+  const f = $("#form-note"); f.reset();
+  f.id.value = n?.id || "";
+  f.x.value = n?.x ?? 100;
+  f.y.value = n?.y ?? 100;
+  f.text.value = n?.text || "";
+  f.font.value = n?.font || "Cormorant Garamond";
+  f.size.value = n?.size || 18;
+  f.color.value = n?.color || "#3b2a14";
+  f.pinned.checked = !!n?.pinned;
+  $("#note-pin-admin").style.display = State.user.role==="admin" ? "" : "none";
+  $("#note-title").textContent = n ? "Edit Nota" : "Tambah Nota pada Peta";
+  openModal("modal-note");
+}
+$("#form-note").addEventListener("submit", async e=>{
+  e.preventDefault();
+  if(!State.user){toast("Sila log masuk");return;}
+  const fd = new FormData(e.target);
+  const payload = {
+    id: fd.get("id")||"",
+    text: fd.get("text"),
+    x: Number(fd.get("x"))||0,
+    y: Number(fd.get("y"))||0,
+    font: fd.get("font")||"Cormorant Garamond",
+    size: Number(fd.get("size"))||16,
+    color: fd.get("color")||"#3b2a14",
+    pinned: State.user.role==="admin" ? !!fd.get("pinned") : false,
+  };
+  if(!payload.id) delete payload.id;
+  try{
+    await api("saveNote", payload);
+    toast(State.user.role==="admin"?"Nota disimpan":"Dihantar untuk semakan admin");
+    closeModal("modal-note");
+    await refresh();
+  }catch(err){ showError(err,{title:"Gagal simpan nota",context:err.action||"saveNote"}); }
+});
+async function togglePin(n){
+  try{
+    await api("saveNote",{id:n.id, text:n.text, x:n.x, y:n.y, font:n.font, size:n.size, color:n.color, pinned:!n.pinned});
+    showInfo(n.pinned?"Pin dibuka":"Nota dipin");
+    await refresh();
+  }catch(e){ showError(e,{title:"Gagal pin",context:"saveNote"}); }
+}
+async function deleteNote(n){
+  const isAdmin = State.user?.role==="admin";
+  if(!confirm(isAdmin?"Padam nota ini?":"Pohon padam nota ini? Perlu kelulusan admin.")) return;
+  try{
+    await api("deleteNote",{id:n.id});
+    showInfo(isAdmin?"Nota dipadam":"Permintaan padam dihantar");
+    await refresh();
+  }catch(e){ showError(e,{title:"Gagal padam nota",context:"deleteNote"}); }
+}
+// Butang tambah nota — masuk mod letak
+$("#btn-add-note").addEventListener("click",()=>{
+  if(!State.user){toast("Log masuk dahulu untuk tambah nota");return;}
+  State.noteAddMode = true;
+  toast("Klik pada peta untuk meletakkan nota baharu");
+  document.body.classList.add("note-add-cursor");
+});
+$("#canvas").addEventListener("click", e=>{
+  if(!State.noteAddMode) return;
+  // koordinat relatif kepada canvas
+  const canvas = $("#canvas");
+  const rect = canvas.getBoundingClientRect();
+  const scale = State.panzoom ? State.panzoom.getScale() : 1;
+  const x = (e.clientX - rect.left) / scale;
+  const y = (e.clientY - rect.top) / scale;
+  State.noteAddMode = false;
+  document.body.classList.remove("note-add-cursor");
+  openNoteEditor({x: Math.round(x), y: Math.round(y), text:"", font:"Cormorant Garamond", size:18, color:"#3b2a14"});
+});
 
 /* ---------- Auth ---------- */
 $("#btn-auth").addEventListener("click",()=>{
@@ -393,6 +596,7 @@ function updateUserUI(){
   $("#user-info").textContent = u?`${u.username} • ${u.role==="admin"?"ADMIN":"Ahli #"+u.no}`:"Mod Pelawat — lihat sahaja";
   $("#btn-auth").textContent = u?"Keluar":"Log Masuk";
   $("#btn-admin").classList.toggle("hidden", u?.role!=="admin");
+  $("#btn-add-note").classList.toggle("hidden", !u);
   if(u?.role==="admin") refreshPendingBadge();
 }
 async function refreshPendingBadge(){
@@ -414,13 +618,13 @@ async function loadAdmin(){
   try{
     const d = await api("adminData",{});
     const p = $("#admin-pending");
-    p.innerHTML = d.pending.length?'<p class="text-[11px] mb-2" style="color:var(--ink-soft)">Sahkan dengan penghantar melalui telefon/WhatsApp sebelum LULUS. Data ditandai MERAH dalam salasilah sehingga diluluskan.</p>':'<p class="text-sm" style="color:var(--ink-soft)">✓ Tiada item menunggu kelulusan.</p>';
+    p.innerHTML = d.pending.length?'<p class="text-[11px] mb-2" style="color:var(--ink-soft)">Sahkan dengan penghantar melalui telefon/WhatsApp sebelum LULUS.</p>':'<p class="text-sm" style="color:var(--ink-soft)">✓ Tiada item menunggu kelulusan.</p>';
     d.pending.forEach(it=>{
       const div=document.createElement("div");
       div.className="glass rounded-lg p-3 mb-2 space-y-2";
       const phoneClean = String(it.byPhone||"").replace(/[^0-9+]/g,"");
-      const waNum = phoneClean.replace(/^\+/,"").replace(/^0/,"60"); // anggap MY
-      const actLabel = {add:"➕ TAMBAH",edit:"✎ EDIT",delete:"🗑 PADAM",spouse:"💍 PASANGAN"}[it.action]||it.action;
+      const waNum = phoneClean.replace(/^\+/,"").replace(/^0/,"60");
+      const actLabel = {add:"➕ TAMBAH",edit:"✎ EDIT",delete:"🗑 PADAM",spouse:"💍 PASANGAN","note-add":"📝 NOTA BARU","note-edit":"✎ EDIT NOTA","note-delete":"🗑 PADAM NOTA"}[it.action]||it.action;
       div.innerHTML = `
         <div class="flex justify-between items-start gap-2">
           <div class="text-sm flex-1 min-w-0">
@@ -442,7 +646,7 @@ async function loadAdmin(){
         catch(e){ showError(e,{title:"Gagal lulus",context:"moderate"}); }
       };
       div.querySelector('[data-act="no"]').onclick=async()=>{
-        if(!confirm("Tolak permintaan ini? Perubahan akan dibatalkan.")) return;
+        if(!confirm("Tolak permintaan ini?")) return;
         try{ await api("moderate",{id:it.id,decision:"reject"}); showInfo("Ditolak"); loadAdmin(); refresh(); }
         catch(e){ showError(e,{title:"Gagal tolak",context:"moderate"}); }
       };
@@ -499,7 +703,7 @@ async function loadAdmin(){
 $("#btn-init-root").addEventListener("click",async()=>{
   const name = $("#root-name").value.trim();
   if(!name) return;
-  try{await api("initRoot",{name});showInfo("Root berjaya dicipta");closeModal("modal-admin");refresh();}catch(e){ if(String(e.message).includes("Root sudah wujud")){ showWarn("Root sudah wujud dalam sistem. Tiada tindakan diperlukan."); closeModal("modal-admin"); refresh(); } else { showError(e,{title:"Gagal cipta root",context:"initRoot"}); } }
+  try{await api("initRoot",{name});showInfo("Root berjaya dicipta");closeModal("modal-admin");refresh();}catch(e){ if(String(e.message).includes("Root sudah wujud")){ showWarn("Root sudah wujud dalam sistem."); closeModal("modal-admin"); refresh(); } else { showError(e,{title:"Gagal cipta root",context:"initRoot"}); } }
 });
 
 /* ---------- Settings & Tema ---------- */
@@ -539,6 +743,7 @@ function initPanzoom(){
   State.panzoom = Panzoom(el,{
     maxScale: 4, minScale: 0.05, step: 0.15,
     canvas: true, contain: false, cursor: "grab",
+    excludeClass: "map-note",
   });
   $("#stage").addEventListener("wheel", e => State.panzoom.zoomWithWheel(e, {step:0.15}));
   $("#btn-zoom-in").onclick=()=>State.panzoom.zoomIn();
@@ -546,10 +751,8 @@ function initPanzoom(){
   $("#btn-reset").onclick=()=>centerOnTree();
 }
 
-/* Pusatkan paparan pada salasilah sebenar (bukan ruang kosong) */
 function centerOnTree(){
   if(!State.panzoom) return;
-  // cari node root dahulu, jika tiada ambil sebarang .node pertama
   const target = document.querySelector(".node.root") || document.querySelector(".node");
   if(!target){ State.panzoom.reset(); return; }
   State.panzoom.reset({ animate:false });
@@ -559,7 +762,6 @@ function centerOnTree(){
     const nRect = target.getBoundingClientRect();
     const scale = State.panzoom.getScale() || 1;
     const pan = State.panzoom.getPan();
-    // Letak root di atas-tengah skrin (offset ~120px dari atas)
     const dx = (sRect.left + sRect.width/2) - (nRect.left + nRect.width/2);
     const dy = (sRect.top + 140) - (nRect.top);
     State.panzoom.pan(pan.x + dx/scale, pan.y + dy/scale, {animate:true});
@@ -632,8 +834,8 @@ async function refresh(){
   try{
     const d = await api("getTree",{});
     State.nodes = d.nodes||[];
+    State.notes = d.notes||[];
     buildTree();
-    // Auto pusat ke salasilah selepas render
     setTimeout(centerOnTree, 60);
     if(State.user?.role==="admin") refreshPendingBadge();
   }catch(e){ showError(e,{title:"Gagal memuat salasilah",context:"getTree"}); const host=$("#tree-root"); if(host) host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Gagal memuat data. Sila lihat notifikasi ralat di atas.</p>'; }

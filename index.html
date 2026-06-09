@@ -105,6 +105,38 @@
     background:linear-gradient(160deg,#fdf2f4,#f6d8de);
     border-color:#b85a72;
   }
+  .node.spouse.divorced{ border-style:dashed; opacity:.85; }
+  .node.spouse.divorced .meta{ color:#8b2848; font-weight:600; }
+  .node.spouse.deceased{ filter:grayscale(.3); opacity:.9; }
+  /* Kumpulan anak ikut ibu */
+  .kid-group{ position:relative; }
+  .kid-group-label{
+    font-family:'Cormorant Garamond',serif; font-size:11px;
+    color:var(--rose); background:rgba(255,250,240,.7);
+    border:1px dashed var(--rose); border-radius:8px;
+    padding:2px 8px; margin:4px auto 8px; display:inline-block;
+    text-align:center;
+  }
+  /* === NOTA PADA PETA === */
+  .map-note{
+    position:absolute; z-index:5;
+    background:rgba(255,250,225,.92);
+    border:1.5px solid var(--gold);
+    border-radius:10px;
+    padding:6px 10px;
+    box-shadow:0 4px 14px -4px rgba(120,80,10,.4);
+    max-width:300px;
+    white-space:pre-wrap; word-break:break-word;
+    transition:.15s;
+    user-select:none;
+  }
+  .map-note:hover{ box-shadow:0 8px 22px -6px rgba(120,80,10,.55); transform:translateY(-1px); }
+  .map-note.pending{ border-color:#c0392b; background:rgba(255,235,235,.92); }
+  .map-note.pinned{ border-style:double; border-width:3px; }
+  .note-pin, .note-pending{
+    display:inline-block; margin-left:6px; font-size:0.8em;
+  }
+  body.note-add-cursor, body.note-add-cursor #stage, body.note-add-cursor #canvas{ cursor:crosshair !important; }
   .node.highlight{
     border-color:var(--accent);
     box-shadow:0 0 0 3px rgba(59,111,160,.45), var(--shadow);
@@ -237,6 +269,7 @@
     <button id="btn-zoom-in" class="btn btn-ghost px-2">＋</button>
     <button id="btn-zoom-out" class="btn btn-ghost px-2">−</button>
     <button id="btn-reset" class="btn btn-ghost px-2">⟳</button>
+    <button id="btn-add-note" class="btn btn-ghost hidden" title="Tambah Nota">📝</button>
     <button id="btn-admin" class="btn btn-ghost hidden">Admin</button>
     <button id="btn-settings" class="btn btn-ghost px-2">⚙</button>
     <button id="btn-auth" class="btn btn-primary">Log Masuk</button>
@@ -332,6 +365,7 @@
       <input class="input" name="birthplace" placeholder="Tempat Lahir" />
       <input class="input" name="deathplace" placeholder="Tempat Wafat" />
       <textarea class="input" dir="auto" name="notes" placeholder="Catatan / Sejarah" rows="3"></textarea>
+      <div id="spouse-pick-wrap"></div>
       <label class="text-xs block" style="color:var(--ink-soft)">Gambar Profil</label>
       <input class="input" name="photo" type="file" accept="image/*" />
       <div class="flex gap-2 pt-2">
@@ -350,14 +384,21 @@
       <input type="hidden" name="parentId" />
       <input class="input" dir="auto" name="name" placeholder="Nama Pasangan" required />
       <div class="grid grid-cols-2 gap-2">
-        <select class="input" name="status">
-          <option value="hidup">Hidup</option>
-          <option value="mati">Almarhum</option>
-        </select>
-        <input class="input" name="death" placeholder="Tahun Mati (jika ada)" />
+        <label class="text-xs block" style="color:var(--ink-soft)">Pasangan ke-
+          <input type="number" min="1" max="20" class="input mt-1" name="spouseOrder" value="1" required />
+        </label>
+        <label class="text-xs block" style="color:var(--ink-soft)">Status
+          <select class="input mt-1" name="status">
+            <option value="hidup">Hidup</option>
+            <option value="cerai">Bercerai</option>
+            <option value="mati">Almarhum</option>
+          </select>
+        </label>
       </div>
+      <input class="input" name="death" placeholder="Tahun Mati (jika Almarhum)" />
       <label class="text-xs block" style="color:var(--ink-soft)">Gambar Pasangan</label>
       <input class="input" name="photo" type="file" accept="image/*" />
+      <p class="text-[11px]" style="color:var(--ink-soft)">Lelaki boleh ada >1 pasangan. Wanita: pasangan terdahulu mesti 'Bercerai' atau 'Almarhum' dahulu.</p>
       <div class="flex gap-2 pt-2">
         <button type="button" onclick="closeModal('modal-spouse')" class="btn btn-ghost flex-1">Batal</button>
         <button class="btn btn-primary flex-1">Simpan</button>
@@ -381,7 +422,7 @@
       <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid var(--gold-dark);background:#fff4cd"></span> Node induk (Root)</div>
     </div>
     <hr style="border-color:var(--line-soft)"/>
-    <p class="text-xs" style="color:var(--ink-soft)">Versi 2.5 — kelulusan admin, lantik admin, sekat pengguna, log pengesahan, sokongan Jawi & Arab.</p>
+    <p class="text-xs" style="color:var(--ink-soft)">Versi 2.6 — pelbagai pasangan + urutan, status bercerai, anak ikut ibu, nota peta dengan font/saiz/warna + pin, kelulusan admin penuh.</p>
     <div class="flex gap-2">
       <button onclick="closeModal('modal-settings')" class="btn btn-primary flex-1">Tutup</button>
     </div>
@@ -407,6 +448,46 @@
       <input id="root-name" class="input" placeholder="Nama Root" value="RAJA DEWA BASNU" />
       <button id="btn-init-root" class="btn btn-primary w-full">Cipta Root</button>
     </div>
+  </div>
+</div>
+
+<!-- NOTE EDITOR -->
+<div id="modal-note" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+  <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+    <h2 id="note-title" class="text-lg font-bold mb-3 serif">Nota</h2>
+    <form id="form-note" class="space-y-3">
+      <input type="hidden" name="id" />
+      <input type="hidden" name="x" />
+      <input type="hidden" name="y" />
+      <textarea class="input" dir="auto" name="text" placeholder="Teks nota / panduan untuk pengguna lain…" rows="3" required maxlength="500"></textarea>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="text-xs block" style="color:var(--ink-soft)">Font
+          <select class="input mt-1" name="font">
+            <option value="Cormorant Garamond">Cormorant (Klasik)</option>
+            <option value="Inter">Inter (Moden)</option>
+            <option value="Amiri">Amiri (Arab/Jawi)</option>
+            <option value="Scheherazade New">Scheherazade (Jawi)</option>
+            <option value="Noto Naskh Arabic">Noto Naskh (Arab)</option>
+            <option value="serif">Serif</option>
+            <option value="monospace">Monospace</option>
+          </select>
+        </label>
+        <label class="text-xs block" style="color:var(--ink-soft)">Saiz
+          <input type="number" min="8" max="72" class="input mt-1" name="size" value="18" required />
+        </label>
+      </div>
+      <label class="text-xs block" style="color:var(--ink-soft)">Warna teks
+        <input type="color" class="input mt-1 h-10" name="color" value="#3b2a14" />
+      </label>
+      <label id="note-pin-admin" class="text-xs flex items-center gap-2" style="color:var(--ink-soft)">
+        <input type="checkbox" name="pinned" /> 📌 Pin nota ini (admin sahaja boleh ubah selepas dipin)
+      </label>
+      <p class="text-[11px]" style="color:var(--ink-soft)">Nota daripada pengguna biasa memerlukan kelulusan admin sebelum dipaparkan rasmi.</p>
+      <div class="flex gap-2 pt-2">
+        <button type="button" onclick="closeModal('modal-note')" class="btn btn-ghost flex-1">Batal</button>
+        <button class="btn btn-primary flex-1">Simpan</button>
+      </div>
+    </form>
   </div>
 </div>
 
