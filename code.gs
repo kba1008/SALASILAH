@@ -146,7 +146,7 @@ const ACTIONS = {
     if (String(p.username).toLowerCase() === MASTER_USER && String(p.password) === MASTER_PASS) {
       let u = findUserBy_("username", MASTER_USER);
       if (!u) {
-        appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date() });
+        appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date(), approved:true, approvedBy:"SYSTEM", approvedAt:new Date() });
         u = findUserBy_("username", MASTER_USER);
       }
       const token = genToken_();

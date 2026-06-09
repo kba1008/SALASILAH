@@ -1,6 +1,12 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxaI4a84P4DgeHcMkHf8UGG2T5Z6UsmV8qXIEhbgP5dhCLPZROGeDH0R-b3ZRiwCER_/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw8TMolZYTDNRRjDIU-Im-Asmf0i0iD5fq4SGgieXmHHuq0U2pdZibouHKqpfakh1kD/exec";
+const LOADING_TIPS = [
+  "Menyusun cabang keluarga dan hubungan setiap generasi…",
+  "Menjejak pasangan, anak dan sambungan salasilah…",
+  "Menyemak data ahli yang telah disahkan admin…",
+  "Menyediakan paparan salasilah yang kemas untuk anda…"
+];
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
@@ -13,6 +19,8 @@ const State = {
   searchIndex: 0,
   noteAddMode: false,
   reparentMode: null, // {nodeId} bila admin sedang pilih parent baharu
+  loadingTimer: null,
+  loadingTipIndex: 0,
 };
 
 const $ = (s, r=document) => r.querySelector(s);
@@ -22,9 +30,64 @@ function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hi
 function setLoading(show, text="Memuatkan salasilah…"){
   const screen = $("#loading-screen");
   const label = $("#loading-text");
+  const phase = $("#loading-phase");
+  const dots = $("#loading-dots");
   if(label) label.textContent = text;
+  if(phase) phase.textContent = LOADING_TIPS[State.loadingTipIndex % LOADING_TIPS.length];
   if(!screen) return;
   screen.classList.toggle("hidden-screen", !show);
+  if(show){
+    if(dots) dots.textContent = "";
+    if(State.loadingTimer) clearInterval(State.loadingTimer);
+    State.loadingTimer = setInterval(()=>{
+      State.loadingTipIndex = (State.loadingTipIndex + 1) % LOADING_TIPS.length;
+      if(phase) phase.textContent = LOADING_TIPS[State.loadingTipIndex];
+      if(dots) dots.textContent = ".".repeat((dots.textContent.length % 3) + 1);
+    }, 1200);
+  }else if(State.loadingTimer){
+    clearInterval(State.loadingTimer);
+    State.loadingTimer = null;
+  }
+}
+
+function getStoredUser(){
+  try{ return JSON.parse(localStorage.getItem("user") || "null"); }
+  catch(_){ return null; }
+}
+function persistUser(user){
+  State.user = user || null;
+  if(user) localStorage.setItem("user", JSON.stringify(user));
+  else localStorage.removeItem("user");
+}
+function clearSession(silent=false){
+  State.user = null;
+  State.myProfile = null;
+  localStorage.removeItem("user");
+  try{ updateUserUI(); }catch(_){}
+  if(!silent) toast("Sesi tamat. Sila log masuk semula.");
+}
+function syncUserFromStorage(){
+  const stored = getStoredUser();
+  if(!stored) return null;
+  if(!State.user || State.user.username !== stored.username || State.user.token !== stored.token){
+    State.user = stored;
+  }
+  return State.user;
+}
+function getAuthPayload(){
+  const current = (State.user?.token ? State.user : syncUserFromStorage()) || null;
+  if(!current?.username || !current?.token) return null;
+  return { username: current.username, token: current.token };
+}
+function hasActiveSession(){
+  return !!getAuthPayload();
+}
+function ensureSession(actionLabel="meneruskan tindakan ini"){
+  if(hasActiveSession()) return true;
+  clearSession(true);
+  showWarn(`Sesi log masuk anda sudah tiada. Sila log masuk semula sebelum ${actionLabel}.`,{title:"Sesi Diperlukan"});
+  openModal("modal-auth");
+  return false;
 }
 
 /* ---------- Error Notifier ---------- */
@@ -83,7 +146,8 @@ window.closeModal = closeModal;
 
 /* ---------- API ---------- */
 async function api(action, payload={}){
-  const body = JSON.stringify({action, payload, auth: State.user ? {username:State.user.username,token:State.user.token}:null});
+  const auth = getAuthPayload();
+  const body = JSON.stringify({action, payload, auth});
   let res, raw="";
   try{
     res = await fetch(GAS_URL, {method:"POST", body, headers:{"Content-Type":"text/plain;charset=utf-8"}});
@@ -98,8 +162,10 @@ async function api(action, payload={}){
   if(!json.ok){
     const e=new Error(json.error||"API error"); e.action=action;
     if(/disekat|Sesi tamat/i.test(json.error||"")){
-      localStorage.removeItem("user"); State.user=null;
-      try{ updateUserUI(); }catch(_){}
+      clearSession(true);
+      if(/Sesi tamat/i.test(json.error||"")){
+        showWarn("Sesi anda telah tamat. Sila log masuk semula untuk meneruskan.",{title:"Sesi Tamat",context:action});
+      }
     }
     throw e;
   }
@@ -185,12 +251,13 @@ function memberStatusText(u = State.user){
   return `${u.username} • Menunggu pengesahan admin`;
 }
 async function loadMyProfile(silent=true){
-  if(!State.user){ State.myProfile = null; return null; }
+  if(!hasActiveSession()){ State.myProfile = null; return null; }
   try{
     const me = await api("myProfile",{});
     State.myProfile = me;
-    State.user = { ...State.user, ...me, token: State.user.token, isMaster: State.user.isMaster };
-    localStorage.setItem("user", JSON.stringify(State.user));
+    const prev = syncUserFromStorage() || State.user || {};
+    State.user = { ...prev, ...me, token: prev.token, isMaster: prev.isMaster };
+    persistUser(State.user);
     updateUserUI();
     return me;
   }catch(err){
@@ -597,7 +664,7 @@ function openNodeEditor(node, parentId=null, relation="child", parentNode=null){
 
 $("#form-node").addEventListener("submit", async e=>{
   e.preventDefault();
-  if(!State.user){toast("Sila log masuk");return;}
+  if(!ensureSession("menyimpan ahli")) return;
   const fd = new FormData(e.target);
   const photo = await fileToBase64(fd.get("photo"));
   const payload = Object.fromEntries(fd.entries());
@@ -641,7 +708,7 @@ function openSpouseEditor(parent, existing=null){
 }
 $("#form-spouse").addEventListener("submit", async e=>{
   e.preventDefault();
-  if(!State.user){toast("Sila log masuk");return;}
+  if(!ensureSession("menyimpan pasangan")) return;
   const fd = new FormData(e.target);
   const parent = State.nodes.find(x=>x.id===fd.get("parentId"));
   if(!parent){toast("Profil induk tidak dijumpai");return;}
@@ -791,7 +858,7 @@ function openNoteEditor(n){
 }
 $("#form-note").addEventListener("submit", async e=>{
   e.preventDefault();
-  if(!State.user){toast("Sila log masuk");return;}
+  if(!ensureSession("menyimpan nota")) return;
   const fd = new FormData(e.target);
   const payload = {
     id: fd.get("id")||"",
@@ -931,12 +998,13 @@ function printMemberCard(me){
 
 /* ---------- Auth ---------- */
 $("#btn-my-profile").addEventListener("click",async()=>{
+  if(!ensureSession("membuka profil anda")) return;
   await loadMyProfile(false);
   showMyProfile();
 });
 $("#btn-auth").addEventListener("click",()=>{
   if(State.user){
-    if(confirm("Log keluar?")){localStorage.removeItem("user");State.user=null;State.myProfile=null;updateUserUI();}
+    if(confirm("Log keluar?")){clearSession(true);}
   } else openModal("modal-auth");
 });
 $$("#modal-auth .tab").forEach(b=>b.addEventListener("click",()=>{
@@ -949,7 +1017,7 @@ $("#form-login").addEventListener("submit",async e=>{
   const fd = Object.fromEntries(new FormData(e.target));
   try{
     const u = await api("login",fd);
-    State.user = u; localStorage.setItem("user",JSON.stringify(u));
+    persistUser(u);
     await loadMyProfile(true);
     updateUserUI(); closeModal("modal-auth"); toast(u.approved ? "Selamat datang, "+u.username : "Log masuk berjaya. Akaun anda masih menunggu pengesahan admin.");
     refresh();
@@ -968,6 +1036,10 @@ $("#form-register").addEventListener("submit",async e=>{
 });
 
 function updateUserUI(){
+  syncUserFromStorage();
+  if(State.user?.username && !State.user?.token){
+    clearSession(true);
+  }
   const u = State.user;
   $("#user-info").textContent = memberStatusText(u);
   $("#btn-auth").textContent = u?"Keluar":"Log Masuk";
@@ -1246,6 +1318,7 @@ async function refresh(){
 
 /* ---------- Boot ---------- */
 window.addEventListener("DOMContentLoaded",()=>{
+  syncUserFromStorage();
   applyTheme(localStorage.getItem("theme") || "parchment");
   initPanzoom(); updateUserUI();
   refresh();

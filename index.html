@@ -448,8 +448,66 @@
     opacity:0; visibility:hidden; pointer-events:none;
   }
   .loading-card{
-    min-width:280px; max-width:360px;
-    text-align:center; padding:28px 24px; border-radius:22px;
+    position:relative;
+    min-width:320px; max-width:420px;
+    text-align:center; padding:30px 26px; border-radius:28px;
+    overflow:hidden;
+    border:1px solid color-mix(in oklab, var(--gold) 45%, #ffffff 55%);
+    box-shadow:
+      0 34px 80px -36px rgba(0,0,0,.5),
+      0 18px 40px -30px color-mix(in oklab, var(--gold) 55%, transparent),
+      inset 0 1px 0 rgba(255,255,255,.72);
+  }
+  .loading-card::before{
+    content:"";
+    position:absolute; inset:-35% -10% auto;
+    height:160px;
+    background:radial-gradient(circle at center, rgba(255,255,255,.55), transparent 62%);
+    animation:auroraFloat 4.6s ease-in-out infinite;
+    pointer-events:none;
+  }
+  .loading-orbit{
+    position:relative;
+    width:120px; height:120px;
+    margin:0 auto 18px;
+    display:grid; place-items:center;
+  }
+  .loading-core{
+    width:74px; height:74px; border-radius:50%;
+    display:grid; place-items:center;
+    background:
+      radial-gradient(circle at 35% 30%, rgba(255,255,255,.88), rgba(255,255,255,.1) 34%, transparent 35%),
+      linear-gradient(145deg, color-mix(in oklab, var(--gold) 72%, white 28%), color-mix(in oklab, var(--gold-dark) 78%, black 22%));
+    color:#fff8e3;
+    font-size:34px;
+    box-shadow:
+      0 0 0 8px rgba(255,255,255,.12),
+      0 18px 40px -20px rgba(168,128,31,.75);
+    animation:pulseCore 2.3s ease-in-out infinite;
+  }
+  .loading-ring,
+  .loading-ring::before,
+  .loading-ring::after{
+    position:absolute; inset:0; border-radius:50%;
+    border:1.5px solid transparent;
+    content:"";
+  }
+  .loading-ring{
+    border-top-color:rgba(168,128,31,.95);
+    border-right-color:rgba(59,111,160,.55);
+    animation:spin 7s linear infinite;
+  }
+  .loading-ring::before{
+    inset:12px;
+    border-left-color:rgba(196,69,105,.52);
+    border-bottom-color:rgba(168,128,31,.6);
+    animation:spinReverse 5.5s linear infinite;
+  }
+  .loading-ring::after{
+    inset:26px;
+    border-top-color:rgba(255,255,255,.6);
+    border-right-color:rgba(168,128,31,.45);
+    animation:spin 4.2s linear infinite;
   }
   .loading-spinner{
     width:54px; height:54px; margin:0 auto 14px; border-radius:50%;
@@ -459,7 +517,47 @@
     box-shadow:0 10px 24px -14px rgba(0,0,0,.35);
   }
   @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes spinReverse{to{transform:rotate(-360deg)}}
+  @keyframes pulseCore{0%,100%{transform:scale(.96)}50%{transform:scale(1.04)}}
+  @keyframes auroraFloat{0%,100%{transform:translateY(-10px) scale(1)}50%{transform:translateY(8px) scale(1.08)}}
   #loading-text{color:var(--ink-soft);}
+  #loading-phase{color:var(--ink); opacity:.85; min-height:38px;}
+  .loading-progress{
+    position:relative;
+    width:100%; height:10px; border-radius:999px; overflow:hidden;
+    background:rgba(255,255,255,.36);
+    border:1px solid rgba(176,138,77,.22);
+    margin-top:14px;
+  }
+  .loading-progress::before{
+    content:"";
+    position:absolute; inset:0 auto 0 -35%;
+    width:35%;
+    background:linear-gradient(90deg, transparent, rgba(168,128,31,.85), rgba(255,255,255,.85), transparent);
+    animation:loadingBar 1.8s ease-in-out infinite;
+  }
+  @keyframes loadingBar{
+    0%{left:-35%}
+    100%{left:100%}
+  }
+  .loading-dust{
+    position:absolute; inset:0; pointer-events:none; overflow:hidden;
+  }
+  .loading-dust span{
+    position:absolute; width:8px; height:8px; border-radius:50%;
+    background:radial-gradient(circle, rgba(255,255,255,.95), rgba(168,128,31,.2));
+    animation:floatDust var(--dur,5s) ease-in-out infinite;
+    opacity:.75;
+  }
+  .loading-dust span:nth-child(1){left:12%; top:20%; --dur:4.8s;}
+  .loading-dust span:nth-child(2){left:78%; top:22%; --dur:5.6s;}
+  .loading-dust span:nth-child(3){left:22%; top:72%; --dur:5.2s;}
+  .loading-dust span:nth-child(4){left:68%; top:78%; --dur:6s;}
+  .loading-dust span:nth-child(5){left:50%; top:14%; --dur:4.4s;}
+  @keyframes floatDust{
+    0%,100%{transform:translateY(0) scale(.8); opacity:.35}
+    50%{transform:translateY(-14px) scale(1.15); opacity:.95}
+  }
 
   .hanging-block ul.tree li::before,
   .hanging-block ul.tree li::after{
@@ -477,9 +575,15 @@
 
 <div id="loading-screen">
   <div class="loading-card glass">
-    <div class="loading-spinner"></div>
+    <div class="loading-dust"><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="loading-orbit">
+      <div class="loading-ring"></div>
+      <div class="loading-core">🌳</div>
+    </div>
     <h2 class="serif text-2xl font-bold mb-2">Memuatkan salasilah</h2>
-    <p id="loading-text" class="text-sm">Sila tunggu sementara maklumat keluarga dipaparkan.</p>
+    <p id="loading-text" class="text-sm">Sila tunggu sementara maklumat keluarga dipaparkan<span id="loading-dots"></span></p>
+    <p id="loading-phase" class="text-xs mt-2">Menyusun cabang keluarga dan hubungan setiap generasi…</p>
+    <div class="loading-progress"></div>
   </div>
 </div>
 
@@ -675,7 +779,7 @@
       <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid var(--gold-dark);background:#fff4cd"></span> Node induk (Root)</div>
     </div>
     <hr style="border-color:var(--line-soft)"/>
-    <p class="text-xs" style="color:var(--ink-soft)">Versi 2.8 — pembetulan ralat `parents`, kelulusan akaun ahli oleh admin, nombor keahlian sah selepas lulus, dan cetakan kad ahli dari profil pengguna.</p>
+    <p class="text-xs" style="color:var(--ink-soft)">Versi 2.9 — loading skrin animasi baharu, sesi log masuk lebih stabil, pembaikan ralat pasangan, kelulusan akaun ahli, dan cetakan kad ahli dari profil pengguna.</p>
     <div class="flex gap-2">
       <button onclick="closeModal('modal-settings')" class="btn btn-primary flex-1">Tutup</button>
     </div>
