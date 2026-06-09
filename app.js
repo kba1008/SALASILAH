@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.1 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbx4yHK2tIe9trpKkCDIru8jq-9tSV24IacDReDGzXbHXZbaL-LVuBXCXWo0SGMWcsPQ/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
@@ -14,6 +14,59 @@ const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2800);}
+
+
+/* ---------- Error Notifier (canggih) ---------- */
+const ErrUI = {
+  stack: null,
+  ensure(){ if(!this.stack) this.stack = document.getElementById("err-stack"); return this.stack; },
+  show({title="Ralat", message="", level="error", context=""}={}){
+    const host = this.ensure(); if(!host) { alert(title+"\n"+message); return; }
+    const card = document.createElement("div");
+    card.className = "err-card "+(level==="warn"?"warn":level==="info"?"info":"");
+    const ts = new Date().toLocaleString("ms-MY");
+    const fullText = `[${ts}] ${title}${context?" ("+context+")":""}\n${message}`;
+    card.innerHTML = `
+      <div class="err-head">
+        <div class="err-title">${level==="error"?"⚠ ":(level==="warn"?"⚡ ":"ℹ ")}${escapeHtmlSafe(title)}</div>
+        <div class="err-actions">
+          <button class="err-btn" data-act="copy">📋 Salin</button>
+          <button class="err-btn" data-act="close" title="Tutup">✕</button>
+        </div>
+      </div>
+      <div class="err-msg"></div>
+      ${context?`<div class="text-[10px] mt-1 opacity-70">${escapeHtmlSafe(context)} • ${ts}</div>`:`<div class="text-[10px] mt-1 opacity-70">${ts}</div>`}
+    `;
+    card.querySelector(".err-msg").textContent = message || "(tiada butiran)";
+    card.querySelector('[data-act="close"]').onclick = ()=>card.remove();
+    card.querySelector('[data-act="copy"]').onclick = async ()=>{
+      try{ await navigator.clipboard.writeText(fullText); }
+      catch{ const r=document.createRange();r.selectNodeContents(card.querySelector(".err-msg"));const s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand("copy");s.removeAllRanges(); }
+      const b = card.querySelector('[data-act="copy"]'); const old=b.textContent; b.textContent="✓ Disalin"; setTimeout(()=>b.textContent=old,1500);
+    };
+    host.appendChild(card);
+    // Auto-tutup hanya untuk info/warn
+    if(level!=="error"){ setTimeout(()=>card.remove(), 6000); }
+    return card;
+  },
+  clearAll(){ const h=this.ensure(); if(h) h.innerHTML=""; }
+};
+function escapeHtmlSafe(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function showError(message, opts={}){
+  let msg = message;
+  if(message instanceof Error) msg = (message.message||"") + (message.stack?"\n\n"+message.stack:"");
+  return ErrUI.show({title:opts.title||"Ralat", message:String(msg||""), level:opts.level||"error", context:opts.context||""});
+}
+function showWarn(m,o={}){return ErrUI.show({title:o.title||"Amaran",message:String(m||""),level:"warn",context:o.context||""});}
+function showInfo(m,o={}){return ErrUI.show({title:o.title||"Maklumat",message:String(m||""),level:"info",context:o.context||""});}
+window.addEventListener("error", e=>{
+  showError(e.error||e.message||"Unknown error",{title:"Ralat JavaScript",context:(e.filename||"")+":"+(e.lineno||"")+":"+(e.colno||"")});
+});
+window.addEventListener("unhandledrejection", e=>{
+  showError(e.reason||"Promise ditolak tanpa pengendalian",{title:"Promise Tidak Dikendalikan"});
+});
+window.showError = showError; window.showWarn = showWarn; window.showInfo = showInfo;
+
 function openModal(id){$("#"+id).classList.remove("hidden");$("#"+id).classList.add("flex");}
 function closeModal(id){$("#"+id).classList.add("hidden");$("#"+id).classList.remove("flex");}
 window.closeModal = closeModal;
@@ -21,9 +74,18 @@ window.closeModal = closeModal;
 /* ---------- API ---------- */
 async function api(action, payload={}){
   const body = JSON.stringify({action, payload, auth: State.user ? {username:State.user.username,token:State.user.token}:null});
-  const res = await fetch(GAS_URL, {method:"POST", body, headers:{"Content-Type":"text/plain;charset=utf-8"}});
-  const json = await res.json();
-  if(!json.ok) throw new Error(json.error||"API error");
+  let res, raw="";
+  try{
+    res = await fetch(GAS_URL, {method:"POST", body, headers:{"Content-Type":"text/plain;charset=utf-8"}});
+    raw = await res.text();
+  }catch(netErr){
+    const e = new Error("Gangguan rangkaian: "+(netErr.message||netErr));
+    e.action = action; throw e;
+  }
+  let json;
+  try{ json = JSON.parse(raw); }
+  catch{ const e=new Error("Respons bukan JSON dari pelayan:\n"+raw.slice(0,400)); e.action=action; throw e; }
+  if(!json.ok){ const e=new Error(json.error||"API error"); e.action=action; throw e; }
   return json.data;
 }
 
@@ -217,7 +279,7 @@ $("#form-node").addEventListener("submit", async e=>{
     toast(State.user.role==="admin"?"Disimpan":"Dihantar untuk semakan admin");
     closeModal("modal-node");
     await refresh();
-  }catch(err){toast("Ralat: "+err.message);}
+  }catch(err){showError(err,{title:"Gagal simpan ahli",context:err.action||"saveNode"});}
 });
 
 /* ---------- Spouse Editor ---------- */
@@ -253,12 +315,12 @@ $("#form-spouse").addEventListener("submit", async e=>{
     toast(State.user.role==="admin"?"Pasangan ditambah":"Dihantar untuk semakan admin");
     closeModal("modal-spouse");
     await refresh();
-  }catch(err){toast("Ralat: "+err.message);}
+  }catch(err){showError(err,{title:"Gagal simpan pasangan",context:err.action||"saveNode"});}
 });
 
 async function delNode(n){
   if(!confirm("Padam "+n.name+"?")) return;
-  try{await api("deleteNode",{id:n.id});await refresh();}catch(e){toast(e.message);}
+  try{await api("deleteNode",{id:n.id});await refresh();}catch(e){showError(e,{title:"Gagal padam",context:"deleteNode"});}
 }
 
 /* ---------- Auth ---------- */
@@ -280,7 +342,7 @@ $("#form-login").addEventListener("submit",async e=>{
     State.user = u; localStorage.setItem("user",JSON.stringify(u));
     updateUserUI(); closeModal("modal-auth"); toast("Selamat datang, "+u.username);
     refresh();
-  }catch(err){toast(err.message);}
+  }catch(err){showError(err,{title:"Gagal log masuk",context:"login"});}
 });
 $("#form-register").addEventListener("submit",async e=>{
   e.preventDefault();
@@ -290,7 +352,7 @@ $("#form-register").addEventListener("submit",async e=>{
   if(photo) data.photo = photo;
   try{await api("register",data);toast("Berjaya daftar! Sila log masuk.");
     $$("#modal-auth .tab")[0].click();
-  }catch(err){toast(err.message);}
+  }catch(err){showError(err,{title:"Gagal daftar",context:"register"});}
 });
 
 function updateUserUI(){
@@ -326,12 +388,12 @@ async function loadAdmin(){
     u.innerHTML='<table class="w-full text-xs"><thead><tr class="text-left" style="color:var(--ink-soft)"><th>#</th><th>Username</th><th>Nama</th><th>Peranan</th></tr></thead><tbody></tbody></table>';
     const tb=u.querySelector("tbody");
     d.users.forEach(x=>{const tr=document.createElement("tr");tr.innerHTML=`<td>${x.no}</td><td>${escape(x.username)}</td><td>${escape(x.fullname)}</td><td>${x.role}</td>`;tb.appendChild(tr);});
-  }catch(e){toast(e.message);}
+  }catch(e){showError(e,{title:"Gagal muat panel admin",context:"adminData"});}
 }
 $("#btn-init-root").addEventListener("click",async()=>{
   const name = $("#root-name").value.trim();
   if(!name) return;
-  try{await api("initRoot",{name});toast("Root dicipta");closeModal("modal-admin");refresh();}catch(e){toast(e.message);}
+  try{await api("initRoot",{name});showInfo("Root berjaya dicipta");closeModal("modal-admin");refresh();}catch(e){ if(String(e.message).includes("Root sudah wujud")){ showWarn("Root sudah wujud dalam sistem. Tiada tindakan diperlukan."); closeModal("modal-admin"); refresh(); } else { showError(e,{title:"Gagal cipta root",context:"initRoot"}); } }
 });
 
 /* ---------- Settings ---------- */
@@ -417,7 +479,7 @@ async function refresh(){
     const d = await api("getTree",{});
     State.nodes = d.nodes||[];
     buildTree();
-  }catch(e){ toast(e.message); }
+  }catch(e){ showError(e,{title:"Gagal memuat salasilah",context:"getTree"}); const host=$("#tree-root"); if(host) host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Gagal memuat data. Sila lihat notifikasi ralat di atas.</p>'; }
 }
 
 /* ---------- Boot ---------- */

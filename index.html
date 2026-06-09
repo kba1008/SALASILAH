@@ -158,6 +158,30 @@
 
   /* Header */
   header h1{font-family:'Cormorant Garamond',serif;letter-spacing:.05em;}
+
+  /* === ERROR NOTIFIER === */
+  #err-stack{position:fixed;top:64px;right:12px;left:12px;z-index:200;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:520px;margin-left:auto;}
+  .err-card{
+    pointer-events:auto;
+    background:linear-gradient(160deg,#fff5f5,#fde2e2);
+    border:1.5px solid #c0392b;
+    border-radius:14px;
+    box-shadow:0 12px 30px -10px rgba(150,30,20,.45);
+    padding:12px 14px;
+    color:#3b1010;
+    font-size:13px;
+    animation:errIn .25s ease-out;
+  }
+  .err-card.warn{background:linear-gradient(160deg,#fffaf0,#fce8c5);border-color:#a8801f;color:#4a3210;}
+  .err-card.info{background:linear-gradient(160deg,#eef5ff,#d8e7fb);border-color:#3b6fa0;color:#102640;}
+  @keyframes errIn{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+  .err-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;}
+  .err-title{font-family:'Cormorant Garamond',serif;font-weight:700;font-size:15px;}
+  .err-actions{display:flex;gap:4px;}
+  .err-btn{font-size:11px;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.06);color:inherit;border:1px solid rgba(0,0,0,.12);}
+  .err-btn:hover{background:rgba(0,0,0,.12);}
+  .err-msg{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;max-height:180px;overflow:auto;background:rgba(255,255,255,.55);padding:6px 8px;border-radius:6px;border:1px dashed rgba(0,0,0,.15);user-select:text;-webkit-user-select:text;}
+
 </style>
 </head>
 <body class="overflow-hidden">
@@ -334,6 +358,7 @@
   </div>
 </div>
 
+<div id="err-stack"></div>
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] hidden glass px-4 py-2 rounded-full text-sm"></div>
 
 <script src="app.js"></script>
