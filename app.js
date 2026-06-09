@@ -172,6 +172,81 @@ async function api(action, payload={}){
   return json.data;
 }
 
+
+/* ---------- Optimistic save helper ---------- */
+let __refreshQueued = false;
+function scheduleRefresh(){
+  if(__refreshQueued) return;
+  __refreshQueued = true;
+  setTimeout(async ()=>{ __refreshQueued = false; try{ await refresh(); }catch(_){} }, 250);
+}
+function runInBackground(promise, opts={}){
+  const {title="Gagal simpan", context="api", onError} = opts;
+  Promise.resolve(promise)
+    .then(()=>{ scheduleRefresh(); })
+    .catch(err=>{
+      if(onError) try{ onError(err); }catch(_){}
+      showError(err,{title, context: err?.action||context});
+    });
+}
+
+/* ---------- Pending changes (batch save) ---------- */
+const Pending = {
+  items: [],
+  add(op){
+    if(op.key){ this.items = this.items.filter(x=>x.key!==op.key); }
+    this.items.push(op);
+    this.renderBar();
+  },
+  clear(){ this.items = []; this.renderBar(); },
+  count(){ return this.items.length; },
+  renderBar(){
+    let bar = document.getElementById("pending-bar");
+    if(!this.items.length){ if(bar) bar.remove(); return; }
+    if(!bar){
+      bar = document.createElement("div");
+      bar.id = "pending-bar";
+      bar.style.cssText = "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#3b2a14;color:#fff;padding:10px 14px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.3);display:flex;gap:8px;align-items:center;z-index:9999;font-family:inherit;max-width:calc(100vw - 24px);flex-wrap:wrap;justify-content:center;";
+      bar.innerHTML = `
+        <span id="pending-count" style="font-weight:600;font-size:14px"></span>
+        <button id="pending-save" style="background:#22c55e;color:#fff;border:0;border-radius:999px;padding:8px 16px;cursor:pointer;font-weight:700;font-size:14px">💾 Simpan Semua</button>
+        <button id="pending-discard" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:999px;padding:8px 14px;cursor:pointer;font-size:13px">↺ Buang</button>`;
+      document.body.appendChild(bar);
+      bar.querySelector("#pending-save").onclick = ()=>Pending.commit();
+      bar.querySelector("#pending-discard").onclick = ()=>Pending.discard();
+    }
+    bar.querySelector("#pending-count").textContent = `${this.items.length} perubahan belum disimpan`;
+  },
+  async commit(){
+    if(!this.items.length) return;
+    const saveBtn = document.getElementById("pending-save");
+    if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "Menyimpan…"; }
+    const queue = this.items.slice();
+    this.items = [];
+    const failed = [];
+    for(const op of queue){
+      try { await op.run(); }
+      catch(err){
+        failed.push(op);
+        showError(err, {title:"Gagal: "+op.label, context:"batch"});
+      }
+    }
+    this.items = failed;
+    this.renderBar();
+    toast(failed.length ? `${failed.length} perubahan gagal disimpan` : "Semua perubahan disimpan");
+    try{ await refresh(); }catch(_){}
+  },
+  async discard(){
+    if(!confirm("Buang semua perubahan yang belum disimpan?")) return;
+    this.clear();
+    try{ await refresh(); }catch(_){}
+  }
+};
+window.addEventListener("beforeunload", e=>{
+  if(Pending.count()){ e.preventDefault(); e.returnValue = ""; }
+});
+function queueChange(op){ Pending.add(op); }
+
 async function fileToBase64(f){
   if(!f || !f.name) return null;
   return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({name:f.name,type:f.type,data:r.result.split(",")[1]});r.onerror=rej;r.readAsDataURL(f);});
@@ -685,12 +760,9 @@ $("#form-node").addEventListener("submit", async e=>{
   delete payload.photo;
   if(photo) payload.photo = photo;
   if(payload.id) payload.relation = "edit";
-  try{
-    await api("saveNode", payload);
-    toast(State.user.role==="admin"?"Disimpan":"Dihantar untuk semakan admin");
-    closeModal("modal-node");
-    await refresh();
-  }catch(err){showError(err,{title:"Gagal simpan ahli",context:err.action||"saveNode"});}
+  toast("Dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+  closeModal("modal-node");
+  queueChange({label:"Simpan ahli "+(payload.name||""), run:()=>api("saveNode", payload)});
 });
 
 /* ---------- Spouse Editor ---------- */
@@ -728,57 +800,42 @@ $("#form-spouse").addEventListener("submit", async e=>{
   if(!parent){toast("Profil induk tidak dijumpai");return;}
   const photo = await fileToBase64(fd.get("photo"));
   const editOrder = fd.get("editOrder");
-  try{
-    if(editOrder){
-      const payload = {
-        parentId: parent.id,
-        order: Number(editOrder),
-        name: fd.get("name"),
-        nickname: fd.get("nickname")||"",
-        gender: fd.get("gender")||"",
-        status: fd.get("status"),
-        birth: fd.get("birth")||"",
-        birthplace: fd.get("birthplace")||"",
-        death: fd.get("death")||"",
-        deathplace: fd.get("deathplace")||"",
-        notes: fd.get("notes")||"",
-        newOrder: Number(fd.get("spouseOrder"))||Number(editOrder),
-      };
-      if(photo) payload.photo = photo;
-      await api("editSpouse", payload);
-    } else {
-      const payload = {
-        parentId: parent.id,
-        relation: "spouse",
-        name: fd.get("name"),
-        nickname: fd.get("nickname")||"",
-        gender: fd.get("gender")||"",
-        spouseStatus: fd.get("status"),
-        birth: fd.get("birth")||"",
-        birthplace: fd.get("birthplace")||"",
-        spouseDeath: fd.get("death")||"",
-        deathplace: fd.get("deathplace")||"",
-        notes: fd.get("notes")||"",
-        spouseOrder: fd.get("spouseOrder")||"",
-      };
-      if(photo) payload.photo = photo;
-      await api("saveNode", payload);
-    }
-    toast(State.user.role==="admin"?"Disimpan":"Dihantar untuk semakan admin");
-    closeModal("modal-spouse");
-    await refresh();
-  }catch(err){showError(err,{title:"Gagal simpan pasangan",context:err.action||"saveNode"});}
+  let runCall;
+  if(editOrder){
+    const payload = {
+      parentId: parent.id, order: Number(editOrder),
+      name: fd.get("name"), nickname: fd.get("nickname")||"",
+      gender: fd.get("gender")||"", status: fd.get("status"),
+      birth: fd.get("birth")||"", birthplace: fd.get("birthplace")||"",
+      death: fd.get("death")||"", deathplace: fd.get("deathplace")||"",
+      notes: fd.get("notes")||"",
+      newOrder: Number(fd.get("spouseOrder"))||Number(editOrder),
+    };
+    if(photo) payload.photo = photo;
+    runCall = ()=>api("editSpouse", payload);
+  } else {
+    const payload = {
+      parentId: parent.id, relation: "spouse",
+      name: fd.get("name"), nickname: fd.get("nickname")||"",
+      gender: fd.get("gender")||"", spouseStatus: fd.get("status"),
+      birth: fd.get("birth")||"", birthplace: fd.get("birthplace")||"",
+      spouseDeath: fd.get("death")||"", deathplace: fd.get("deathplace")||"",
+      notes: fd.get("notes")||"", spouseOrder: fd.get("spouseOrder")||"",
+    };
+    if(photo) payload.photo = photo;
+    runCall = ()=>api("saveNode", payload);
+  }
+  toast("Dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+  closeModal("modal-spouse");
+  queueChange({label:"Simpan pasangan", run: runCall});
 });
 
 async function delNode(n){
   const isAdmin = State.user?.role==="admin";
   const q = isAdmin ? "Padam "+n.name+"? Tindakan ini tidak boleh dibatalkan." : "Pohon admin padam "+n.name+"? Permintaan akan dihantar untuk kelulusan.";
   if(!confirm(q)) return;
-  try{
-    await api("deleteNode",{id:n.id});
-    showInfo(isAdmin?"Dipadam":"Permintaan padam dihantar untuk semakan admin");
-    await refresh();
-  }catch(e){showError(e,{title:"Gagal padam",context:"deleteNode"});}
+  toast("Padam dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+  queueChange({key:"del:"+n.id, label:"Padam "+n.name, run:()=>api("deleteNode",{id:n.id})});
 }
 
 /* ---------- NOTA pada peta ---------- */
@@ -829,11 +886,12 @@ function enableNoteDrag(el, n){
     const nx=parseFloat(el.style.left)||0, ny=parseFloat(el.style.top)||0;
     drag=null;
     if(moved){
-      try{
-        await api("saveNote",{id:n.id, text:n.text, x:nx, y:ny, font:n.font, size:n.size, color:n.color, pinned:n.pinned});
-        if(State.user.role!=="admin") toast("Kedudukan baharu — perlu kelulusan admin");
-        await refresh();
-      }catch(e){ showError(e,{title:"Gagal alih nota",context:"saveNote"}); }
+      n.x = nx; n.y = ny; // optimistic
+      queueChange({
+        key:"note:"+n.id,
+        label:"Alih nota",
+        run:()=>api("saveNote",{id:n.id, text:n.text, x:n.x, y:n.y, font:n.font, size:n.size, color:n.color, pinned:n.pinned})
+      });
     }
   });
 }
@@ -885,28 +943,25 @@ $("#form-note").addEventListener("submit", async e=>{
     pinned: State.user.role==="admin" ? !!fd.get("pinned") : false,
   };
   if(!payload.id) delete payload.id;
-  try{
-    await api("saveNote", payload);
-    toast(State.user.role==="admin"?"Nota disimpan":"Dihantar untuk semakan admin");
-    closeModal("modal-note");
-    await refresh();
-  }catch(err){ showError(err,{title:"Gagal simpan nota",context:err.action||"saveNote"}); }
+  toast("Dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+  closeModal("modal-note");
+  queueChange({key: payload.id ? "note:"+payload.id : undefined, label:"Simpan nota", run:()=>api("saveNote", payload)});
 });
 async function togglePin(n){
-  try{
-    await api("saveNote",{id:n.id, text:n.text, x:n.x, y:n.y, font:n.font, size:n.size, color:n.color, pinned:!n.pinned});
-    showInfo(n.pinned?"Pin dibuka":"Nota dipin");
-    await refresh();
-  }catch(e){ showError(e,{title:"Gagal pin",context:"saveNote"}); }
+  const newPinned = !n.pinned;
+  n.pinned = newPinned; // optimistic
+  renderNotes();
+  queueChange({
+    key:"note:"+n.id,
+    label: newPinned?"Pin nota":"Buka pin",
+    run:()=>api("saveNote",{id:n.id, text:n.text, x:n.x, y:n.y, font:n.font, size:n.size, color:n.color, pinned:newPinned})
+  });
 }
 async function deleteNote(n){
   const isAdmin = State.user?.role==="admin";
   if(!confirm(isAdmin?"Padam nota ini?":"Pohon padam nota ini? Perlu kelulusan admin.")) return;
-  try{
-    await api("deleteNote",{id:n.id});
-    showInfo(isAdmin?"Nota dipadam":"Permintaan padam dihantar");
-    await refresh();
-  }catch(e){ showError(e,{title:"Gagal padam nota",context:"deleteNote"}); }
+  toast("Padam dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+  queueChange({key:"note-del:"+n.id, label:"Padam nota", run:()=>api("deleteNote",{id:n.id})});
 }
 // Butang tambah nota — masuk mod letak
 $("#btn-add-note").addEventListener("click",()=>{
