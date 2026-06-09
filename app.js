@@ -4,6 +4,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbw8TMolZYTDNRRjDIU-Im-A
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
+  myProfile: null,
   nodes: [],
   notes: [],
   users: [],
@@ -174,6 +175,29 @@ function findLinkedUser(n){
   if(!nm) return null;
   return State.users.find(u=> normalizeName(u.fullname)===nm ) || null;
 }
+function canManageContent(){
+  return !!State.user && (State.user.role === "admin" || !!State.user.approved);
+}
+function memberStatusText(u = State.user){
+  if(!u) return "Mod Pelawat — lihat sahaja";
+  if(u.role === "admin") return `${u.username} • ADMIN`;
+  if(u.approved) return `${u.username} • Ahli #${u.no || "-"}`;
+  return `${u.username} • Menunggu pengesahan admin`;
+}
+async function loadMyProfile(silent=true){
+  if(!State.user){ State.myProfile = null; return null; }
+  try{
+    const me = await api("myProfile",{});
+    State.myProfile = me;
+    State.user = { ...State.user, ...me, token: State.user.token, isMaster: State.user.isMaster };
+    localStorage.setItem("user", JSON.stringify(State.user));
+    updateUserUI();
+    return me;
+  }catch(err){
+    if(!silent) showError(err,{title:"Gagal memuat profil anda",context:"myProfile"});
+    return null;
+  }
+}
 
 /* ---------- Render Tree ---------- */
 function buildTree(){
@@ -233,7 +257,7 @@ function renderNode(n){
 
   const couple = document.createElement("div");
   couple.className = "couple"+(n.pending?" pending-family":"");
-  couple.appendChild(card(n));
+  couple.appendChild(card(n, parents));
   const sps = getSpouses(n);
   sps.forEach((sp,idx)=>{
     const link = document.createElement("div");
@@ -290,13 +314,14 @@ function renderNode(n){
   }
   return li;
 }
-function card(n){
+function card(n, parents = getChildParents(n)){
   const linked = findLinkedUser(n);
-  const isAdminUser = linked && linked.role === "admin";
+  const isApprovedUser = !!(linked && linked.approved);
+  const isAdminUser = linked && linked.role === "admin" && linked.approved;
   const d = document.createElement("div");
-  d.className = "node"+(n.pending?" pending":"")+(!n.parentId && !n.hanging ?" root":"")+(n.hanging?" hanging":"")+(linked?" is-user":"")+(isAdminUser?" is-admin":"");
+  d.className = "node"+(n.pending?" pending":"")+(!n.parentId && !n.hanging ?" root":"")+(n.hanging?" hanging":"")+(isApprovedUser?" is-user":"")+(isAdminUser?" is-admin":"");
   d.dataset.nodeId = n.id;
-  const badges = `${linked?`<span class="badge-user" title="Pengguna berdaftar: @${escape(linked.username)}">👤</span>`:""}${isAdminUser?`<span class="badge-admin" title="Admin">★</span>`:""}`;
+  const badges = `${isApprovedUser?`<span class="badge-user" title="Ahli berdaftar: @${escape(linked.username)}">👤</span>`:""}${isAdminUser?`<span class="badge-admin" title="Admin">★</span>`:""}`;
   const parentMeta = n.parentId
     ? `<div class="meta parentage" dir="auto">Bapa: ${escape(parents.fatherShort)}</div><div class="meta parentage" dir="auto">Ibu: ${escape(parents.motherShort)}</div>`
     : "";
@@ -334,7 +359,7 @@ function escape(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"
 /* ---------- Context Menu ---------- */
 function showCtx(x,y,n){
   const m = $("#ctx-menu");
-  const canEdit = !!State.user;
+  const canEdit = canManageContent();
   const isAdmin = State.user?.role==="admin";
   const linked = findLinkedUser(n);
   m.innerHTML = "";
@@ -345,7 +370,7 @@ function showCtx(x,y,n){
     canEdit && canAddSpouse(n) && {l:"💍 Tambah Pasangan", fn:()=>openSpouseEditor(n)},
     isAdmin && {l:"🔀 Pindah ke parent lain…", fn:()=>startReparent(n)},
     isAdmin && n.parentId && {l:"⛓ Putuskan jadi root tergantung", fn:()=>doReparent(n.id, "", true)},
-    linked && {l:`👤 Pengguna berdaftar: @${linked.username}${linked.role==='admin'?' ★':''}`, fn:()=>showInfo(`Nama: ${linked.fullname}\nUsername: @${linked.username}\nPeranan: ${linked.role==='admin'?'ADMIN ★':'Ahli'}`,{title:"Pengguna Berdaftar"})},
+    linked && {l:`👤 ${linked.approved?'Ahli berdaftar':'Pengguna menunggu sah'}: @${linked.username}${linked.role==='admin'?' ★':''}`, fn:()=>showInfo(`Nama: ${linked.fullname}\nUsername: @${linked.username}\nPeranan: ${linked.role==='admin'?'ADMIN ★':'Ahli'}\nStatus: ${linked.approved?'Sudah disahkan':'Menunggu pengesahan admin'}${linked.no?`\nNo. Ahli: ${linked.no}`:''}`,{title:"Pengguna Berdaftar"})},
     canEdit && {l: isAdmin?"🗑 Padam":"🗑 Pohon Padam", fn:()=>delNode(n)},
   ].filter(Boolean);
   items.forEach(i=>{const b=document.createElement("button");b.textContent=i.l;b.onclick=()=>{m.classList.add("hidden");i.fn();};m.appendChild(b);});
@@ -447,9 +472,7 @@ function viewProfile(n){
       </div>`:""}
     ${!State.user?'<p class="text-[11px] mt-3 text-center" style="color:var(--ink-soft)">Mod pelawat — lihat sahaja.</p>':`
       <div class="flex gap-2 mt-4">
-        <button class="btn btn-primary flex-1" id="profile-edit-btn">✎ Edit Maklumat</button>
-        <button class="btn btn-ghost flex-1" id="profile-addchild-btn">➕ Tambah Anak</button>
-        <button class="btn btn-ghost flex-1" id="profile-addspouse-btn">💍 Tambah Pasangan</button>
+        ${canManageContent()?'<button class="btn btn-primary flex-1" id="profile-edit-btn">✎ Edit Maklumat</button><button class="btn btn-ghost flex-1" id="profile-addchild-btn">➕ Tambah Anak</button><button class="btn btn-ghost flex-1" id="profile-addspouse-btn">💍 Tambah Pasangan</button>':'<div class="text-[11px] w-full text-center px-3 py-2 rounded-lg" style="background:rgba(148,163,184,.12);color:var(--ink-soft)">Akaun anda perlu disahkan admin dahulu sebelum boleh menambah atau mengubah data.</div>'}
       </div>
       ${canApprove?`<div class="flex gap-2 mt-3">
         <button class="btn btn-primary flex-1" id="profile-approve-btn">✓ Sahkan Data Ini</button>
@@ -458,7 +481,7 @@ function viewProfile(n){
     `}
   `;
   openModal("modal-profile");
-  if(State.user){
+  if(State.user && canManageContent()){
     const eb = document.getElementById("profile-edit-btn");
     if(eb) eb.onclick = ()=>{ closeModal("modal-profile"); openNodeEditor(n); };
     const ab = document.getElementById("profile-addchild-btn");
@@ -532,7 +555,7 @@ async function moderateTarget(targetId, targetType, decision="approve"){
 
 /* ---------- Node Editor ---------- */
 function openNodeEditor(node, parentId=null, relation="child", parentNode=null){
-  if(!State.user){toast("Sila log masuk");return;}
+  if(!canManageContent()){toast("Akaun anda perlu disahkan admin dahulu");return;}
   const f = $("#form-node");
   f.reset();
   f.id.value = node?.id || "";
@@ -591,7 +614,7 @@ $("#form-node").addEventListener("submit", async e=>{
 
 /* ---------- Spouse Editor ---------- */
 function openSpouseEditor(parent, existing=null){
-  if(!State.user){toast("Sila log masuk");return;}
+  if(!canManageContent()){toast("Akaun anda perlu disahkan admin dahulu");return;}
   const f = $("#form-spouse"); f.reset();
   f.parentId.value = parent.id;
   const sps = getSpouses(parent);
@@ -752,7 +775,7 @@ function openNoteCtx(x,y,n){
   m.classList.remove("hidden");
 }
 function openNoteEditor(n){
-  if(!State.user){toast("Sila log masuk untuk tambah/edit nota");return;}
+  if(!canManageContent()){toast("Akaun anda perlu disahkan admin dahulu");return;}
   const f = $("#form-note"); f.reset();
   f.id.value = n?.id || "";
   f.x.value = n?.x ?? 100;
@@ -806,7 +829,7 @@ async function deleteNote(n){
 }
 // Butang tambah nota — masuk mod letak
 $("#btn-add-note").addEventListener("click",()=>{
-  if(!State.user){toast("Log masuk dahulu untuk tambah nota");return;}
+  if(!canManageContent()){toast("Akaun anda perlu disahkan admin dahulu untuk tambah nota");return;}
   State.noteAddMode = true;
   toast("Klik pada peta untuk meletakkan nota baharu");
   document.body.classList.add("note-add-cursor");
@@ -824,10 +847,96 @@ $("#canvas").addEventListener("click", e=>{
   openNoteEditor({x: Math.round(x), y: Math.round(y), text:"", font:"Cormorant Garamond", size:18, color:"#3b2a14"});
 });
 
+/* ---------- Profil Saya ---------- */
+function showMyProfile(){
+  if(!State.user){ openModal("modal-auth"); return; }
+  const me = State.myProfile || State.user;
+  const photo = fixPhoto(me.photo) || placeholder("L");
+  const statusHtml = me.role==="admin"
+    ? '<div class="text-[11px] mt-1 font-semibold" style="color:var(--gold-dark)">ADMIN aktif</div>'
+    : me.approved
+      ? `<div class="text-[11px] mt-1 font-semibold" style="color:#1e7a3b">Ahli sah • No. keahlian ${escape(me.no||"-")}</div>`
+      : '<div class="text-[11px] mt-1 font-semibold" style="color:#92400e">Menunggu pengesahan admin</div>';
+  $("#my-profile-body").innerHTML = `
+    <div class="flex flex-col items-center mb-4">
+      <img src="${photo}" onerror="this.src='${placeholder("L")}'" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--gold)"/>
+      <h2 class="text-2xl font-bold text-center serif" dir="auto">${escape(me.fullname || me.username || "-")}</h2>
+      <p class="text-xs" style="color:var(--ink-soft)">@${escape(me.username || "-")}</p>
+      ${statusHtml}
+    </div>
+    <div class="space-y-2 text-sm" dir="auto">
+      ${rowField("Nama penuh", me.fullname)}
+      ${rowField("Email", me.email)}
+      ${rowField("Telefon", me.phone)}
+      ${rowField("Nama bapa", me.fatherName)}
+      ${rowField("Nama ibu", me.motherName)}
+      ${me.approved ? rowField("No. keahlian sah", me.no) : ""}
+      ${me.approvedAt ? rowField("Tarikh sah", fmtDateTime(me.approvedAt)) : ""}
+      ${me.approvedBy ? rowField("Disahkan oleh", me.approvedBy) : ""}
+    </div>
+    <div class="mt-4 rounded-xl p-3 text-[12px]" style="background:rgba(148,163,184,.12);color:var(--ink-soft)">
+      ${me.approved
+        ? "Kad keahlian boleh dicetak melalui butang di bawah."
+        : "Akaun anda akan disemak oleh mana-mana admin. Admin akan hubungi anda melalui nombor telefon yang didaftarkan untuk pengesahan. Gambar profil yang sah wajib ada sebelum akaun boleh disahkan."}
+    </div>
+    ${me.approved && me.role!=="admin" ? '<div class="flex gap-2 mt-4"><button class="btn btn-primary flex-1" id="btn-print-member-card">🪪 Cetak Kad Ahli</button></div>' : ""}
+  `;
+  openModal("modal-my-profile");
+  const printBtn = document.getElementById("btn-print-member-card");
+  if(printBtn) printBtn.onclick = ()=>printMemberCard(me);
+}
+function printMemberCard(me){
+  if(!me?.approved || !me?.no){ toast("Kad ahli hanya tersedia selepas akaun disahkan"); return; }
+  const photo = fixPhoto(me.photo) || placeholder("L");
+  const win = window.open("", "_blank", "width=900,height=640");
+  if(!win){ toast("Benarkan popup untuk mencetak kad ahli"); return; }
+  win.document.write(`<!DOCTYPE html>
+  <html lang="ms"><head><meta charset="UTF-8"><title>Kad Ahli</title>
+  <style>
+    body{font-family:Inter,Arial,sans-serif;background:#f3ead5;margin:0;padding:24px;color:#2e2418}
+    .sheet{display:flex;align-items:center;justify-content:center;min-height:100vh}
+    .card{width:860px;max-width:100%;background:linear-gradient(145deg,#fffaf0,#edd8a8);border:3px solid #8d6921;border-radius:26px;box-shadow:0 24px 50px -24px rgba(0,0,0,.4);overflow:hidden}
+    .top{padding:22px 28px;background:linear-gradient(135deg,#7a5a14,#b88b2a);color:#fff7dd}
+    .brand{font-size:30px;font-weight:800;letter-spacing:.08em}
+    .sub{font-size:14px;opacity:.92}
+    .body{display:flex;gap:24px;padding:28px}
+    .photo{width:180px;height:220px;border-radius:20px;object-fit:cover;border:4px solid #8d6921;background:#fff}
+    .meta{flex:1}
+    .name{font-size:34px;font-weight:800;line-height:1.1;margin:4px 0 14px}
+    .row{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid rgba(122,90,20,.18)}
+    .label{font-size:13px;color:#6d5a37;text-transform:uppercase;letter-spacing:.06em}
+    .value{font-size:18px;font-weight:700;text-align:right}
+    .foot{padding:0 28px 28px;color:#6d5a37;font-size:13px}
+    @media print{body{background:#fff;padding:0}.sheet{min-height:auto}.card{box-shadow:none;width:100%;border-radius:0}}
+  </style></head>
+  <body><div class="sheet"><div class="card">
+    <div class="top"><div class="brand">SALASILAH ELIT</div><div class="sub">Kad Keahlian Sah</div></div>
+    <div class="body">
+      <img class="photo" src="${photo}" onerror="this.src='${placeholder("L")}'">
+      <div class="meta">
+        <div class="name">${escape(me.fullname || me.username || "-")}</div>
+        <div class="row"><div class="label">No. Keahlian</div><div class="value">#${escape(me.no || "-")}</div></div>
+        <div class="row"><div class="label">Username</div><div class="value">@${escape(me.username || "-")}</div></div>
+        <div class="row"><div class="label">Telefon</div><div class="value">${escape(me.phone || "-")}</div></div>
+        <div class="row"><div class="label">Disahkan oleh</div><div class="value">${escape(me.approvedBy || "-")}</div></div>
+        <div class="row"><div class="label">Tarikh sah</div><div class="value">${escape(fmtDateTime(me.approvedAt) || "-")}</div></div>
+      </div>
+    </div>
+    <div class="foot">Kad ini dijana daripada profil pengguna yang telah disahkan oleh admin.</div>
+  </div></div></body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(), 300);
+}
+
 /* ---------- Auth ---------- */
+$("#btn-my-profile").addEventListener("click",async()=>{
+  await loadMyProfile(false);
+  showMyProfile();
+});
 $("#btn-auth").addEventListener("click",()=>{
   if(State.user){
-    if(confirm("Log keluar?")){localStorage.removeItem("user");State.user=null;updateUserUI();}
+    if(confirm("Log keluar?")){localStorage.removeItem("user");State.user=null;State.myProfile=null;updateUserUI();}
   } else openModal("modal-auth");
 });
 $$("#modal-auth .tab").forEach(b=>b.addEventListener("click",()=>{
@@ -841,7 +950,8 @@ $("#form-login").addEventListener("submit",async e=>{
   try{
     const u = await api("login",fd);
     State.user = u; localStorage.setItem("user",JSON.stringify(u));
-    updateUserUI(); closeModal("modal-auth"); toast("Selamat datang, "+u.username);
+    await loadMyProfile(true);
+    updateUserUI(); closeModal("modal-auth"); toast(u.approved ? "Selamat datang, "+u.username : "Log masuk berjaya. Akaun anda masih menunggu pengesahan admin.");
     refresh();
   }catch(err){showError(err,{title:"Gagal log masuk",context:"login"});}
 });
@@ -850,18 +960,20 @@ $("#form-register").addEventListener("submit",async e=>{
   const fd = new FormData(e.target);
   const photo = await fileToBase64(fd.get("photo"));
   const data = Object.fromEntries(fd.entries()); delete data.photo;
+  if(!photo){ toast("Gambar profil yang sah adalah wajib untuk pendaftaran"); return; }
   if(photo) data.photo = photo;
-  try{await api("register",data);toast("Berjaya daftar! Sila log masuk.");
+  try{await api("register",data);toast("Pendaftaran diterima. Admin akan hubungi anda untuk pengesahan.");
     $$("#modal-auth .tab")[0].click();
   }catch(err){showError(err,{title:"Gagal daftar",context:"register"});}
 });
 
 function updateUserUI(){
   const u = State.user;
-  $("#user-info").textContent = u?`${u.username} • ${u.role==="admin"?"ADMIN":"Ahli #"+u.no}`:"Mod Pelawat — lihat sahaja";
+  $("#user-info").textContent = memberStatusText(u);
   $("#btn-auth").textContent = u?"Keluar":"Log Masuk";
   $("#btn-admin").classList.toggle("hidden", u?.role!=="admin");
-  $("#btn-add-note").classList.toggle("hidden", !u);
+  $("#btn-add-note").classList.toggle("hidden", !canManageContent());
+  $("#btn-my-profile").classList.toggle("hidden", !u);
   if(u?.role==="admin") refreshPendingBadge();
 }
 async function refreshPendingBadge(){
@@ -926,25 +1038,37 @@ async function loadAdmin(){
       const isMasterRow = x.username === "admin";
       const phoneClean = String(x.phone||"").replace(/[^0-9+]/g,"");
       const waNum = phoneClean.replace(/^\+/,"").replace(/^0/,"60");
+      const canApproveUser = !isMasterRow && x.role !== "admin" && !x.approved;
       const card = document.createElement("div");
       card.className = "glass rounded-lg p-3 text-xs space-y-1";
       card.innerHTML = `
         <div class="flex justify-between items-start gap-2">
+          <img src="${fixPhoto(x.photo)||placeholder('L')}" onerror="this.src='${placeholder('L')}'" style="width:58px;height:58px;border-radius:14px;object-fit:cover;border:2px solid var(--line-soft);flex-shrink:0"/>
           <div class="min-w-0 flex-1">
-            <div class="font-semibold" style="color:var(--ink)" dir="auto">#${x.no} ${escape(x.fullname||x.username)} ${isMasterRow?'<span style="color:var(--gold-dark)">👑</span>':''}</div>
-            <div style="color:var(--ink-soft)" dir="auto">@${escape(x.username)} • ${x.role==='admin'?'<b style="color:var(--gold-dark)">ADMIN</b>':'Ahli'} ${x.banned?'• <b style="color:#c0392b">DISEKAT</b>':''}</div>
+            <div class="font-semibold" style="color:var(--ink)" dir="auto">${x.approved?`#${escape(x.no||"-")} `:'<span style="color:#92400e">[Menunggu] </span>'}${escape(x.fullname||x.username)} ${isMasterRow?'<span style="color:var(--gold-dark)">👑</span>':''}</div>
+            <div style="color:var(--ink-soft)" dir="auto">@${escape(x.username)} • ${x.role==='admin'?'<b style="color:var(--gold-dark)">ADMIN</b>':'Ahli'} ${x.approved?'• <b style="color:#1e7a3b">SAH</b>':'• <b style="color:#92400e">BELUM SAH</b>'} ${x.banned?'• <b style="color:#c0392b">DISEKAT</b>':''}</div>
             ${x.phone?`<div>📞 ${escape(x.phone)}</div>`:'<div style="color:#c0392b">⚠ Tiada no. telefon</div>'}
             ${x.email?`<div style="color:var(--ink-soft)">✉ ${escape(x.email)}</div>`:''}
             <div class="mt-1" dir="auto">👨 Bapa: <b>${escape(x.fatherName||'—')}</b></div>
             <div dir="auto">👩 Ibu: <b>${escape(x.motherName||'—')}</b></div>
+            <div dir="auto">${x.photo?`🖼 Gambar profil diterima`:'<span style="color:#c0392b">⚠ Tiada gambar profil</span>'}</div>
+            ${x.approvedAt?`<div style="color:var(--ink-soft)">✅ Disahkan pada ${escape(fmtDateTime(x.approvedAt))}${x.approvedBy?` oleh ${escape(x.approvedBy)}`:''}</div>`:'<div style="color:#92400e">⏳ Tunggu admin hubungi untuk pengesahan</div>'}
           </div>
         </div>
         <div class="flex flex-wrap gap-1 pt-1">
           ${phoneClean?`<a href="tel:${phoneClean}" class="btn btn-ghost text-[11px]">📞</a>`:''}
           ${waNum?`<a href="https://wa.me/${waNum}" target="_blank" class="btn btn-ghost text-[11px]">💬 WA</a>`:''}
+          ${canApproveUser?`<button data-act="approve" class="btn btn-primary text-[11px]">✓ Sahkan Akaun</button>`:''}
           ${(!isMasterRow && isMaster)?`<button data-act="role" class="btn btn-ghost text-[11px]">${x.role==='admin'?'⬇ Turun Ahli':'⬆ Lantik Admin'}</button>`:''}
           ${(!isMasterRow && (isMaster || x.role!=='admin'))?`<button data-act="ban" class="btn btn-ghost text-[11px]" style="color:${x.banned?'#1e7a3b':'#c0392b'}">${x.banned?'🔓 Buka Sekatan':'🚫 Sekat'}</button>`:''}
         </div>`;
+      const ab = card.querySelector('[data-act="approve"]');
+      if (ab) ab.onclick = async()=>{
+        if(!x.photo){ showWarn("Pengguna ini belum ada gambar profil yang sah."); return; }
+        if(!confirm(`Sahkan akaun @${x.username}? Nombor keahlian sah akan dijana.`)) return;
+        try{ await api("setUserApproval",{username:x.username, approved:true}); showInfo("Akaun pengguna disahkan"); loadAdmin(); refresh(); }
+        catch(e){ showError(e,{title:"Gagal sahkan pengguna",context:"setUserApproval"}); }
+      };
       const rb = card.querySelector('[data-act="role"]');
       if (rb) rb.onclick = async()=>{
         const newRole = x.role==='admin'?'ahli':'admin';
@@ -1112,6 +1236,7 @@ async function refresh(){
     State.nodes = d.nodes||[];
     State.notes = d.notes||[];
     State.users = d.users||[];
+    if(State.user) await loadMyProfile(true);
     buildTree();
     setTimeout(centerOnTree, 60);
     if(State.user?.role==="admin") refreshPendingBadge();
