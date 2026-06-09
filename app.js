@@ -4,7 +4,7 @@
  * URL Google Apps Script disimpan di sini sahaja.
  * Tidak dipaparkan dalam UI Tetapan.
  */
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbz9RO8eTDDNVpUD2m_EGSAwttq5juWkOd-yCQWJY_wk7QC-8F_9UXNEcGVPTd79qulo/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
