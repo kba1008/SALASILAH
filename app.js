@@ -1,15 +1,17 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbw4VAydQJVsQgJ-UFis72JEa8U7kmnfQoi7J-sbnjA5gofiacu_-WNMwzqraCY78plI/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
   nodes: [],
   notes: [],
+  users: [],
   panzoom: null,
   searchResults: [],
   searchIndex: 0,
   noteAddMode: false,
+  reparentMode: null, // {nodeId} bila admin sedang pilih parent baharu
 };
 
 const $ = (s, r=document) => r.querySelector(s);
@@ -138,16 +140,63 @@ function spouseOrdinal(n){
   return map[n]||("Ke-"+n);
 }
 
+/* ---------- User-link helper ---------- */
+function normalizeName(s){ return String(s||"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim(); }
+function findLinkedUser(n){
+  if(!State.users || !State.users.length) return null;
+  const nm = normalizeName(n.name);
+  if(!nm) return null;
+  return State.users.find(u=> normalizeName(u.fullname)===nm ) || null;
+}
+
 /* ---------- Render Tree ---------- */
 function buildTree(){
-  const root = State.nodes.find(n=>!n.parentId);
   const host = $("#tree-root");
-  if(!root){host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Belum ada data. Admin perlu Init Root.</p>';renderNotes();return;}
   host.className=""; host.innerHTML="";
-  const ul = document.createElement("ul");
-  ul.className="tree";
-  ul.appendChild(renderNode(root));
-  host.appendChild(ul);
+
+  // Cari root utama (parentId kosong & tidak hanging) dan root tergantung
+  const roots = State.nodes.filter(n=>!n.parentId);
+  const mainRoot = roots.find(r=>!r.hanging) || roots[0];
+  // Orphan: parentId wujud tapi parent tidak dijumpai
+  const ids = new Set(State.nodes.map(n=>n.id));
+  const orphans = State.nodes.filter(n=> n.parentId && !ids.has(n.parentId));
+  const hangingRoots = roots.filter(r=> r !== mainRoot);
+
+  if(!mainRoot && !orphans.length && !hangingRoots.length){
+    host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Belum ada data. Admin perlu Init Root.</p>';
+    renderNotes(); return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "trees-wrap";
+
+  if(mainRoot){
+    const main = document.createElement("div");
+    main.className = "tree-block";
+    const ul = document.createElement("ul"); ul.className="tree";
+    ul.appendChild(renderNode(mainRoot));
+    main.appendChild(ul);
+    wrap.appendChild(main);
+  }
+
+  // Root tergantung & orphan — render dengan label + garis putus merah ke atas
+  [...hangingRoots, ...orphans].forEach(n=>{
+    const block = document.createElement("div");
+    block.className = "tree-block hanging-block";
+    const label = document.createElement("div");
+    label.className = "hanging-label";
+    label.innerHTML = n.hanging
+      ? '🔗 <b>Root Tergantung</b> <span class="op-60">— masih dalam pencarian sambungan</span>'
+      : '⚠ <b>Cabang Terputus</b> <span class="op-60">— parent tidak dijumpai</span>';
+    block.appendChild(label);
+    const dashed = document.createElement("div"); dashed.className="dashed-link"; block.appendChild(dashed);
+    const ul = document.createElement("ul"); ul.className="tree";
+    ul.appendChild(renderNode(n));
+    block.appendChild(ul);
+    wrap.appendChild(block);
+  });
+
+  host.appendChild(wrap);
   renderNotes();
 }
 function renderNode(n){
@@ -179,11 +228,9 @@ function renderNode(n){
   li.appendChild(branch);
   const kids = State.nodes.filter(x=>x.parentId===n.id);
   if(kids.length){
-    // kumpul anak ikut spouseIndex jika ada spouses>1
     const cu = document.createElement("ul");
     cu.className="children-row";
     if(sps.length>1){
-      // tunjuk label kumpulan ibu
       const groups = {};
       kids.forEach(k=>{ const key = k.spouseIndex || "0"; (groups[key]=groups[key]||[]).push(k); });
       Object.keys(groups).sort().forEach(key=>{
@@ -211,13 +258,27 @@ function renderNode(n){
   return li;
 }
 function card(n){
+  const linked = findLinkedUser(n);
+  const isAdminUser = linked && linked.role === "admin";
   const d = document.createElement("div");
-  d.className = "node"+(n.pending?" pending":"")+(!n.parentId?" root":"");
+  d.className = "node"+(n.pending?" pending":"")+(!n.parentId && !n.hanging ?" root":"")+(n.hanging?" hanging":"")+(linked?" is-user":"")+(isAdminUser?" is-admin":"");
   d.dataset.nodeId = n.id;
-  d.innerHTML = `<img src="${fixPhoto(n.photo)||placeholder(n.gender)}" alt="" onerror="this.src='${placeholder(n.gender)}'"/>
+  const badges = `${linked?`<span class="badge-user" title="Pengguna berdaftar: @${escape(linked.username)}">👤</span>`:""}${isAdminUser?`<span class="badge-admin" title="Admin">★</span>`:""}`;
+  d.innerHTML = `${badges?`<div class="node-badges">${badges}</div>`:""}
+    <img src="${fixPhoto(n.photo)||fixPhoto(linked?.photo)||placeholder(n.gender)}" alt="" onerror="this.src='${placeholder(n.gender)}'"/>
     <div class="name" dir="auto">${escape(n.name)}</div>
     <div class="meta">#${n.no||"-"} ${n.birth||""}${n.death?" – "+n.death:""}</div>`;
-  d.addEventListener("click",e=>{e.stopPropagation();showCtx(e.clientX,e.clientY,n);});
+  d.addEventListener("click",e=>{
+    e.stopPropagation();
+    // Mod reparent: klik node mana-mana untuk jadikan parent baharu
+    if(State.reparentMode){
+      const targetId = State.reparentMode.nodeId;
+      if(targetId === n.id){ toast("Tidak boleh pilih diri sendiri"); return; }
+      doReparent(targetId, n.id);
+      return;
+    }
+    showCtx(e.clientX,e.clientY,n);
+  });
   return d;
 }
 function placeholder(g){
@@ -232,20 +293,50 @@ function showCtx(x,y,n){
   const m = $("#ctx-menu");
   const canEdit = !!State.user;
   const isAdmin = State.user?.role==="admin";
+  const linked = findLinkedUser(n);
   m.innerHTML = "";
   const items = [
     {l:"👁 Lihat Profil", fn:()=>viewProfile(n)},
     canEdit && {l:"✎ Edit Maklumat", fn:()=>openNodeEditor(n)},
     canEdit && {l:"➕ Tambah Anak", fn:()=>openNodeEditor(null,n.id,"child", n)},
     canEdit && canAddSpouse(n) && {l:"💍 Tambah Pasangan", fn:()=>openSpouseEditor(n)},
+    isAdmin && {l:"🔀 Pindah ke parent lain…", fn:()=>startReparent(n)},
+    isAdmin && n.parentId && {l:"⛓ Putuskan jadi root tergantung", fn:()=>doReparent(n.id, "", true)},
+    linked && {l:`👤 Pengguna berdaftar: @${linked.username}${linked.role==='admin'?' ★':''}`, fn:()=>showInfo(`Nama: ${linked.fullname}\nUsername: @${linked.username}\nPeranan: ${linked.role==='admin'?'ADMIN ★':'Ahli'}`,{title:"Pengguna Berdaftar"})},
     canEdit && {l: isAdmin?"🗑 Padam":"🗑 Pohon Padam", fn:()=>delNode(n)},
   ].filter(Boolean);
   items.forEach(i=>{const b=document.createElement("button");b.textContent=i.l;b.onclick=()=>{m.classList.add("hidden");i.fn();};m.appendChild(b);});
-  m.style.left = Math.min(x, innerWidth-220)+"px";
+  m.style.left = Math.min(x, innerWidth-260)+"px";
   m.style.top = Math.min(y, innerHeight-items.length*40)+"px";
   m.classList.remove("hidden");
 }
 document.addEventListener("click",()=>$("#ctx-menu").classList.add("hidden"));
+
+/* ---------- Reparent (admin) ---------- */
+function startReparent(n){
+  State.reparentMode = { nodeId: n.id, name: n.name };
+  document.body.classList.add("reparent-mode");
+  showInfo(`Klik mana-mana kotak untuk jadikan PARENT BAHARU bagi "${n.name}". Tekan Esc untuk batal.`,{title:"Mod Pindah Cabang"});
+}
+function cancelReparent(){
+  State.reparentMode = null;
+  document.body.classList.remove("reparent-mode");
+}
+document.addEventListener("keydown",e=>{ if(e.key==="Escape" && State.reparentMode){ cancelReparent(); toast("Mod pindah dibatalkan"); }});
+async function doReparent(nodeId, newParentId, makeHanging){
+  const me = State.nodes.find(x=>x.id===nodeId);
+  const parent = newParentId ? State.nodes.find(x=>x.id===newParentId) : null;
+  const msg = newParentId
+    ? `Pindah "${me?.name}" jadi anak kepada "${parent?.name}"?`
+    : `Putuskan "${me?.name}" jadi root tergantung (tiada parent)?`;
+  if(!confirm(msg)){ cancelReparent(); return; }
+  try{
+    await api("reparent",{id:nodeId, newParentId:newParentId||"", hanging: !!makeHanging});
+    showInfo("Salasilah dikemaskini");
+    cancelReparent();
+    await refresh();
+  }catch(err){ showError(err,{title:"Gagal pindah",context:"reparent"}); cancelReparent(); }
+}
 
 /* ---------- Profile Viewer ---------- */
 function fmtDateTime(v){
@@ -283,9 +374,20 @@ function viewProfile(n){
       ${approvedBy?`<div>✅ Disahkan oleh admin: <b style="color:#1e7a3b">${escape(approvedBy)}</b>${approvedAt?` • ${escape(approvedAt)}`:""}</div>`:(n.pending?'<div style="color:#c0392b">⏳ Belum disahkan</div>':'')}
       ${n.createdBy && n.createdBy!==editedBy?`<div>👤 Dicipta oleh: ${escape(n.createdBy)}</div>`:""}
     </div>
-    ${!State.user?'<p class="text-[11px] mt-3 text-center" style="color:var(--ink-soft)">Mod pelawat — lihat sahaja.</p>':''}
+    ${!State.user?'<p class="text-[11px] mt-3 text-center" style="color:var(--ink-soft)">Mod pelawat — lihat sahaja.</p>':`
+      <div class="flex gap-2 mt-4">
+        <button class="btn btn-primary flex-1" id="profile-edit-btn">✎ Edit Maklumat</button>
+        <button class="btn btn-ghost flex-1" id="profile-addchild-btn">➕ Tambah Anak</button>
+      </div>
+    `}
   `;
   openModal("modal-profile");
+  if(State.user){
+    const eb = document.getElementById("profile-edit-btn");
+    if(eb) eb.onclick = ()=>{ closeModal("modal-profile"); openNodeEditor(n); };
+    const ab = document.getElementById("profile-addchild-btn");
+    if(ab) ab.onclick = ()=>{ closeModal("modal-profile"); openNodeEditor(null, n.id, "child", n); };
+  }
 }
 function rowField(label,val){
   if(!val && val!==0) return "";
@@ -703,7 +805,17 @@ async function loadAdmin(){
 $("#btn-init-root").addEventListener("click",async()=>{
   const name = $("#root-name").value.trim();
   if(!name) return;
-  try{await api("initRoot",{name});showInfo("Root berjaya dicipta");closeModal("modal-admin");refresh();}catch(e){ if(String(e.message).includes("Root sudah wujud")){ showWarn("Root sudah wujud dalam sistem."); closeModal("modal-admin"); refresh(); } else { showError(e,{title:"Gagal cipta root",context:"initRoot"}); } }
+  const hanging = $("#root-hanging")?.checked || false;
+  try{
+    await api("initRoot",{name, hanging});
+    showInfo(hanging ? "Root tergantung dicipta — boleh disambung kemudian" : "Root utama berjaya dicipta");
+    closeModal("modal-admin");
+    refresh();
+  }catch(e){
+    if(String(e.message).includes("Root utama sudah wujud")){
+      showWarn("Root utama sudah wujud. Tandakan 'Root Tergantung' untuk cipta cabang sampingan.");
+    } else { showError(e,{title:"Gagal cipta root",context:"initRoot"}); }
+  }
 });
 
 /* ---------- Settings & Tema ---------- */
@@ -835,6 +947,7 @@ async function refresh(){
     const d = await api("getTree",{});
     State.nodes = d.nodes||[];
     State.notes = d.notes||[];
+    State.users = d.users||[];
     buildTree();
     setTimeout(centerOnTree, 60);
     if(State.user?.role==="admin") refreshPendingBadge();

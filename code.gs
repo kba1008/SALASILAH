@@ -14,8 +14,8 @@ const DRIVE_FOLDER  = "SalasilahImages";
 const MASTER_USER = "admin";
 const MASTER_PASS = "101010";
 
-// v2.6: spouseIndex (anak dari pasangan keberapa)
-const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","photo","notes","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
+// v2.7: spouseIndex (anak dari pasangan keberapa) + hanging (root tergantung)
+const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned"];
 // v2.6: NOTA pada map
 const NOTE_HEADERS = ["id","text","x","y","font","size","color","pinned","pending","createdBy","createdAt","lastEditBy","lastEditAt","approvedBy","approvedAt"];
@@ -157,20 +157,61 @@ const ACTIONS = {
       pinned: n.pinned===true||n.pinned==="TRUE"||n.pinned==="true"||n.pinned===1,
       pending: n.pending===true||n.pending==="TRUE"||n.pending==="true"||n.pending===1,
     }));
+    // Senarai pengguna ringkas — untuk auto-link kotak salasilah dengan pengguna berdaftar
+    const users = readSheet_(SHEET_USERS).map(u=>({
+      username: u.username, fullname: u.fullname||"", role: u.role||"ahli",
+      fatherName: u.fatherName||"", motherName: u.motherName||"",
+      photo: u.photo||"",
+    }));
     return { nodes: rows.map(r => {
       let spouses = [];
       if (r.spousesJson) { try { spouses = JSON.parse(r.spousesJson)||[]; } catch(e){} }
       else if (r.spouseName) spouses = [{name:r.spouseName, photo:r.spousePhoto||"", status:"hidup", order:1, death:""}];
-      return { ...r, spouses, pending: !!r.pending };
-    }), notes };
+      return { ...r, spouses,
+        pending: !!r.pending,
+        hanging: r.hanging===true||r.hanging==="TRUE"||r.hanging==="true"||r.hanging===1,
+      };
+    }), notes, users };
   },
   initRoot(p, auth) {
     requireAdmin_(auth);
     const sh = sheet_(SHEET_TREE);
-    if (sh.getLastRow() > 1) throw new Error("Root sudah wujud");
+    // Membenarkan banyak root: root utama jika belum ada, atau root tambahan (tergantung) jika hanging=true
+    const existingRoots = readSheet_(SHEET_TREE).filter(r=>!r.parentId);
+    const isHanging = !!p.hanging;
+    if (existingRoots.length > 0 && !isHanging) throw new Error("Root utama sudah wujud. Gunakan 'Cipta Root Tergantung' untuk root tambahan.");
     const id = Utilities.getUuid();
-    appendNodeRow_(sh, {id, parentId:"", no:1, name:p.name, gender:"L", status:"hidup", createdBy:auth.username, lastEditBy:auth.username, lastEditAt:new Date(), approvedBy:auth.username, approvedAt:new Date()});
+    appendNodeRow_(sh, {id, parentId:"", no:existingRoots.length+1, name:p.name, gender:p.gender||"L", status:"hidup", hanging:isHanging, createdBy:auth.username, lastEditBy:auth.username, lastEditAt:new Date(), approvedBy:auth.username, approvedAt:new Date()});
     return { id };
+  },
+  reparent(p, auth) {
+    requireAdmin_(auth);
+    if (!p.id) throw new Error("Node id diperlukan");
+    if (p.id === p.newParentId) throw new Error("Tidak boleh jadikan diri sendiri sebagai parent");
+    // pastikan tidak buat kitaran (parent baharu bukan keturunan kepada node ini)
+    if (p.newParentId) {
+      const rows = readSheet_(SHEET_TREE);
+      let cur = rows.find(r=>r.id===p.newParentId);
+      const visited = {};
+      while (cur && cur.parentId) {
+        if (visited[cur.id]) break;
+        visited[cur.id] = 1;
+        if (cur.parentId === p.id) throw new Error("Tidak boleh — akan membentuk kitaran salasilah");
+        cur = rows.find(r=>r.id===cur.parentId);
+      }
+    }
+    const sh = sheet_(SHEET_TREE);
+    const rows = readSheet_(SHEET_TREE);
+    const n = rows.find(r=>r.id===p.id);
+    if (!n) throw new Error("Node tidak dijumpai");
+    const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+    sh.getRange(n._row, h.indexOf("parentId")+1).setValue(p.newParentId||"");
+    // jika menjadi root, tandakan hanging mengikut pilihan; jika disambung, buang hanging
+    const cH = h.indexOf("hanging")+1;
+    if (cH>0) sh.getRange(n._row, cH).setValue(p.newParentId ? false : !!p.hanging);
+    stampEdit_(p.id, auth);
+    stampApprove_(p.id, auth);
+    return { ok:true };
   },
   saveNode(p, auth) {
     requireAuth_(auth);
@@ -369,13 +410,19 @@ function addSpouse_(parentId, p, photoUrl, auth){
   let spouses = [];
   if (n.spousesJson) { try { spouses = JSON.parse(n.spousesJson)||[]; } catch(e){} }
   else if (n.spouseName) spouses = [{name:n.spouseName, photo:n.spousePhoto||"", status:"hidup", order:1, death:""}];
-  const order = Number(p.spouseOrder)>0 ? Number(p.spouseOrder) : (spouses.length+1);
+  // pastikan APPEND — order yang diminta; jika konflik, auto-bump ke nombor seterusnya yang kosong
+  let order = Number(p.spouseOrder)>0 ? Number(p.spouseOrder) : (spouses.length+1);
+  const taken = {}; spouses.forEach(s=>{ if(s.order) taken[Number(s.order)] = true; });
+  while (taken[order]) order++;
   spouses.push({
     name: p.name, photo: photoUrl || "",
     status: p.spouseStatus || "hidup",
     death: p.spouseDeath || "",
     order: order,
   });
+  // dedupe: kalau ada dua entri dengan nama+order yang sama persis, biar satu sahaja
+  const seen = {};
+  spouses = spouses.filter(s=>{ const k=(s.name||"")+"|"+(s.order||""); if(seen[k]) return false; seen[k]=1; return true; });
   spouses.sort((a,b)=>(a.order||99)-(b.order||99));
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
   sh.getRange(n._row, h.indexOf("spousesJson")+1).setValue(JSON.stringify(spouses));
