@@ -219,7 +219,7 @@ const ACTIONS = {
     const photoUrl = p.photo ? saveImage_(p.photo, "node_"+Date.now()) : null;
 
     if (p.relation === "spouse" && p.parentId) {
-      validateSpouseRule_(p.parentId, p);
+      // Tiada had pasangan — sesiapa boleh tambah berapa banyak (poligami / kahwin semula)
       if (isAdmin) { addSpouse_(p.parentId, p, photoUrl, auth); stampApprove_(p.parentId, auth); return { ok: true }; }
       addPending_({ action: "spouse", targetId: p.parentId, payload: { ...p, photoUrl }, by: auth.username, summary: "Pasangan ke-"+(p.spouseOrder||"?")+": "+(p.name||"") });
       markNodePending_(p.parentId, true);
@@ -316,6 +316,38 @@ const ACTIONS = {
     return { pending:true };
   },
 
+  /* ===== EDIT / DELETE PASANGAN (di dalam spousesJson) ===== */
+  editSpouse(p, auth) {
+    requireAuth_(auth);
+    const isAdmin = auth.role === "admin";
+    if (!p.parentId || !p.order) throw new Error("Maklumat tidak lengkap");
+    const photoUrl = p.photo ? saveImage_(p.photo, "spouse_"+Date.now()) : null;
+    if (isAdmin) {
+      applySpouseEdit_(p.parentId, Number(p.order), {
+        name: p.name, status: p.status, death: p.death||"",
+        newOrder: Number(p.newOrder)||Number(p.order),
+        photo: photoUrl,
+      }, auth);
+      stampApprove_(p.parentId, auth);
+      return { ok:true };
+    }
+    addPending_({ action:"spouse-edit", targetId:p.parentId, payload:{ ...p, photoUrl }, by:auth.username, summary:"Edit pasangan ke-"+p.order+": "+(p.name||"") });
+    markNodePending_(p.parentId, true);
+    return { pending:true };
+  },
+  deleteSpouse(p, auth) {
+    requireAuth_(auth);
+    const isAdmin = auth.role === "admin";
+    if (!p.parentId || !p.order) throw new Error("Maklumat tidak lengkap");
+    if (isAdmin) {
+      applySpouseDelete_(p.parentId, Number(p.order), auth);
+      return { ok:true };
+    }
+    addPending_({ action:"spouse-delete", targetId:p.parentId, payload:{ parentId:p.parentId, order:p.order }, by:auth.username, summary:"Padam pasangan ke-"+p.order });
+    markNodePending_(p.parentId, true);
+    return { pending:true };
+  },
+
   adminData(_, auth) {
     requireAdmin_(auth);
     const usersAll = readSheet_(SHEET_USERS);
@@ -344,6 +376,8 @@ const ACTIONS = {
       const data = JSON.parse(item.payload);
       if (item.action === "edit") { applyNodeUpdate_(data, data.photoUrl, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
       else if (item.action === "spouse") { addSpouse_(item.targetId, data, data.photoUrl, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
+      else if (item.action === "spouse-edit") { applySpouseEdit_(item.targetId, Number(data.order), { name:data.name, status:data.status, death:data.death||"", newOrder:Number(data.newOrder)||Number(data.order), photo:data.photoUrl }, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
+      else if (item.action === "spouse-delete") { applySpouseDelete_(item.targetId, Number(data.order), auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
       else if (item.action === "add") { markNodePending_(item.targetId, false); stampEdit_(item.targetId, auth); stampApprove_(item.targetId, auth); }
       else if (item.action === "delete") { deleteRowById_(SHEET_TREE, item.targetId); }
       else if (item.action === "note-add") { markNotePending_(item.targetId, false); stampNoteApprove_(item.targetId, auth); }
@@ -428,6 +462,47 @@ function addSpouse_(parentId, p, photoUrl, auth){
   sh.getRange(n._row, h.indexOf("spousesJson")+1).setValue(JSON.stringify(spouses));
   sh.getRange(n._row, h.indexOf("spouseName")+1).setValue(spouses.map(s=>s.name).join(" / "));
   stampEdit_(parentId, auth);
+}
+function _loadSpouses_(n){
+  let spouses = [];
+  if (n.spousesJson) { try { spouses = JSON.parse(n.spousesJson)||[]; } catch(e){} }
+  else if (n.spouseName) spouses = [{name:n.spouseName, photo:n.spousePhoto||"", status:"hidup", order:1, death:""}];
+  return spouses;
+}
+function _saveSpouses_(sh, n, spouses, auth){
+  spouses.sort((a,b)=>(a.order||99)-(b.order||99));
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  sh.getRange(n._row, h.indexOf("spousesJson")+1).setValue(JSON.stringify(spouses));
+  sh.getRange(n._row, h.indexOf("spouseName")+1).setValue(spouses.map(s=>s.name).join(" / "));
+  stampEdit_(n.id, auth);
+}
+function applySpouseEdit_(parentId, order, data, auth){
+  const sh = sheet_(SHEET_TREE);
+  const rows = readSheet_(SHEET_TREE);
+  const n = rows.find(r=>r.id===parentId);
+  if(!n) throw new Error("Node tidak dijumpai");
+  const spouses = _loadSpouses_(n);
+  const idx = spouses.findIndex(s=>Number(s.order||0)===Number(order));
+  if(idx<0) throw new Error("Pasangan tidak dijumpai");
+  spouses[idx].name   = data.name || spouses[idx].name;
+  spouses[idx].status = data.status || spouses[idx].status;
+  spouses[idx].death  = data.death || "";
+  if(data.photo) spouses[idx].photo = data.photo;
+  if(data.newOrder && data.newOrder!==order){
+    const taken = {}; spouses.forEach((s,i)=>{ if(i!==idx && s.order) taken[Number(s.order)]=true; });
+    let no = Number(data.newOrder); while(taken[no]) no++;
+    spouses[idx].order = no;
+  }
+  _saveSpouses_(sh, n, spouses, auth);
+}
+function applySpouseDelete_(parentId, order, auth){
+  const sh = sheet_(SHEET_TREE);
+  const rows = readSheet_(SHEET_TREE);
+  const n = rows.find(r=>r.id===parentId);
+  if(!n) throw new Error("Node tidak dijumpai");
+  let spouses = _loadSpouses_(n);
+  spouses = spouses.filter(s=>Number(s.order||0)!==Number(order));
+  _saveSpouses_(sh, n, spouses, auth);
 }
 
 /* ============ HELPERS ============ */

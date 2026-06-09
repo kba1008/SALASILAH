@@ -466,6 +466,7 @@
     <h2 id="spouse-title" class="text-lg font-bold mb-3 serif">Tambah Pasangan</h2>
     <form id="form-spouse" class="space-y-3">
       <input type="hidden" name="parentId" />
+      <input type="hidden" name="editOrder" value="" />
       <input class="input" dir="auto" name="name" placeholder="Nama Pasangan" required />
       <div class="grid grid-cols-2 gap-2">
         <label class="text-xs block" style="color:var(--ink-soft)">Pasangan ke-
@@ -482,7 +483,7 @@
       <input class="input" name="death" placeholder="Tahun Mati (jika Almarhum)" />
       <label class="text-xs block" style="color:var(--ink-soft)">Gambar Pasangan</label>
       <input class="input" name="photo" type="file" accept="image/*" />
-      <p class="text-[11px]" style="color:var(--ink-soft)">Lelaki boleh ada >1 pasangan. Wanita: pasangan terdahulu mesti 'Bercerai' atau 'Almarhum' dahulu.</p>
+      <p class="text-[11px]" style="color:var(--ink-soft)">Setiap profil boleh ada bilangan pasangan yang tidak terhad (poligami / kahwin semula).</p>
       <div class="flex gap-2 pt-2">
         <button type="button" onclick="closeModal('modal-spouse')" class="btn btn-ghost flex-1">Batal</button>
         <button class="btn btn-primary flex-1">Simpan</button>

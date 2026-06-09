@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzsgeBusIUmc6Z33uy58sYLC-OT0xlBz64JP-ww0P4efUUG7ctXetXTav7-nTD9yP8/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
@@ -124,11 +124,8 @@ function getSpouses(n){
   return a;
 }
 function canAddSpouse(n){
-  const sp = getSpouses(n);
-  if(sp.length===0) return true;
-  if(n.gender==="L") return true; // lelaki bebas
-  // wanita: boleh jika semua suami terdahulu mati atau cerai
-  return sp.every(s=>s.status==="mati"||s.status==="cerai");
+  // Tiada had — sesiapa boleh tambah berapa banyak pasangan (poligami / kahwin semula)
+  return true;
 }
 function spouseStatusLabel(s){
   if(s.status==="mati") return "Almarhum"+(s.death?" "+s.death:"");
@@ -394,6 +391,8 @@ function rowField(label,val){
   return `<div class="flex justify-between gap-3"><span style="color:var(--ink-soft)">${label}</span><span class="text-right">${escape(val)}</span></div>`;
 }
 function showSpouseProfile(parent, sp){
+  const canEdit = !!State.user;
+  const isAdmin = State.user?.role === "admin";
   $("#profile-body").innerHTML = `
     <div class="flex flex-col items-center mb-4">
       <img src="${fixPhoto(sp.photo)||placeholder(parent.gender==='L'?'P':'L')}" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--rose)"/>
@@ -401,8 +400,27 @@ function showSpouseProfile(parent, sp){
       <p class="text-xs" style="color:var(--ink-soft)">Pasangan ${spouseOrdinal(sp.order||1)} kepada ${escape(parent.name)}</p>
       <p class="text-xs" style="color:var(--ink-soft)">Status: ${spouseStatusLabel(sp)}</p>
     </div>
+    ${canEdit?`<div class="flex gap-2 pt-2">
+      <button id="btn-edit-spouse" class="btn btn-ghost flex-1">✎ Edit Pasangan</button>
+      ${isAdmin?`<button id="btn-del-spouse" class="btn btn-ghost flex-1" style="color:var(--rose)">🗑 Padam</button>`:""}
+    </div>`:""}
   `;
   openModal("modal-profile");
+  if(canEdit){
+    const e = document.getElementById("btn-edit-spouse");
+    if(e) e.onclick = ()=>{ closeModal("modal-profile"); openSpouseEditor(parent, sp); };
+    const d = document.getElementById("btn-del-spouse");
+    if(d) d.onclick = ()=>deleteSpouseEntry(parent, sp);
+  }
+}
+async function deleteSpouseEntry(parent, sp){
+  if(!confirm(`Padam pasangan "${sp.name}" daripada ${parent.name}?`)) return;
+  try{
+    await api("deleteSpouse",{ parentId: parent.id, order: sp.order||1 });
+    toast("Pasangan dipadam");
+    closeModal("modal-profile");
+    await refresh();
+  }catch(e){ showError(e,{title:"Gagal padam pasangan",context:"deleteSpouse"}); }
 }
 
 /* ---------- Node Editor ---------- */
@@ -465,18 +483,23 @@ $("#form-node").addEventListener("submit", async e=>{
 });
 
 /* ---------- Spouse Editor ---------- */
-function openSpouseEditor(parent){
+function openSpouseEditor(parent, existing=null){
   if(!State.user){toast("Sila log masuk");return;}
-  if(!canAddSpouse(parent)){
-    if(parent.gender==="P") toast("Wanita: tetapkan suami sedia ada sebagai 'Almarhum' atau 'Bercerai' dahulu.");
-    else toast("Tidak boleh tambah pasangan.");
-    return;
-  }
   const f = $("#form-spouse"); f.reset();
   f.parentId.value = parent.id;
   const sps = getSpouses(parent);
-  f.spouseOrder.value = sps.length+1;
-  $("#spouse-title").textContent = `Tambah Pasangan ${spouseOrdinal(sps.length+1)} untuk ${parent.name}`;
+  if(existing){
+    f.editOrder.value = existing.order||1;
+    f.spouseOrder.value = existing.order||1;
+    f.name.value = existing.name||"";
+    f.status.value = existing.status||"hidup";
+    f.death.value = existing.death||"";
+    $("#spouse-title").textContent = `Edit Pasangan ${spouseOrdinal(existing.order||1)} kepada ${parent.name}`;
+  } else {
+    f.editOrder.value = "";
+    f.spouseOrder.value = sps.length+1;
+    $("#spouse-title").textContent = `Tambah Pasangan ${spouseOrdinal(sps.length+1)} untuk ${parent.name}`;
+  }
   openModal("modal-spouse");
 }
 $("#form-spouse").addEventListener("submit", async e=>{
@@ -484,20 +507,34 @@ $("#form-spouse").addEventListener("submit", async e=>{
   if(!State.user){toast("Sila log masuk");return;}
   const fd = new FormData(e.target);
   const parent = State.nodes.find(x=>x.id===fd.get("parentId"));
-  if(!parent || !canAddSpouse(parent)){toast("Peraturan pasangan tidak dibenarkan");return;}
+  if(!parent){toast("Profil induk tidak dijumpai");return;}
   const photo = await fileToBase64(fd.get("photo"));
-  const payload = {
-    parentId: fd.get("parentId"),
-    relation: "spouse",
-    name: fd.get("name"),
-    spouseStatus: fd.get("status"),
-    spouseDeath: fd.get("death")||"",
-    spouseOrder: fd.get("spouseOrder")||"",
-  };
-  if(photo) payload.photo = photo;
+  const editOrder = fd.get("editOrder");
   try{
-    await api("saveNode", payload);
-    toast(State.user.role==="admin"?"Pasangan ditambah":"Dihantar untuk semakan admin");
+    if(editOrder){
+      const payload = {
+        parentId: parent.id,
+        order: Number(editOrder),
+        name: fd.get("name"),
+        status: fd.get("status"),
+        death: fd.get("death")||"",
+        newOrder: Number(fd.get("spouseOrder"))||Number(editOrder),
+      };
+      if(photo) payload.photo = photo;
+      await api("editSpouse", payload);
+    } else {
+      const payload = {
+        parentId: parent.id,
+        relation: "spouse",
+        name: fd.get("name"),
+        spouseStatus: fd.get("status"),
+        spouseDeath: fd.get("death")||"",
+        spouseOrder: fd.get("spouseOrder")||"",
+      };
+      if(photo) payload.photo = photo;
+      await api("saveNode", payload);
+    }
+    toast(State.user.role==="admin"?"Disimpan":"Dihantar untuk semakan admin");
     closeModal("modal-spouse");
     await refresh();
   }catch(err){showError(err,{title:"Gagal simpan pasangan",context:err.action||"saveNode"});}
@@ -835,17 +872,17 @@ function initSettingsUI(){
   const wrap = $("#theme-list"); if(!wrap) return;
   const current = localStorage.getItem("theme") || "parchment";
   wrap.innerHTML = "";
-  const isAdmin = State.user?.role==="admin";
+  const isMaster = State.user?.isMaster === true || State.user?.username === "admin";
   THEMES.forEach(t=>{
     const b = document.createElement("button");
     b.type = "button";
     b.className = "btn "+(t.id===current?"btn-primary":"btn-ghost")+" w-full text-left";
     b.textContent = t.name + (t.id===current?"  ✓":"");
-    b.disabled = !isAdmin;
+    b.disabled = !isMaster;
     b.onclick = ()=>{ applyTheme(t.id); initSettingsUI(); showInfo("Tema ditukar: "+t.name); };
     wrap.appendChild(b);
   });
-  $("#theme-note").textContent = isAdmin ? "Pilih satu tema untuk semua pengguna pada peranti ini." : "Hanya admin boleh menukar tema.";
+  $("#theme-note").textContent = isMaster ? "👑 Master Admin — pilihan tema ini akan disimpan setempat pada peranti ini." : "🔒 Hanya Master Admin (akaun 'admin') yang boleh menukar tema aplikasi.";
 }
 $("#btn-settings").addEventListener("click",()=>{ initSettingsUI(); openModal("modal-settings"); });
 
