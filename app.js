@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbw8TMolZYTDNRRjDIU-Im-Asmf0i0iD5fq4SGgieXmHHuq0U2pdZibouHKqpfakh1kD/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw0SoDU37fwk0ORK0kfZjkzV45gywbXdQqvNA0ygWoM8sRKtcR2vPFgEUJkwWD-n9Fp/exec";
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
   "Menjejak pasangan, anak dan sambungan salasilah…",
