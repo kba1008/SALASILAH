@@ -761,9 +761,8 @@ function findUserBy_(field, val) {
 }
 function updateUserField_(row, field, value) {
   const sh = sheet_(SHEET_USERS);
-  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
-  const col = h.indexOf(field)+1;
-  if (col > 0) sh.getRange(row,col).setValue(value);
+  const col = ensureFieldExists_(sh, field);
+  sh.getRange(row,col).setValue(value);
 }
 function nextMemberNo_() {
   const rows = readSheet_(SHEET_USERS);
@@ -774,19 +773,40 @@ function nextMemberNo_() {
   });
   return maxNo + 1;
 }
+function expectedHeadersForSheet_(sheetName){
+  if (sheetName === SHEET_TREE) return TREE_HEADERS;
+  if (sheetName === SHEET_USERS) return USER_HEADERS;
+  if (sheetName === SHEET_NOTES) return NOTE_HEADERS;
+  if (sheetName === SHEET_PENDING) return ["id","action","targetId","payload","by","summary","createdAt"];
+  return [];
+}
+function ensureFieldExists_(sh, field){
+  const expected = expectedHeadersForSheet_(sh.getName());
+  if (expected.length) migrateHeaders_(sh.getName(), expected);
+  let headers = sh.getRange(1,1,1,Math.max(1, sh.getLastColumn())).getValues()[0];
+  let col = headers.indexOf(field) + 1;
+  if (col > 0) return col;
+  sh.insertColumnAfter(Math.max(1, sh.getLastColumn()));
+  col = sh.getLastColumn();
+  sh.getRange(1, col).setValue(field);
+  headers = sh.getRange(1,1,1,Math.max(1, sh.getLastColumn())).getValues()[0];
+  col = headers.indexOf(field) + 1;
+  if (col < 1) throw new Error("Gagal mewujudkan kolum '" + field + "' pada sheet '" + sh.getName() + "'.");
+  return col;
+}
 function setCellByHeader_(sh, row, field, value) {
-  const headers = sh.getRange(1,1,1,Math.max(1, sh.getLastColumn())).getValues()[0];
-  const col = headers.indexOf(field) + 1;
-  if (col < 1) throw new Error("Kolum wajib tiada pada sheet '" + sh.getName() + "': " + field + ". Jalankan INITIALIZE_SYSTEM() sekali dan deploy semula versi terbaru.");
+  const col = ensureFieldExists_(sh, field);
   sh.getRange(row, col).setValue(value);
 }
 function appendUserRow_(data){
   const sh = sheet_(SHEET_USERS);
+  migrateHeaders_(SHEET_USERS, USER_HEADERS);
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
   const row = h.map(col => data[col] !== undefined ? data[col] : "");
   sh.appendRow(row);
 }
 function appendNodeRow_(sh, data){
+  migrateHeaders_(SHEET_TREE, TREE_HEADERS);
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
   const row = h.map(col => {
     if (col === "createdAt") return data.createdAt || new Date();
@@ -797,6 +817,7 @@ function appendNodeRow_(sh, data){
 }
 function appendNoteRow_(data){
   const sh = sheet_(SHEET_NOTES);
+  migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
   const row = h.map(col => data[col] !== undefined ? data[col] : "");
   sh.appendRow(row);
