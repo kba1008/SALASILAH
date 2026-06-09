@@ -74,6 +74,10 @@ function doPost(e) {
     if (!handler) throw new Error("Unknown action: " + req.action);
     const auth = authenticate_(req.auth);
     const data = handler(req.payload || {}, auth);
+    // TURBO: invalidate tree cache untuk semua action selain bacaan
+    if (req.action && req.action !== "getTree" && req.action !== "myProfile" && req.action !== "ping" && req.action !== "login") {
+      invalidateTreeCache_();
+    }
     return out_({ ok: true, data });
   } catch (err) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
@@ -82,19 +86,48 @@ function doPost(e) {
 function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.6"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
+/* TURBO: ensureInit cache — skip jika dah migrate dalam 6 jam */
+const _INIT_VERSION = "v2.7-turbo-1";
 function ensureInit_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
   const ss = ss_();
   if (!ss.getSheetByName(SHEET_USERS) || !ss.getSheetByName(SHEET_TREE) || !ss.getSheetByName(SHEET_PENDING) || !ss.getSheetByName(SHEET_NOTES)) {
     INITIALIZE_SYSTEM();
-    return;
+  } else {
+    migrateHeaders_(SHEET_TREE, TREE_HEADERS);
+    migrateHeaders_(SHEET_USERS, USER_HEADERS);
+    migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
   }
-  migrateHeaders_(SHEET_TREE, TREE_HEADERS);
-  migrateHeaders_(SHEET_USERS, USER_HEADERS);
-  migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
   const u = findUserBy_("username", MASTER_USER);
   if (!u) {
     appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date(), approved:true, approvedBy:"SYSTEM", approvedAt:new Date() });
   }
+  props.setProperty("INIT_OK", _INIT_VERSION);
+}
+
+/* TURBO: cache hasil getTree 30 saat */
+const _TREE_CACHE_KEY = "tree:v2";
+const _TREE_CACHE_TTL = 30;
+function _treeCacheGet_(authed){
+  try {
+    const c = CacheService.getScriptCache();
+    const v = c.get(_TREE_CACHE_KEY + ":" + (authed?"a":"g"));
+    return v ? JSON.parse(v) : null;
+  } catch(_) { return null; }
+}
+function _treeCachePut_(authed, data){
+  try {
+    const s = JSON.stringify(data);
+    if (s.length < 95000) CacheService.getScriptCache().put(_TREE_CACHE_KEY + ":" + (authed?"a":"g"), s, _TREE_CACHE_TTL);
+  } catch(_) {}
+}
+function invalidateTreeCache_(){
+  try {
+    const c = CacheService.getScriptCache();
+    c.remove(_TREE_CACHE_KEY + ":a");
+    c.remove(_TREE_CACHE_KEY + ":g");
+  } catch(_) {}
 }
 
 /* ============ AUTH ============ */
@@ -181,7 +214,10 @@ const ACTIONS = {
     if (!u) throw new Error("Profil pengguna tidak dijumpai");
     return normalizeUserClient_(u);
   },
+  ping() { return { ok:true, t: Date.now() }; },
   getTree(_, auth) {
+    const _cached = _treeCacheGet_(!!auth);
+    if (_cached) return _cached;
     const nodeRows = readSheet_(SHEET_TREE);
     const noteRows = readSheet_(SHEET_NOTES);
     const pendingRows = readSheet_(SHEET_PENDING).map(p=>({ ...p, payloadObj: parseJsonSafe_(p.payload, {}) }));
@@ -220,7 +256,9 @@ const ACTIONS = {
       approved: isUserApproved_(u),
     }));
 
-    return { nodes, notes, users };
+    const _out = { nodes, notes, users };
+    _treeCachePut_(!!auth, _out);
+    return _out;
   },
   initRoot(p, auth) {
     requireAdmin_(auth);

@@ -1,6 +1,8 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwDvAypfhUeAZdw7c0Qc7CuRgKi2CPKlrXR8L4D0ucAr-hZd9-087Ig4fDMJ2Vccsef/exec";
+/* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
+try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
   "Menjejak pasangan, anak dan sambungan salasilah…",
@@ -1087,9 +1089,10 @@ $("#form-login").addEventListener("submit",async e=>{
   try{
     const u = await api("login",fd);
     persistUser(u);
-    await loadMyProfile(true);
-    updateUserUI(); closeModal("modal-auth"); toast(u.approved ? "Selamat datang, "+u.username : "Log masuk berjaya. Akaun anda masih menunggu pengesahan admin.");
-    refresh();
+    updateUserUI(); closeModal("modal-auth");
+    toast(u.approved ? "Selamat datang, "+u.username : "Log masuk berjaya. Akaun anda masih menunggu pengesahan admin.");
+    // TURBO: jalankan profile + tree SECARA SELARI, jangan block UI
+    Promise.allSettled([loadMyProfile(true), refresh()]).then(()=>updateUserUI());
   }catch(err){showError(err,{title:"Gagal log masuk",context:"login"});}
 });
 $("#form-register").addEventListener("submit",async e=>{
