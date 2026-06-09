@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxtEe-lr-EtvGGWRx51R0PM7iWaFJutg-amlWV_3lfQz6li0WY1lPU-g1kgU4UDMiVm/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
@@ -131,6 +131,11 @@ function spouseStatusLabel(s){
   if(s.status==="mati") return "Almarhum"+(s.death?" "+s.death:"");
   if(s.status==="cerai") return "Bercerai";
   return "Hidup";
+}
+function spouseGenderLabel(s){
+  if(s.gender==="P") return "Perempuan";
+  if(s.gender==="L") return "Lelaki";
+  return "Tidak dinyatakan";
 }
 function spouseOrdinal(n){
   const map={1:"Pertama",2:"Kedua",3:"Ketiga",4:"Keempat",5:"Kelima",6:"Keenam"};
@@ -375,6 +380,7 @@ function viewProfile(n){
       <div class="flex gap-2 mt-4">
         <button class="btn btn-primary flex-1" id="profile-edit-btn">✎ Edit Maklumat</button>
         <button class="btn btn-ghost flex-1" id="profile-addchild-btn">➕ Tambah Anak</button>
+        <button class="btn btn-ghost flex-1" id="profile-addspouse-btn">💍 Tambah Pasangan</button>
       </div>
     `}
   `;
@@ -384,6 +390,8 @@ function viewProfile(n){
     if(eb) eb.onclick = ()=>{ closeModal("modal-profile"); openNodeEditor(n); };
     const ab = document.getElementById("profile-addchild-btn");
     if(ab) ab.onclick = ()=>{ closeModal("modal-profile"); openNodeEditor(null, n.id, "child", n); };
+    const sb = document.getElementById("profile-addspouse-btn");
+    if(sb) sb.onclick = ()=>{ closeModal("modal-profile"); openSpouseEditor(n); };
   }
 }
 function rowField(label,val){
@@ -397,8 +405,16 @@ function showSpouseProfile(parent, sp){
     <div class="flex flex-col items-center mb-4">
       <img src="${fixPhoto(sp.photo)||placeholder(parent.gender==='L'?'P':'L')}" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--rose)"/>
       <h2 class="text-2xl font-bold text-center serif" dir="auto">${escape(sp.name)}</h2>
+      ${sp.nickname?`<p class="text-sm serif italic" dir="auto" style="color:var(--gold-dark)">"${escape(sp.nickname)}"</p>`:""}
       <p class="text-xs" style="color:var(--ink-soft)">Pasangan ${spouseOrdinal(sp.order||1)} kepada ${escape(parent.name)}</p>
-      <p class="text-xs" style="color:var(--ink-soft)">Status: ${spouseStatusLabel(sp)}</p>
+      <p class="text-xs" style="color:var(--ink-soft)">${spouseGenderLabel(sp)} • ${spouseStatusLabel(sp)}</p>
+    </div>
+    <div class="space-y-2 text-sm" dir="auto">
+      ${rowField("Tahun Lahir", sp.birth)}
+      ${rowField("Tempat Lahir", sp.birthplace)}
+      ${rowField("Tahun Wafat", sp.death)}
+      ${rowField("Tempat Wafat", sp.deathplace)}
+      ${sp.notes?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Catatan</div><p class="whitespace-pre-wrap" dir="auto">${escape(sp.notes)}</p></div>`:""}
     </div>
     ${canEdit?`<div class="flex gap-2 pt-2">
       <button id="btn-edit-spouse" class="btn btn-ghost flex-1">✎ Edit Pasangan</button>
@@ -492,12 +508,19 @@ function openSpouseEditor(parent, existing=null){
     f.editOrder.value = existing.order||1;
     f.spouseOrder.value = existing.order||1;
     f.name.value = existing.name||"";
+    f.nickname.value = existing.nickname||"";
+    f.gender.value = existing.gender||"";
     f.status.value = existing.status||"hidup";
+    f.birth.value = existing.birth||"";
+    f.birthplace.value = existing.birthplace||"";
     f.death.value = existing.death||"";
+    f.deathplace.value = existing.deathplace||"";
+    f.notes.value = existing.notes||"";
     $("#spouse-title").textContent = `Edit Pasangan ${spouseOrdinal(existing.order||1)} kepada ${parent.name}`;
   } else {
     f.editOrder.value = "";
     f.spouseOrder.value = sps.length+1;
+    f.gender.value = parent.gender==="L" ? "P" : parent.gender==="P" ? "L" : "";
     $("#spouse-title").textContent = `Tambah Pasangan ${spouseOrdinal(sps.length+1)} untuk ${parent.name}`;
   }
   openModal("modal-spouse");
@@ -516,8 +539,14 @@ $("#form-spouse").addEventListener("submit", async e=>{
         parentId: parent.id,
         order: Number(editOrder),
         name: fd.get("name"),
+        nickname: fd.get("nickname")||"",
+        gender: fd.get("gender")||"",
         status: fd.get("status"),
+        birth: fd.get("birth")||"",
+        birthplace: fd.get("birthplace")||"",
         death: fd.get("death")||"",
+        deathplace: fd.get("deathplace")||"",
+        notes: fd.get("notes")||"",
         newOrder: Number(fd.get("spouseOrder"))||Number(editOrder),
       };
       if(photo) payload.photo = photo;
@@ -527,8 +556,14 @@ $("#form-spouse").addEventListener("submit", async e=>{
         parentId: parent.id,
         relation: "spouse",
         name: fd.get("name"),
+        nickname: fd.get("nickname")||"",
+        gender: fd.get("gender")||"",
         spouseStatus: fd.get("status"),
+        birth: fd.get("birth")||"",
+        birthplace: fd.get("birthplace")||"",
         spouseDeath: fd.get("death")||"",
+        deathplace: fd.get("deathplace")||"",
+        notes: fd.get("notes")||"",
         spouseOrder: fd.get("spouseOrder")||"",
       };
       if(photo) payload.photo = photo;

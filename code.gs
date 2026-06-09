@@ -324,7 +324,9 @@ const ACTIONS = {
     const photoUrl = p.photo ? saveImage_(p.photo, "spouse_"+Date.now()) : null;
     if (isAdmin) {
       applySpouseEdit_(p.parentId, Number(p.order), {
-        name: p.name, status: p.status, death: p.death||"",
+        name: p.name, nickname: p.nickname||"", gender: p.gender||"",
+        status: p.status, birth: p.birth||"", death: p.death||"",
+        birthplace: p.birthplace||"", deathplace: p.deathplace||"", notes: p.notes||"",
         newOrder: Number(p.newOrder)||Number(p.order),
         photo: photoUrl,
       }, auth);
@@ -376,7 +378,7 @@ const ACTIONS = {
       const data = JSON.parse(item.payload);
       if (item.action === "edit") { applyNodeUpdate_(data, data.photoUrl, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
       else if (item.action === "spouse") { addSpouse_(item.targetId, data, data.photoUrl, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
-      else if (item.action === "spouse-edit") { applySpouseEdit_(item.targetId, Number(data.order), { name:data.name, status:data.status, death:data.death||"", newOrder:Number(data.newOrder)||Number(data.order), photo:data.photoUrl }, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
+      else if (item.action === "spouse-edit") { applySpouseEdit_(item.targetId, Number(data.order), { name:data.name, nickname:data.nickname||"", gender:data.gender||"", status:data.status, birth:data.birth||"", death:data.death||"", birthplace:data.birthplace||"", deathplace:data.deathplace||"", notes:data.notes||"", newOrder:Number(data.newOrder)||Number(data.order), photo:data.photoUrl }, auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
       else if (item.action === "spouse-delete") { applySpouseDelete_(item.targetId, Number(data.order), auth); markNodePending_(item.targetId,false); stampApprove_(item.targetId, auth); }
       else if (item.action === "add") { markNodePending_(item.targetId, false); stampEdit_(item.targetId, auth); stampApprove_(item.targetId, auth); }
       else if (item.action === "delete") { deleteRowById_(SHEET_TREE, item.targetId); }
@@ -449,9 +451,13 @@ function addSpouse_(parentId, p, photoUrl, auth){
   const taken = {}; spouses.forEach(s=>{ if(s.order) taken[Number(s.order)] = true; });
   while (taken[order]) order++;
   spouses.push({
-    name: p.name, photo: photoUrl || "",
+    name: p.name, nickname: p.nickname || "", gender: p.gender || "",
+    birth: p.birth || "", birthplace: p.birthplace || "",
+    photo: photoUrl || "",
     status: p.spouseStatus || "hidup",
     death: p.spouseDeath || "",
+    deathplace: p.deathplace || "",
+    notes: p.notes || "",
     order: order,
   });
   // dedupe: kalau ada dua entri dengan nama+order yang sama persis, biar satu sahaja
@@ -459,8 +465,8 @@ function addSpouse_(parentId, p, photoUrl, auth){
   spouses = spouses.filter(s=>{ const k=(s.name||"")+"|"+(s.order||""); if(seen[k]) return false; seen[k]=1; return true; });
   spouses.sort((a,b)=>(a.order||99)-(b.order||99));
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
-  sh.getRange(n._row, h.indexOf("spousesJson")+1).setValue(JSON.stringify(spouses));
-  sh.getRange(n._row, h.indexOf("spouseName")+1).setValue(spouses.map(s=>s.name).join(" / "));
+   setCellByHeader_(sh, n._row, "spousesJson", JSON.stringify(spouses));
+   setCellByHeader_(sh, n._row, "spouseName", spouses.map(s=>s.name).join(" / "));
   stampEdit_(parentId, auth);
 }
 function _loadSpouses_(n){
@@ -471,9 +477,8 @@ function _loadSpouses_(n){
 }
 function _saveSpouses_(sh, n, spouses, auth){
   spouses.sort((a,b)=>(a.order||99)-(b.order||99));
-  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
-  sh.getRange(n._row, h.indexOf("spousesJson")+1).setValue(JSON.stringify(spouses));
-  sh.getRange(n._row, h.indexOf("spouseName")+1).setValue(spouses.map(s=>s.name).join(" / "));
+  setCellByHeader_(sh, n._row, "spousesJson", JSON.stringify(spouses));
+  setCellByHeader_(sh, n._row, "spouseName", spouses.map(s=>s.name).join(" / "));
   stampEdit_(n.id, auth);
 }
 function applySpouseEdit_(parentId, order, data, auth){
@@ -485,8 +490,14 @@ function applySpouseEdit_(parentId, order, data, auth){
   const idx = spouses.findIndex(s=>Number(s.order||0)===Number(order));
   if(idx<0) throw new Error("Pasangan tidak dijumpai");
   spouses[idx].name   = data.name || spouses[idx].name;
+  spouses[idx].nickname = data.nickname !== undefined ? data.nickname : (spouses[idx].nickname || "");
+  spouses[idx].gender = data.gender || spouses[idx].gender || "";
   spouses[idx].status = data.status || spouses[idx].status;
+  spouses[idx].birth = data.birth !== undefined ? data.birth : (spouses[idx].birth || "");
+  spouses[idx].birthplace = data.birthplace !== undefined ? data.birthplace : (spouses[idx].birthplace || "");
   spouses[idx].death  = data.death || "";
+  spouses[idx].deathplace = data.deathplace !== undefined ? data.deathplace : (spouses[idx].deathplace || "");
+  spouses[idx].notes = data.notes !== undefined ? data.notes : (spouses[idx].notes || "");
   if(data.photo) spouses[idx].photo = data.photo;
   if(data.newOrder && data.newOrder!==order){
     const taken = {}; spouses.forEach((s,i)=>{ if(i!==idx && s.order) taken[Number(s.order)]=true; });
@@ -525,6 +536,12 @@ function updateUserField_(row, field, value) {
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
   const col = h.indexOf(field)+1;
   if (col > 0) sh.getRange(row,col).setValue(value);
+}
+function setCellByHeader_(sh, row, field, value) {
+  const headers = sh.getRange(1,1,1,Math.max(1, sh.getLastColumn())).getValues()[0];
+  const col = headers.indexOf(field) + 1;
+  if (col < 1) throw new Error("Kolum wajib tiada pada sheet '" + sh.getName() + "': " + field + ". Jalankan INITIALIZE_SYSTEM() sekali dan deploy semula versi terbaru.");
+  sh.getRange(row, col).setValue(value);
 }
 function appendUserRow_(data){
   const sh = sheet_(SHEET_USERS);

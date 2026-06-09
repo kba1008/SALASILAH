@@ -468,10 +468,20 @@
       <input type="hidden" name="parentId" />
       <input type="hidden" name="editOrder" value="" />
       <input class="input" dir="auto" name="name" placeholder="Nama Pasangan" required />
+      <input class="input" dir="auto" name="nickname" placeholder="Nama Singkatan / Gelaran" />
       <div class="grid grid-cols-2 gap-2">
+        <label class="text-xs block" style="color:var(--ink-soft)">Jantina
+          <select class="input mt-1" name="gender">
+            <option value="">— Pilih —</option>
+            <option value="L">Lelaki</option>
+            <option value="P">Perempuan</option>
+          </select>
+        </label>
         <label class="text-xs block" style="color:var(--ink-soft)">Pasangan ke-
           <input type="number" min="1" max="20" class="input mt-1" name="spouseOrder" value="1" required />
         </label>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
         <label class="text-xs block" style="color:var(--ink-soft)">Status
           <select class="input mt-1" name="status">
             <option value="hidup">Hidup</option>
@@ -479,8 +489,14 @@
             <option value="mati">Almarhum</option>
           </select>
         </label>
+        <label class="text-xs block" style="color:var(--ink-soft)">Tahun Lahir
+          <input class="input mt-1" name="birth" placeholder="Contoh: 1975" />
+        </label>
       </div>
+      <input class="input" name="birthplace" placeholder="Tempat Lahir" />
       <input class="input" name="death" placeholder="Tahun Mati (jika Almarhum)" />
+      <input class="input" name="deathplace" placeholder="Tempat Wafat" />
+      <textarea class="input" dir="auto" name="notes" placeholder="Catatan / Biodata pasangan" rows="3"></textarea>
       <label class="text-xs block" style="color:var(--ink-soft)">Gambar Pasangan</label>
       <input class="input" name="photo" type="file" accept="image/*" />
       <p class="text-[11px]" style="color:var(--ink-soft)">Setiap profil boleh ada bilangan pasangan yang tidak terhad (poligami / kahwin semula).</p>
