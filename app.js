@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzg2LoScY8KIVjJjZL24-mmu5-JosABVWDZKOjOlgn-LoER91NPpQ_5NiAc29r4TxAb/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw8TMolZYTDNRRjDIU-Im-Asmf0i0iD5fq4SGgieXmHHuq0U2pdZibouHKqpfakh1kD/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
