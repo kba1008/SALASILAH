@@ -87,7 +87,7 @@ function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
 /* TURBO: ensureInit cache — skip jika dah migrate dalam 6 jam */
-const _INIT_VERSION = "v2.7-turbo-1";
+const _INIT_VERSION = "v2.7-turbo-2-spousefix";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -307,8 +307,9 @@ const ACTIONS = {
 
     if (p.relation === "spouse" && p.parentId) {
       // Tiada had pasangan — sesiapa boleh tambah berapa banyak (poligami / kahwin semula)
-      if (isAdmin) { addSpouse_(p.parentId, p, photoUrl, auth); stampApprove_(p.parentId, auth); return { ok: true }; }
-      addPending_({ action: "spouse", targetId: p.parentId, payload: { ...p, photoUrl }, by: auth.username, summary: "Pasangan ke-"+(p.spouseOrder||"?")+": "+(p.name||"") });
+      const spousePayload = normalizeSpousePayload_(p, photoUrl);
+      if (isAdmin) { addSpouse_(p.parentId, spousePayload, spousePayload.photoUrl, auth); stampApprove_(p.parentId, auth); return { ok: true }; }
+      addPending_({ action: "spouse", targetId: p.parentId, payload: spousePayload, by: auth.username, summary: "Pasangan ke-"+(spousePayload.spouseOrder||"?")+": "+(spousePayload.name||"") });
       markNodePending_(p.parentId, true);
       return { pending: true };
     }
@@ -701,7 +702,26 @@ function validateSpouseRule_(parentId, p){
   }
   // Lelaki: bebas (poligami)
 }
+function normalizeSpousePayload_(p, photoUrl){
+  return {
+    parentId: p.parentId || "",
+    relation: "spouse",
+    name: String(p.name || "").trim(),
+    nickname: p.nickname || "",
+    gender: p.gender || "",
+    birth: p.birth || "",
+    birthplace: p.birthplace || "",
+    deathplace: p.deathplace || "",
+    notes: p.notes || "",
+    spouseOrder: Number(p.spouseOrder) > 0 ? Number(p.spouseOrder) : "",
+    spouseStatus: p.spouseStatus || p.status || "hidup",
+    spouseDeath: p.spouseDeath || p.death || "",
+    photoUrl: photoUrl || p.photoUrl || "",
+  };
+}
 function addSpouse_(parentId, p, photoUrl, auth){
+  p = normalizeSpousePayload_(p || {}, photoUrl);
+  if (!p.name) throw new Error("Nama pasangan wajib diisi");
   const sh = sheet_(SHEET_TREE);
   const rows = readSheet_(SHEET_TREE);
   const n = rows.find(r=>r.id===parentId);
@@ -716,7 +736,7 @@ function addSpouse_(parentId, p, photoUrl, auth){
   spouses.push({
     name: p.name, nickname: p.nickname || "", gender: p.gender || "",
     birth: p.birth || "", birthplace: p.birthplace || "",
-    photo: photoUrl || "",
+    photo: p.photoUrl || photoUrl || "",
     status: p.spouseStatus || "hidup",
     death: p.spouseDeath || "",
     deathplace: p.deathplace || "",
@@ -951,8 +971,11 @@ function markNotePending_(id, val) {
 }
 function addPending_(o) {
   const sh = sheet_(SHEET_PENDING);
+  migrateHeaders_(SHEET_PENDING, expectedHeadersForSheet_(SHEET_PENDING));
   const id = Utilities.getUuid();
-  sh.appendRow([id, o.action, o.targetId, JSON.stringify(o.payload), o.by, o.summary, new Date()]);
+  const data = {id, action:o.action, targetId:o.targetId, payload:JSON.stringify(o.payload||{}), by:o.by, summary:o.summary, createdAt:new Date()};
+  const h = sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getValues()[0];
+  sh.appendRow(h.map(col => data[col] !== undefined ? data[col] : ""));
 }
 function deleteRowById_(sheetName, id) {
   const sh = sheet_(sheetName);
