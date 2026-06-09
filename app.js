@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxGDRq7YdOpMIeBHzG8jQl43_dNLEdPMgGMhe7kvUP74niA_5GBefA1SJLuSjJWuhHf/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw8TMolZYTDNRRjDIU-Im-Asmf0i0iD5fq4SGgieXmHHuq0U2pdZibouHKqpfakh1kD/exec";
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
   "Menjejak pasangan, anak dan sambungan salasilah…",
@@ -608,10 +608,24 @@ async function deleteSpouseEntry(parent, sp){
 
 async function moderateTarget(targetId, targetType, decision="approve"){
   const isReject = decision === "reject";
+  const source = targetType === "note"
+    ? (State.notes || []).find(x=>String(x.id)===String(targetId))
+    : (State.nodes || []).find(x=>String(x.id)===String(targetId));
+  const pendingItems = Array.isArray(source?.pendingItems) ? source.pendingItems : [];
+  if(!pendingItems.length){
+    showInfo("Tiada perubahan pending lagi untuk item ini. Paparan akan disegarkan.",{title:"Sudah Terkini"});
+    closeModal("modal-profile");
+    await refresh();
+    return;
+  }
   if(isReject && !confirm("Tolak semua perubahan belum disahkan untuk profil ini?")) return;
   try{
-    await api("moderateTarget", { targetId, targetType, decision });
-    showInfo(isReject ? "Perubahan ditolak" : "Data berjaya disahkan");
+    const res = await api("moderateTarget", { targetId, targetType, decision });
+    if(res?.empty || !res?.count){
+      showInfo("Tiada perubahan pending lagi untuk item ini. Paparan telah disegarkan.",{title:"Sudah Terkini"});
+    }else{
+      showInfo(isReject ? "Perubahan ditolak" : "Data berjaya disahkan");
+    }
     closeModal("modal-profile");
     if(State.user?.role === "admin") loadAdmin();
     await refresh();

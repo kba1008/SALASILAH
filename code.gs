@@ -450,7 +450,7 @@ const ACTIONS = {
       .filter(r => String(r.targetId) === String(p.targetId))
       .filter(r => isNote ? String(r.action||"").indexOf("note") === 0 : String(r.action||"").indexOf("note") !== 0)
       .sort((a,b)=>(a._row||0)-(b._row||0));
-    if (!rows.length) throw new Error("Tiada perubahan belum disahkan untuk item ini");
+    if (!rows.length) return { ok:true, count:0, empty:true };
     rows.forEach(r=>resolvePendingById_(r.id, p.decision || "approve", auth));
     return { ok:true, count: rows.length };
   },
