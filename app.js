@@ -1,34 +1,65 @@
-/* Salasilah Keluarga Elit — app.js */
-const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec"; // isi URL deploy Apps Script di sini atau via ⚙
+/* Salasilah Keluarga Elit — app.js v2 */
+
+/* ====== KONFIG TERSEMBUNYI ======
+ * URL Google Apps Script disimpan di sini sahaja.
+ * Tidak dipaparkan dalam UI Tetapan.
+ */
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec";
+
 const State = {
-  gasUrl: localStorage.getItem("gasUrl") || DEFAULT_GAS_URL,
   user: JSON.parse(localStorage.getItem("user") || "null"),
   nodes: [],
-  pending: [],
   panzoom: null,
+  searchResults: [],
+  searchIndex: 0,
 };
 
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 
-function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2400);}
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2600);}
 function openModal(id){$("#"+id).classList.remove("hidden");$("#"+id).classList.add("flex");}
 function closeModal(id){$("#"+id).classList.add("hidden");$("#"+id).classList.remove("flex");}
 window.closeModal = closeModal;
 
 /* ---------- API ---------- */
 async function api(action, payload={}){
-  if(!State.gasUrl){toast("Tetapkan URL GAS dahulu");openModal("modal-settings");throw new Error("no-url");}
   const body = JSON.stringify({action, payload, auth: State.user ? {username:State.user.username,token:State.user.token}:null});
-  const res = await fetch(State.gasUrl, {method:"POST", body, headers:{"Content-Type":"text/plain;charset=utf-8"}});
+  const res = await fetch(GAS_URL, {method:"POST", body, headers:{"Content-Type":"text/plain;charset=utf-8"}});
   const json = await res.json();
   if(!json.ok) throw new Error(json.error||"API error");
   return json.data;
 }
 
 async function fileToBase64(f){
-  if(!f) return null;
+  if(!f || !f.name) return null;
   return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({name:f.name,type:f.type,data:r.result.split(",")[1]});r.onerror=rej;r.readAsDataURL(f);});
+}
+
+/* ---------- Helper imej Google Drive ---------- */
+// Drive `uc?export=view` selalu terhalang. Tukar ke lh3.googleusercontent.com/d/<id>
+function fixPhoto(url){
+  if(!url) return "";
+  const m = String(url).match(/[?&]id=([\w-]+)/) || String(url).match(/\/d\/([\w-]+)/);
+  if(m) return `https://lh3.googleusercontent.com/d/${m[1]}=w400`;
+  return url;
+}
+
+/* ---------- Spouses helper (sokong banyak isteri) ---------- */
+function getSpouses(n){
+  if(Array.isArray(n.spouses) && n.spouses.length) return n.spouses;
+  if(n.spousesJson){
+    try{ const a = JSON.parse(n.spousesJson); if(Array.isArray(a)) return a; }catch(e){}
+  }
+  if(n.spouseName) return [{name:n.spouseName, photo:n.spousePhoto||"", status:n.spouseStatus||"hidup", death:""}];
+  return [];
+}
+function canAddSpouse(n){
+  const sp = getSpouses(n);
+  if(sp.length===0) return true;
+  if(n.gender==="L") return true; // lelaki: poligami dibenarkan
+  // perempuan: hanya jika semua pasangan terdahulu telah meninggal
+  return sp.every(s=>s.status==="mati");
 }
 
 /* ---------- Render Tree ---------- */
@@ -47,12 +78,15 @@ function renderNode(n){
   const branch = document.createElement("div");
   branch.className="branch";
   branch.appendChild(card(n));
-  if(n.spouseName){
-    const sp = document.createElement("div");
-    sp.className="node";
-    sp.innerHTML=`<img src="${n.spousePhoto||placeholder(n.gender==='L'?'P':'L')}"/><div class="name">${escape(n.spouseName)}</div><div class="meta">Pasangan</div>`;
-    branch.appendChild(sp);
-  }
+  getSpouses(n).forEach(sp=>{
+    const el = document.createElement("div");
+    el.className="node";
+    el.innerHTML=`<img src="${fixPhoto(sp.photo)||placeholder(n.gender==='L'?'P':'L')}" onerror="this.src='${placeholder(n.gender==='L'?'P':'L')}'"/>
+      <div class="name">${escape(sp.name)}</div>
+      <div class="meta">Pasangan${sp.status==='mati'?' †':''}</div>`;
+    el.addEventListener("click",e=>{e.stopPropagation();showSpouseProfile(n, sp);});
+    branch.appendChild(el);
+  });
   li.appendChild(branch);
   const kids = State.nodes.filter(x=>x.parentId===n.id);
   if(kids.length){
@@ -66,7 +100,8 @@ function renderNode(n){
 function card(n){
   const d = document.createElement("div");
   d.className = "node"+(n.pending?" pending":"")+(!n.parentId?" root":"");
-  d.innerHTML = `<img src="${n.photo||placeholder(n.gender)}" alt=""/>
+  d.dataset.nodeId = n.id;
+  d.innerHTML = `<img src="${fixPhoto(n.photo)||placeholder(n.gender)}" alt="" onerror="this.src='${placeholder(n.gender)}'"/>
     <div class="name">${escape(n.name)}</div>
     <div class="meta">#${n.no||"-"} ${n.birth||""}${n.death?" – "+n.death:""}</div>`;
   d.addEventListener("click",e=>{e.stopPropagation();showCtx(e.clientX,e.clientY,n);});
@@ -81,37 +116,81 @@ function escape(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"
 /* ---------- Context Menu ---------- */
 function showCtx(x,y,n){
   const m = $("#ctx-menu");
-  const canEdit = State.user;
+  const canEdit = !!State.user;        // pengguna berdaftar yang log masuk
+  const isAdmin = State.user?.role==="admin";
   m.innerHTML = "";
   const items = [
     {l:"👁 Lihat Profil", fn:()=>viewProfile(n)},
     canEdit && {l:"✎ Edit", fn:()=>openNodeEditor(n)},
     canEdit && {l:"➕ Tambah Anak", fn:()=>openNodeEditor(null,n.id,"child")},
-    canEdit && !n.spouseName && {l:"💍 Tambah Pasangan", fn:()=>openNodeEditor(null,n.id,"spouse")},
-    State.user?.role==="admin" && {l:"🗑 Padam", fn:()=>delNode(n)},
+    canEdit && canAddSpouse(n) && {l:"💍 Tambah Pasangan", fn:()=>openSpouseEditor(n)},
+    isAdmin && {l:"🗑 Padam", fn:()=>delNode(n)},
   ].filter(Boolean);
   items.forEach(i=>{const b=document.createElement("button");b.textContent=i.l;b.onclick=()=>{m.classList.add("hidden");i.fn();};m.appendChild(b);});
-  m.style.left = Math.min(x, innerWidth-200)+"px";
+  m.style.left = Math.min(x, innerWidth-220)+"px";
   m.style.top = Math.min(y, innerHeight-items.length*40)+"px";
   m.classList.remove("hidden");
 }
 document.addEventListener("click",()=>$("#ctx-menu").classList.add("hidden"));
 
-function viewProfile(n){alert(`${n.name}\n#${n.no||"-"}\n${n.notes||""}`);}
+/* ---------- Profile Viewer (semua pengguna boleh lihat) ---------- */
+function viewProfile(n){
+  const sp = getSpouses(n);
+  const photo = fixPhoto(n.photo) || placeholder(n.gender);
+  $("#profile-body").innerHTML = `
+    <div class="flex flex-col items-center mb-4">
+      <img src="${photo}" onerror="this.src='${placeholder(n.gender)}'" class="w-28 h-28 rounded-full object-cover border-2 border-yellow-500 mb-2"/>
+      <h2 class="text-xl font-bold text-center">${escape(n.name)}</h2>
+      ${n.nickname?`<p class="text-sm text-yellow-400">"${escape(n.nickname)}"</p>`:""}
+      <p class="text-xs text-slate-400">#${n.no||"-"} • ${n.gender==='P'?'Perempuan':'Lelaki'} • ${n.status==='mati'?'Almarhum':'Hidup'}</p>
+    </div>
+    <div class="space-y-2 text-sm">
+      ${rowField("Tahun Lahir", n.birth)}
+      ${rowField("Tempat Lahir", n.birthplace)}
+      ${rowField("Tahun Wafat", n.death)}
+      ${rowField("Tempat Wafat", n.deathplace)}
+      ${sp.length?`<div><div class="text-slate-400 text-xs mb-1">Pasangan (${sp.length})</div>
+        <ul class="space-y-1">${sp.map(s=>`<li class="text-slate-200">• ${escape(s.name)} ${s.status==='mati'?'<span class="text-slate-500">(almarhum'+(s.death?' '+escape(s.death):'')+')</span>':''}</li>`).join("")}</ul></div>`:""}
+      ${n.notes?`<div><div class="text-slate-400 text-xs mb-1">Catatan</div><p class="text-slate-200 whitespace-pre-wrap">${escape(n.notes)}</p></div>`:""}
+    </div>
+    ${!State.user?'<p class="text-[11px] text-slate-500 mt-4 text-center">Mod pelawat — lihat sahaja. Daftar &amp; dapatkan kelulusan admin untuk menyumbang.</p>':''}
+  `;
+  openModal("modal-profile");
+}
+function rowField(label,val){
+  if(!val) return "";
+  return `<div class="flex justify-between gap-3"><span class="text-slate-400">${label}</span><span class="text-slate-100 text-right">${escape(val)}</span></div>`;
+}
+function showSpouseProfile(parent, sp){
+  $("#profile-body").innerHTML = `
+    <div class="flex flex-col items-center mb-4">
+      <img src="${fixPhoto(sp.photo)||placeholder(parent.gender==='L'?'P':'L')}" class="w-28 h-28 rounded-full object-cover border-2 border-pink-400 mb-2"/>
+      <h2 class="text-xl font-bold text-center">${escape(sp.name)}</h2>
+      <p class="text-xs text-slate-400">Pasangan kepada ${escape(parent.name)}</p>
+      <p class="text-xs text-slate-400">${sp.status==='mati'?'Almarhum'+(sp.death?' ('+escape(sp.death)+')':''):'Hidup'}</p>
+    </div>
+  `;
+  openModal("modal-profile");
+}
 
 /* ---------- Node Editor ---------- */
 function openNodeEditor(node, parentId=null, relation="child"){
+  if(!State.user){toast("Sila log masuk");return;}
   const f = $("#form-node");
   f.reset();
   f.id.value = node?.id||"";
   f.parentId.value = parentId||node?.parentId||"";
   f.relation.value = relation;
   if(node){
-    f.name.value=node.name; f.gender.value=node.gender||"L"; f.status.value=node.status||"hidup";
+    f.name.value=node.name||"";
+    if(f.nickname) f.nickname.value=node.nickname||"";
+    f.gender.value=node.gender||"L"; f.status.value=node.status||"hidup";
     f.birth.value=node.birth||""; f.death.value=node.death||"";
-    f.spouse.value=node.spouseName||""; f.notes.value=node.notes||"";
+    if(f.birthplace) f.birthplace.value=node.birthplace||"";
+    if(f.deathplace) f.deathplace.value=node.deathplace||"";
+    f.notes.value=node.notes||"";
   }
-  $("#node-title").textContent = node?"Edit Ahli":(relation==="spouse"?"Tambah Pasangan":"Tambah Anak");
+  $("#node-title").textContent = node?"Edit Ahli":"Tambah Anak";
   openModal("modal-node");
 }
 
@@ -127,6 +206,42 @@ $("#form-node").addEventListener("submit", async e=>{
     await api("saveNode", payload);
     toast(State.user.role==="admin"?"Disimpan":"Dihantar untuk semakan admin");
     closeModal("modal-node");
+    await refresh();
+  }catch(err){toast(err.message);}
+});
+
+/* ---------- Spouse Editor (kuatkuasakan peraturan) ---------- */
+function openSpouseEditor(parent){
+  if(!State.user){toast("Sila log masuk");return;}
+  if(!canAddSpouse(parent)){
+    if(parent.gender==="P") toast("Wanita hanya boleh ada satu suami pada satu masa. Tunggu sehingga suami sedia ada bertukar status 'Almarhum'.");
+    else toast("Tidak boleh tambah pasangan.");
+    return;
+  }
+  const f = $("#form-spouse"); f.reset();
+  f.parentId.value = parent.id;
+  $("#spouse-title").textContent = `Tambah Pasangan untuk ${parent.name}`;
+  openModal("modal-spouse");
+}
+$("#form-spouse").addEventListener("submit", async e=>{
+  e.preventDefault();
+  if(!State.user){toast("Sila log masuk");return;}
+  const fd = new FormData(e.target);
+  const parent = State.nodes.find(x=>x.id===fd.get("parentId"));
+  if(!parent || !canAddSpouse(parent)){toast("Peraturan pasangan tidak dibenarkan");return;}
+  const photo = await fileToBase64(fd.get("photo"));
+  const payload = {
+    parentId: fd.get("parentId"),
+    relation: "spouse",
+    name: fd.get("name"),
+    spouseStatus: fd.get("status"),
+    spouseDeath: fd.get("death")||"",
+  };
+  if(photo) payload.photo = photo;
+  try{
+    await api("saveNode", payload);
+    toast(State.user.role==="admin"?"Pasangan ditambah":"Dihantar untuk semakan admin");
+    closeModal("modal-spouse");
     await refresh();
   }catch(err){toast(err.message);}
 });
@@ -170,7 +285,7 @@ $("#form-register").addEventListener("submit",async e=>{
 
 function updateUserUI(){
   const u = State.user;
-  $("#user-info").textContent = u?`${u.username} • ${u.role==="admin"?"ADMIN":"Ahli #"+u.no}`:"Tidak log masuk";
+  $("#user-info").textContent = u?`${u.username} • ${u.role==="admin"?"ADMIN":"Ahli #"+u.no}`:"Mod Pelawat — lihat sahaja";
   $("#btn-auth").textContent = u?"Keluar":"Log Masuk";
   $("#btn-admin").classList.toggle("hidden", u?.role!=="admin");
 }
@@ -210,21 +325,86 @@ $("#btn-init-root").addEventListener("click",async()=>{
 });
 
 /* ---------- Settings ---------- */
-$("#btn-settings").addEventListener("click",()=>{$("#gas-url").value=State.gasUrl;openModal("modal-settings");});
-$("#btn-save-settings").addEventListener("click",()=>{
-  State.gasUrl = $("#gas-url").value.trim();
-  localStorage.setItem("gasUrl",State.gasUrl);
-  closeModal("modal-settings"); refresh();
-});
+$("#btn-settings").addEventListener("click",()=>openModal("modal-settings"));
 
-/* ---------- Panzoom ---------- */
+/* ---------- Panzoom (ruang lebih luas, zoom out lebih jauh) ---------- */
 function initPanzoom(){
   const el = $("#canvas");
-  State.panzoom = Panzoom(el,{maxScale:3,minScale:.3,canvas:true,contain:false});
-  $("#stage").addEventListener("wheel",State.panzoom.zoomWithWheel);
+  State.panzoom = Panzoom(el,{
+    maxScale: 4,
+    minScale: 0.05,        // boleh zoom out sangat jauh untuk salasilah besar
+    step: 0.15,
+    canvas: true,
+    contain: false,
+    cursor: "grab",
+  });
+  $("#stage").addEventListener("wheel", e => State.panzoom.zoomWithWheel(e, {step:0.15}));
   $("#btn-zoom-in").onclick=()=>State.panzoom.zoomIn();
   $("#btn-zoom-out").onclick=()=>State.panzoom.zoomOut();
   $("#btn-reset").onclick=()=>State.panzoom.reset();
+}
+
+/* ---------- Carian + auto-zoom ---------- */
+$("#btn-search").addEventListener("click",()=>{
+  const bar = $("#search-bar");
+  bar.classList.toggle("hidden");
+  if(!bar.classList.contains("hidden")) $("#search-input").focus();
+});
+$("#search-close").addEventListener("click",()=>{$("#search-bar").classList.add("hidden");clearHighlights();});
+$("#search-input").addEventListener("input",e=>runSearch(e.target.value));
+$("#search-next").addEventListener("click",()=>stepSearch(1));
+$("#search-prev").addEventListener("click",()=>stepSearch(-1));
+$("#search-input").addEventListener("keydown",e=>{
+  if(e.key==="Enter"){e.preventDefault();stepSearch(e.shiftKey?-1:1);}
+  if(e.key==="Escape"){$("#search-bar").classList.add("hidden");clearHighlights();}
+});
+
+function runSearch(q){
+  clearHighlights();
+  q = q.trim().toLowerCase();
+  if(!q){State.searchResults=[];$("#search-count").textContent="0/0";return;}
+  State.searchResults = State.nodes.filter(n=>{
+    const sp = getSpouses(n).map(s=>s.name).join(" ");
+    const hay = [n.name,n.nickname,n.no,n.birth,n.death,n.birthplace,n.deathplace,n.notes,sp].join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+  State.searchIndex = 0;
+  if(State.searchResults.length){
+    $("#search-count").textContent = `1/${State.searchResults.length}`;
+    focusNode(State.searchResults[0]);
+  } else {
+    $("#search-count").textContent = `0/0`;
+    toast("Tiada padanan");
+  }
+}
+function stepSearch(dir){
+  if(!State.searchResults.length) return;
+  State.searchIndex = (State.searchIndex + dir + State.searchResults.length) % State.searchResults.length;
+  $("#search-count").textContent = `${State.searchIndex+1}/${State.searchResults.length}`;
+  focusNode(State.searchResults[State.searchIndex]);
+}
+function clearHighlights(){
+  $$(".node.highlight").forEach(el=>el.classList.remove("highlight"));
+}
+function focusNode(n){
+  clearHighlights();
+  const el = document.querySelector(`.node[data-node-id="${n.id}"]`);
+  if(!el || !State.panzoom) return;
+  el.classList.add("highlight");
+  // kira posisi node relatif kepada stage, kemudian pan/zoom
+  const stage = $("#stage");
+  const sRect = stage.getBoundingClientRect();
+  const nRect = el.getBoundingClientRect();
+  const scale = State.panzoom.getScale();
+  const targetScale = Math.max(0.9, Math.min(scale, 1.4));
+  // Pusatkan: dapatkan kedudukan semasa pan dan adjust
+  const pan = State.panzoom.getPan();
+  const dx = (sRect.left + sRect.width/2) - (nRect.left + nRect.width/2);
+  const dy = (sRect.top + sRect.height/2) - (nRect.top + nRect.height/2);
+  State.panzoom.zoom(targetScale, {animate:true});
+  setTimeout(()=>{
+    State.panzoom.pan(pan.x + dx/scale, pan.y + dy/scale, {animate:true});
+  }, 50);
 }
 
 /* ---------- Refresh ---------- */
@@ -233,14 +413,11 @@ async function refresh(){
     const d = await api("getTree",{});
     State.nodes = d.nodes||[];
     buildTree();
-  }catch(e){
-    if(e.message!=="no-url") toast(e.message);
-  }
+  }catch(e){ toast(e.message); }
 }
 
 /* ---------- Boot ---------- */
 window.addEventListener("DOMContentLoaded",()=>{
   initPanzoom(); updateUserUI();
-  if(State.gasUrl) refresh();
-  else { $("#tree-root").innerHTML='<div class="text-center mt-32"><p class="text-slate-300">Tetapkan URL Google Apps Script untuk mula.</p><button onclick="document.getElementById(\'btn-settings\').click()" class="btn btn-primary mt-3">Buka Tetapan</button></div>'; }
+  refresh();
 });
