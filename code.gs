@@ -787,17 +787,17 @@ function stampNoteApprove_(id, auth){
 }
 function markNodePending_(id, val) {
   const sh = sheet_(SHEET_TREE);
+  migrateHeaders_(SHEET_TREE, TREE_HEADERS);
   const rows = readSheet_(SHEET_TREE);
-  const n = rows.find(r=>r.id===id); if(!n) return;
-  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
-  sh.getRange(n._row, h.indexOf("pending")+1).setValue(val);
+  const n = rows.find(r=>String(r.id)===String(id)); if(!n) return;
+  setCellByHeader_(sh, n._row, "pending", !!val);
 }
 function markNotePending_(id, val) {
   const sh = sheet_(SHEET_NOTES);
+  migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
   const rows = readSheet_(SHEET_NOTES);
-  const n = rows.find(r=>r.id===id); if(!n) return;
-  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
-  sh.getRange(n._row, h.indexOf("pending")+1).setValue(val);
+  const n = rows.find(r=>String(r.id)===String(id)); if(!n) return;
+  setCellByHeader_(sh, n._row, "pending", !!val);
 }
 function addPending_(o) {
   const sh = sheet_(SHEET_PENDING);

@@ -78,29 +78,28 @@
   .node .name:lang(ar), .node .name[dir="rtl"]{font-size:18px;line-height:1.3;}
 
   .glass{
-    background:linear-gradient(135deg, rgba(255,255,255,.18), rgba(255,255,255,.06));
-    backdrop-filter:blur(22px) saturate(160%);
-    -webkit-backdrop-filter:blur(22px) saturate(160%);
-    border:1px solid rgba(255,255,255,.28);
-    box-shadow: 0 12px 40px -12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35);
+    background:linear-gradient(180deg, color-mix(in oklab, var(--card) 96%, #ffffff 4%), color-mix(in oklab, var(--bg-alt) 88%, #ffffff 12%));
+    border:1px solid color-mix(in oklab, var(--line) 38%, #ffffff 62%);
+    box-shadow:
+      0 16px 34px -18px rgba(0,0,0,.34),
+      0 4px 12px -8px rgba(0,0,0,.18),
+      inset 0 1px 0 rgba(255,255,255,.72),
+      inset 0 -1px 0 rgba(0,0,0,.05);
     color:var(--ink);
   }
 
-  /* === NODE (kad ahli) — Liquid Glass 3D === */
+  /* === NODE (kad ahli) — 3D solid === */
   .node{
     position:relative;display:flex;flex-direction:column;align-items:center;
     padding:14px 18px;border-radius:18px;
     background:
-      linear-gradient(160deg, rgba(255,255,255,.22), rgba(255,255,255,.04) 60%),
-      linear-gradient(160deg, var(--card), color-mix(in oklab, var(--card) 70%, transparent));
-    backdrop-filter: blur(14px) saturate(150%);
-    -webkit-backdrop-filter: blur(14px) saturate(150%);
-    border:1px solid color-mix(in oklab, var(--line) 55%, transparent);
+      linear-gradient(180deg, color-mix(in oklab, var(--card) 94%, #ffffff 6%), color-mix(in oklab, var(--bg-alt) 90%, #ffffff 10%));
+    border:1px solid color-mix(in oklab, var(--line) 58%, #ffffff 42%);
     min-width:160px;
     box-shadow:
-      0 20px 40px -18px rgba(0,0,0,.45),
-      0 6px 14px -8px color-mix(in oklab, var(--gold) 50%, transparent),
-      inset 0 1px 0 rgba(255,255,255,.45),
+      0 22px 42px -20px rgba(0,0,0,.42),
+      0 8px 18px -12px color-mix(in oklab, var(--gold) 58%, rgba(0,0,0,.2)),
+      inset 0 1px 0 rgba(255,255,255,.76),
       inset 0 -1px 0 rgba(0,0,0,.08);
     cursor:pointer;transition:transform .25s cubic-bezier(.2,.7,.2,1.2), box-shadow .25s, border-color .2s;
     transform: translateZ(0);
@@ -113,16 +112,15 @@
   .node:hover{transform:translateY(-3px) scale(1.02);border-color:var(--gold-dark);
     box-shadow:
       0 28px 50px -20px rgba(0,0,0,.55),
-      0 10px 24px -10px color-mix(in oklab, var(--gold) 60%, transparent),
-      inset 0 1px 0 rgba(255,255,255,.55);}
+      0 10px 24px -10px color-mix(in oklab, var(--gold) 60%, rgba(0,0,0,.18)),
+      inset 0 1px 0 rgba(255,255,255,.82);}
   .node.pending,
   .node.pending.is-user,
   .node.pending.is-admin,
   .node.pending.root,
   .node.pending.hanging{
     background:
-      linear-gradient(160deg, rgba(255,255,255,.32), rgba(255,255,255,.08) 60%),
-      linear-gradient(160deg, #e5e7eb, #cbd5e1);
+      linear-gradient(180deg, #eef2f7, #cfd8e3);
     border-color:#64748b;
     box-shadow:
       0 0 0 2px rgba(100,116,139,.22),
@@ -131,11 +129,35 @@
   }
   .node.pending .name{color:#1f2937;text-shadow:0 1px 0 rgba(255,255,255,.35);}
   .node.pending .meta{color:#475569;font-weight:600;}
+  .couple.pending-family{
+    background:#dce4ee;
+    border:1px dashed #64748b;
+    box-shadow:0 10px 22px -16px rgba(71,85,105,.38);
+  }
+  .couple.pending-family .node,
+  .couple.pending-family .node.spouse,
+  .couple.pending-family .node.is-user,
+  .couple.pending-family .node.is-admin{
+    background:linear-gradient(180deg, #eef2f7, #cfd8e3);
+    border-color:#64748b;
+    box-shadow:
+      0 0 0 1px rgba(100,116,139,.2),
+      0 16px 32px -20px rgba(71,85,105,.35),
+      inset 0 1px 0 rgba(255,255,255,.75);
+  }
+  .couple.pending-family .node .name{color:#1f2937;}
+  .couple.pending-family .node .meta{color:#475569;}
+  .couple.pending-family .couple-link{
+    background:repeating-linear-gradient(90deg, #64748b 0 6px, transparent 6px 10px);
+  }
+  .couple.pending-family .couple-link::before{
+    color:#475569;
+    background:#dce4ee;
+  }
   .node.root{
     border-color:var(--gold-dark);
     background:
-      linear-gradient(160deg, rgba(255,255,255,.3), rgba(255,255,255,.05) 60%),
-      linear-gradient(160deg, color-mix(in oklab, var(--gold) 40%, var(--card)), var(--card));
+      linear-gradient(180deg, color-mix(in oklab, var(--gold) 26%, #fffdf2 74%), color-mix(in oklab, var(--card) 78%, var(--gold) 22%));
     box-shadow:
       0 0 0 2px color-mix(in oklab, var(--gold) 35%, transparent),
       0 24px 50px -18px color-mix(in oklab, var(--gold) 55%, transparent),
@@ -144,8 +166,7 @@
   /* Pengguna berdaftar — kotak KUNING */
   .node.is-user{
     background:
-      linear-gradient(160deg, rgba(255,255,255,.28), rgba(255,255,255,.05) 60%),
-      linear-gradient(160deg, #fff3a8, #ffd66e);
+      linear-gradient(180deg, #fff5b5, #ffd874);
     border-color:#c9a300;
     box-shadow:
       0 0 0 2px rgba(255,210,60,.4),
@@ -170,12 +191,11 @@
   }
   .badge-admin{background:linear-gradient(160deg,#ffe88a,#e8b900);font-size:13px;color:#3a2600;}
   .node.hanging{ border-style:dashed; border-color:#e85d3a; opacity:.95;
-    background:linear-gradient(160deg, rgba(255,255,255,.2), rgba(255,255,255,.05) 60%), linear-gradient(160deg, #fff0ea, #ffd8c5);
+    background:linear-gradient(180deg, #fff3ee, #ffd8c5);
   }
   .node.spouse{
     background:
-      linear-gradient(160deg, rgba(255,255,255,.25), rgba(255,255,255,.05) 60%),
-      linear-gradient(160deg, #fdf2f4, #f6d8de);
+      linear-gradient(180deg, #fdf2f4, #f1d1d9);
     border-color:#b85a72;
   }
   .node.spouse.divorced{ border-style:dashed; opacity:.85; }
@@ -193,8 +213,8 @@
   .hanging-block{ position:relative; padding-top:24px; }
   .hanging-label{
     font-family:'Cormorant Garamond',serif; font-size:13px; color:#c0392b;
-    background:rgba(255,235,225,.85); border:1.5px dashed #e85d3a; border-radius:10px;
-    padding:6px 14px; margin-bottom:6px; backdrop-filter:blur(8px);
+    background:#fff1ea; border:1.5px dashed #e85d3a; border-radius:10px;
+    padding:6px 14px; margin-bottom:6px;
     box-shadow:0 6px 16px -6px rgba(232,93,58,.35);
   }
   .hanging-label .op-60{opacity:.7;font-size:11px;}
@@ -265,13 +285,21 @@
     letter-spacing:.02em;
     font-weight:600;
   }
+  .node .meta.parentage{
+    max-width:170px;
+    text-align:center;
+    line-height:1.25;
+    white-space:normal;
+    font-size:9.5px;
+  }
 
   /* === COUPLE (suami + isteri) === */
   .couple{
     display:inline-flex;align-items:center;gap:0;
-    padding:6px;background:rgba(255,248,225,.5);
+    padding:6px;background:color-mix(in oklab, var(--card) 92%, #ffffff 8%);
     border-radius:18px;
-    border:1px dashed rgba(176,138,77,.45);
+    border:1px dashed color-mix(in oklab, var(--line) 45%, #ffffff 55%);
+    box-shadow:0 8px 18px -16px rgba(0,0,0,.35);
   }
   .couple .node{margin:0 4px;}
   .couple-link{
@@ -317,7 +345,7 @@
   .children-row > li{position:relative;}
 
   /* === MODAL & UI === */
-  .modal-bg{background:rgba(50,35,15,.55);backdrop-filter:blur(4px);}
+  .modal-bg{background:rgba(28,22,12,.56);}
   .btn{padding:8px 14px;border-radius:10px;font-weight:500;font-size:13px;transition:.15s;}
   .btn-primary{background:var(--gold-dark);color:#fff8e3;}
   .btn-primary:hover{background:var(--gold);}
@@ -370,9 +398,53 @@
   .err-btn:hover{background:rgba(0,0,0,.12);}
   .err-msg{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;max-height:180px;overflow:auto;background:rgba(255,255,255,.55);padding:6px 8px;border-radius:6px;border:1px dashed rgba(0,0,0,.15);user-select:text;-webkit-user-select:text;}
 
+  #loading-screen{
+    position:fixed; inset:0; z-index:300;
+    display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(1000px 600px at 20% 10%, var(--bg-radial-a) 0%, transparent 60%),
+      radial-gradient(900px 550px at 80% 90%, var(--bg-radial-b) 0%, transparent 60%),
+      var(--bg);
+    transition:opacity .28s ease, visibility .28s ease;
+  }
+  #loading-screen.hidden-screen{
+    opacity:0; visibility:hidden; pointer-events:none;
+  }
+  .loading-card{
+    min-width:280px; max-width:360px;
+    text-align:center; padding:28px 24px; border-radius:22px;
+  }
+  .loading-spinner{
+    width:54px; height:54px; margin:0 auto 14px; border-radius:50%;
+    border:5px solid color-mix(in oklab, var(--line-soft) 55%, #ffffff 45%);
+    border-top-color:var(--gold-dark);
+    animation:spin 1s linear infinite;
+    box-shadow:0 10px 24px -14px rgba(0,0,0,.35);
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #loading-text{color:var(--ink-soft);}
+
+  .hanging-block ul.tree li::before,
+  .hanging-block ul.tree li::after{
+    border-top:2px dashed #e85d3a;
+  }
+  .hanging-block ul.tree li:last-child::before{border-right:2px dashed #e85d3a;}
+  .hanging-block ul.tree li:first-child::after{border-top:2px dashed #e85d3a;}
+  .hanging-block ul.tree li:only-child > .branch::before{
+    background:repeating-linear-gradient(180deg, #e85d3a 0 8px, transparent 8px 14px);
+  }
+
 </style>
 </head>
 <body class="overflow-hidden">
+
+<div id="loading-screen">
+  <div class="loading-card glass">
+    <div class="loading-spinner"></div>
+    <h2 class="serif text-2xl font-bold mb-2">Memuatkan salasilah</h2>
+    <p id="loading-text" class="text-sm">Sila tunggu sementara maklumat keluarga dipaparkan.</p>
+  </div>
+</div>
 
 <header class="fixed top-0 inset-x-0 z-40 glass px-4 py-2 flex items-center justify-between gap-2">
   <div class="flex items-center gap-2 min-w-0">

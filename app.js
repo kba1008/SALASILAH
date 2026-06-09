@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycby2gmico8IzjhF8ia3nr4LVMtQnClEVm9JjRp3pNITIRJt2C90b5DmvFJlV_GqpqEGw/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzg2LoScY8KIVjJjZL24-mmu5-JosABVWDZKOjOlgn-LoER91NPpQ_5NiAc29r4TxAb/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
@@ -18,6 +18,13 @@ const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2800);}
+function setLoading(show, text="Memuatkan salasilah…"){
+  const screen = $("#loading-screen");
+  const label = $("#loading-text");
+  if(label) label.textContent = text;
+  if(!screen) return;
+  screen.classList.toggle("hidden-screen", !show);
+}
 
 /* ---------- Error Notifier ---------- */
 const ErrUI = {
@@ -123,6 +130,23 @@ function getSpouses(n){
   a.sort((x,y)=>(x.order||99)-(y.order||99));
   return a;
 }
+function getChildParents(n){
+  if(!n?.parentId) return { father:"", mother:"", fatherShort:"", motherShort:"" };
+  const parent = State.nodes.find(x=>String(x.id)===String(n.parentId));
+  if(!parent) return { father:"", mother:"", fatherShort:"", motherShort:"" };
+  const spouses = getSpouses(parent);
+  const linkedSpouse = n.spouseIndex
+    ? (spouses.find(s=>String(s.order)===String(n.spouseIndex)) || spouses[Number(n.spouseIndex)-1] || null)
+    : (spouses.length===1 ? spouses[0] : null);
+  const father = parent.gender==="L" ? parent.name : (linkedSpouse?.name || "");
+  const mother = parent.gender==="P" ? parent.name : (linkedSpouse?.name || "");
+  return {
+    father,
+    mother,
+    fatherShort: father || "Tidak dinyatakan",
+    motherShort: mother || "Tidak dinyatakan",
+  };
+}
 function canAddSpouse(n){
   // Tiada had — sesiapa boleh tambah berapa banyak pasangan (poligami / kahwin semula)
   return true;
@@ -205,9 +229,10 @@ function renderNode(n){
   const li = document.createElement("li");
   const branch = document.createElement("div");
   branch.className="branch";
+  const parents = getChildParents(n);
 
   const couple = document.createElement("div");
-  couple.className = "couple";
+  couple.className = "couple"+(n.pending?" pending-family":"");
   couple.appendChild(card(n));
   const sps = getSpouses(n);
   sps.forEach((sp,idx)=>{
@@ -243,7 +268,13 @@ function renderNode(n){
         if(key==="0") lbl.textContent = "Tidak ditandakan";
         else {
           const sp = sps.find(s=>String(s.order)===String(key)) || sps[Number(key)-1];
-          lbl.textContent = sp ? `Anak dengan ${sp.name} (Pasangan ${spouseOrdinal(sp.order||key)})` : `Pasangan ${spouseOrdinal(key)}`;
+          if(sp){
+            const father = n.gender==="L" ? n.name : sp.name;
+            const mother = n.gender==="P" ? n.name : sp.name;
+            lbl.textContent = `Bapa: ${father} • Ibu: ${mother}`;
+          } else {
+            lbl.textContent = `Pasangan ${spouseOrdinal(key)}`;
+          }
         }
         grpLi.appendChild(lbl);
         const sub = document.createElement("ul");
@@ -266,10 +297,14 @@ function card(n){
   d.className = "node"+(n.pending?" pending":"")+(!n.parentId && !n.hanging ?" root":"")+(n.hanging?" hanging":"")+(linked?" is-user":"")+(isAdminUser?" is-admin":"");
   d.dataset.nodeId = n.id;
   const badges = `${linked?`<span class="badge-user" title="Pengguna berdaftar: @${escape(linked.username)}">👤</span>`:""}${isAdminUser?`<span class="badge-admin" title="Admin">★</span>`:""}`;
+  const parentMeta = n.parentId
+    ? `<div class="meta parentage" dir="auto">Bapa: ${escape(parents.fatherShort)}</div><div class="meta parentage" dir="auto">Ibu: ${escape(parents.motherShort)}</div>`
+    : "";
   d.innerHTML = `${badges?`<div class="node-badges">${badges}</div>`:""}
     <img src="${fixPhoto(n.photo)||fixPhoto(linked?.photo)||placeholder(n.gender)}" alt="" onerror="this.src='${placeholder(n.gender)}'"/>
     <div class="name" dir="auto">${escape(n.name)}</div>
     <div class="meta">#${n.no||"-"} ${n.birth||""}${n.death?" – "+n.death:""}</div>
+    ${parentMeta}
     ${n.pending?'<div class="meta" style="font-weight:700">Belum disahkan admin</div>':''}`;
   d.addEventListener("click",e=>{
     e.stopPropagation();
@@ -365,6 +400,7 @@ function pendingActionLabel(action){
 }
 function viewProfile(n){
   const sp = getSpouses(n);
+  const parents = getChildParents(n);
   const photo = fixPhoto(n.photo) || placeholder(n.gender);
   const editedBy = n.lastEditBy || n.createdBy || "";
   const editedAt = fmtDateTime(n.lastEditAt || n.createdAt);
@@ -385,6 +421,8 @@ function viewProfile(n){
       ${rowField("Tempat Lahir", n.birthplace)}
       ${rowField("Tahun Wafat", n.death)}
       ${rowField("Tempat Wafat", n.deathplace)}
+      ${n.parentId ? rowField("Nama Bapa", parents.fatherShort) : ""}
+      ${n.parentId ? rowField("Nama Ibu", parents.motherShort) : ""}
       ${sp.length?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Pasangan (${sp.length})</div>
         <ul class="space-y-1" dir="auto">${sp.map((s,i)=>`<li>• <b>${spouseOrdinal(s.order||i+1)}:</b> ${escape(s.name)} <span style="color:var(--ink-soft)">(${spouseStatusLabel(s)})</span></li>`).join("")}</ul></div>`:""}
       ${n.notes?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Catatan</div><p class="whitespace-pre-wrap" dir="auto">${escape(n.notes)}</p></div>`:""}
@@ -1066,6 +1104,7 @@ function focusNode(n){
 
 /* ---------- Refresh ---------- */
 async function refresh(){
+  setLoading(true, "Sila tunggu sementara maklumat keluarga dipaparkan.");
   try{
     const d = await api("getTree",{});
     State.nodes = d.nodes||[];
@@ -1075,6 +1114,7 @@ async function refresh(){
     setTimeout(centerOnTree, 60);
     if(State.user?.role==="admin") refreshPendingBadge();
   }catch(e){ showError(e,{title:"Gagal memuat salasilah",context:"getTree"}); const host=$("#tree-root"); if(host) host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Gagal memuat data. Sila lihat notifikasi ralat di atas.</p>'; }
+  finally{ setLoading(false); }
 }
 
 /* ---------- Boot ---------- */
