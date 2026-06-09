@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxaRpDAH2iJD2yv7K8iNxpeZ_6o2rmnyWKUaIfOq2K6uChFt5JnzqNhdrCrT2phGA68/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzg2LoScY8KIVjJjZL24-mmu5-JosABVWDZKOjOlgn-LoER91NPpQ_5NiAc29r4TxAb/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
@@ -300,12 +300,14 @@ function card(n){
   const parentMeta = n.parentId
     ? `<div class="meta parentage" dir="auto">Bapa: ${escape(parents.fatherShort)}</div><div class="meta parentage" dir="auto">Ibu: ${escape(parents.motherShort)}</div>`
     : "";
+  const pendingChip = n.pending ? `<div class="pending-chip" title="Perlu disahkan atau dibatalkan oleh admin">Perlu semakan</div>` : "";
   d.innerHTML = `${badges?`<div class="node-badges">${badges}</div>`:""}
+    ${pendingChip}
     <img src="${fixPhoto(n.photo)||fixPhoto(linked?.photo)||placeholder(n.gender)}" alt="" onerror="this.src='${placeholder(n.gender)}'"/>
     <div class="name" dir="auto">${escape(n.name)}</div>
     <div class="meta">#${n.no||"-"} ${n.birth||""}${n.death?" – "+n.death:""}</div>
     ${parentMeta}
-    ${n.pending?'<div class="meta" style="font-weight:700">Belum disahkan admin</div>':''}`;
+    ${n.pending?'<div class="meta" style="font-weight:800;color:#92400e">Menunggu keputusan admin</div>':''}`;
   d.addEventListener("click",e=>{
     e.stopPropagation();
     if(State.reparentMode){

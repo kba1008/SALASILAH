@@ -78,8 +78,8 @@
   .node .name:lang(ar), .node .name[dir="rtl"]{font-size:18px;line-height:1.3;}
 
   .glass{
-    background:linear-gradient(180deg, color-mix(in oklab, var(--card) 96%, #ffffff 4%), color-mix(in oklab, var(--bg-alt) 88%, #ffffff 12%));
-    border:1px solid color-mix(in oklab, var(--line) 38%, #ffffff 62%);
+    background:linear-gradient(180deg, color-mix(in oklab, var(--card) 97%, #ffffff 3%), color-mix(in oklab, var(--bg-alt) 90%, #ffffff 10%));
+    border:1px solid color-mix(in oklab, var(--line) 44%, #ffffff 56%);
     box-shadow:
       0 16px 34px -18px rgba(0,0,0,.34),
       0 4px 12px -8px rgba(0,0,0,.18),
@@ -119,40 +119,73 @@
   .node.pending.is-admin,
   .node.pending.root,
   .node.pending.hanging{
-    background:
-      linear-gradient(180deg, #eef2f7, #cfd8e3);
-    border-color:#64748b;
+    background:linear-gradient(180deg, #f2f4f7, #d8dee7);
+    border-color:#5b6472;
     box-shadow:
-      0 0 0 2px rgba(100,116,139,.22),
+      0 0 0 3px rgba(245,158,11,.36),
       0 20px 40px -18px rgba(71,85,105,.34),
-      inset 0 1px 0 rgba(255,255,255,.62);
+      inset 0 1px 0 rgba(255,255,255,.72);
   }
-  .node.pending .name{color:#1f2937;text-shadow:0 1px 0 rgba(255,255,255,.35);}
-  .node.pending .meta{color:#475569;font-weight:600;}
+  .node.pending .name{color:#111827;text-shadow:0 1px 0 rgba(255,255,255,.45);}
+  .node.pending .meta{color:#334155;font-weight:700;}
   .couple.pending-family{
-    background:#dce4ee;
-    border:1px dashed #64748b;
-    box-shadow:0 10px 22px -16px rgba(71,85,105,.38);
+    background:linear-gradient(180deg, rgba(245,158,11,.10), rgba(217,226,236,.96));
+    border:2px dashed #f59e0b;
+    box-shadow:
+      0 0 0 3px rgba(245,158,11,.18),
+      0 10px 22px -16px rgba(71,85,105,.38);
   }
   .couple.pending-family .node,
   .couple.pending-family .node.spouse,
   .couple.pending-family .node.is-user,
   .couple.pending-family .node.is-admin{
-    background:linear-gradient(180deg, #eef2f7, #cfd8e3);
-    border-color:#64748b;
+    background:linear-gradient(180deg, #f2f4f7, #d8dee7);
+    border-color:#5b6472;
     box-shadow:
-      0 0 0 1px rgba(100,116,139,.2),
+      0 0 0 2px rgba(245,158,11,.24),
       0 16px 32px -20px rgba(71,85,105,.35),
       inset 0 1px 0 rgba(255,255,255,.75);
   }
-  .couple.pending-family .node .name{color:#1f2937;}
-  .couple.pending-family .node .meta{color:#475569;}
+  .couple.pending-family .node .name{color:#111827;}
+  .couple.pending-family .node .meta{color:#334155;}
   .couple.pending-family .couple-link{
-    background:repeating-linear-gradient(90deg, #64748b 0 6px, transparent 6px 10px);
+    background:repeating-linear-gradient(90deg, #f59e0b 0 6px, transparent 6px 10px);
   }
   .couple.pending-family .couple-link::before{
-    color:#475569;
-    background:#dce4ee;
+    color:#92400e;
+    background:#fef3c7;
+  }
+  .pending-chip{
+    position:absolute;
+    top:-10px;
+    left:10px;
+    z-index:3;
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    padding:4px 8px;
+    border-radius:999px;
+    background:linear-gradient(180deg, #fff4d6, #f7c86b);
+    border:1px solid #d97706;
+    color:#7c2d12;
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    box-shadow:0 8px 16px -10px rgba(217,119,6,.6);
+  }
+  .pending-chip::before{
+    content:"●";
+    font-size:9px;
+    color:#b45309;
+  }
+  .node.pending::after{
+    content:"";
+    position:absolute;
+    inset:6px;
+    border-radius:12px;
+    border:1.5px dashed rgba(245,158,11,.65);
+    pointer-events:none;
   }
   .node.root{
     border-color:var(--gold-dark);
@@ -230,13 +263,6 @@
 
   /* Kumpulan anak ikut ibu */
   .kid-group{ position:relative; }
-  .kid-group-label{
-    font-family:'Cormorant Garamond',serif; font-size:11px;
-    color:var(--rose); background:rgba(255,250,240,.7);
-    border:1px dashed var(--rose); border-radius:8px;
-    padding:2px 8px; margin:4px auto 8px; display:inline-block;
-    text-align:center;
-  }
   /* === NOTA PADA PETA === */
   .map-note{
     position:absolute; z-index:5;
@@ -252,9 +278,10 @@
   }
   .map-note:hover{ box-shadow:0 8px 22px -6px rgba(120,80,10,.55); transform:translateY(-1px); }
   .map-note.pending{
-    border-color:#64748b;
-    background:rgba(226,232,240,.95);
+    border-color:#d97706;
+    background:linear-gradient(180deg, #fff6df, #f1e2bf);
     color:#1f2937 !important;
+    box-shadow:0 0 0 2px rgba(245,158,11,.2), 0 10px 24px -14px rgba(146,64,14,.3);
   }
   .map-note.pinned{ border-style:double; border-width:3px; }
   .note-pin, .note-pending{
@@ -272,18 +299,18 @@
   .node .name{
     font-family:'Cormorant Garamond',serif;
     font-weight:700;
-    font-size:15px;
+    font-size:15.5px;
     text-align:center;
     line-height:1.15;
-    color:var(--ink);
-    text-shadow:0 1px 0 rgba(255,255,255,.28);
+    color:#1f2937;
+    text-shadow:0 1px 0 rgba(255,255,255,.35);
   }
   .node .meta{
     font-size:10px;
-    color:var(--ink-soft);
+    color:#425466;
     margin-top:3px;
     letter-spacing:.02em;
-    font-weight:600;
+    font-weight:700;
   }
   .node .meta.parentage{
     max-width:170px;
@@ -291,6 +318,16 @@
     line-height:1.25;
     white-space:normal;
     font-size:9.5px;
+  }
+  #user-info,
+  .text-muted-strong{color:#445468 !important;}
+  .kid-group-label{
+    font-family:'Cormorant Garamond',serif; font-size:11.5px;
+    color:#7c2d12; background:#fff4ea;
+    border:1px dashed #d97706; border-radius:8px;
+    padding:3px 10px; margin:4px auto 8px; display:inline-block;
+    text-align:center; font-weight:700;
+    box-shadow:0 8px 14px -12px rgba(217,119,6,.45);
   }
 
   /* === COUPLE (suami + isteri) === */
@@ -353,10 +390,10 @@
   .btn-ghost:hover{background:rgba(176,138,77,.25);}
   .input{
     width:100%;padding:9px 12px;border-radius:10px;
-    background:#fffaf0;border:1px solid var(--line-soft);
-    color:var(--ink);font-size:13px;
+    background:#fffdf8;border:1px solid color-mix(in oklab, var(--line-soft) 70%, #aab4c0 30%);
+    color:#1f2937;font-size:13px;font-weight:600;
   }
-  .input:focus{outline:none;border-color:var(--gold-dark);box-shadow:0 0 0 3px rgba(168,128,31,.15);}
+  .input:focus{outline:none;border-color:var(--gold-dark);box-shadow:0 0 0 3px rgba(168,128,31,.18);}
   .ctx{
     position:fixed;z-index:60;background:#fffaf0;
     border:1px solid var(--line-soft);border-radius:10px;padding:6px;
