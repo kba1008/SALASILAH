@@ -1,10 +1,6 @@
-/* Salasilah Keluarga Elit — app.js v2 */
+/* Salasilah Keluarga Elit — app.js v2.1 */
 
-/* ====== KONFIG TERSEMBUNYI ======
- * URL Google Apps Script disimpan di sini sahaja.
- * Tidak dipaparkan dalam UI Tetapan.
- */
-const GAS_URL = "https://script.google.com/macros/s/AKfycbz9RO8eTDDNVpUD2m_EGSAwttq5juWkOd-yCQWJY_wk7QC-8F_9UXNEcGVPTd79qulo/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwlUMBhrbts5rH7wzV2Q1jjuUiuzZ1LB-CmcXqG5ypcPzthAWsdEtPbid2tLyX8mAg/exec";
 
 const State = {
   user: JSON.parse(localStorage.getItem("user") || "null"),
@@ -17,7 +13,7 @@ const State = {
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 
-function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2600);}
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2800);}
 function openModal(id){$("#"+id).classList.remove("hidden");$("#"+id).classList.add("flex");}
 function closeModal(id){$("#"+id).classList.add("hidden");$("#"+id).classList.remove("flex");}
 window.closeModal = closeModal;
@@ -36,8 +32,7 @@ async function fileToBase64(f){
   return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({name:f.name,type:f.type,data:r.result.split(",")[1]});r.onerror=rej;r.readAsDataURL(f);});
 }
 
-/* ---------- Helper imej Google Drive ---------- */
-// Drive `uc?export=view` selalu terhalang. Tukar ke lh3.googleusercontent.com/d/<id>
+/* ---------- Foto Drive ---------- */
 function fixPhoto(url){
   if(!url) return "";
   const m = String(url).match(/[?&]id=([\w-]+)/) || String(url).match(/\/d\/([\w-]+)/);
@@ -45,7 +40,7 @@ function fixPhoto(url){
   return url;
 }
 
-/* ---------- Spouses helper (sokong banyak isteri) ---------- */
+/* ---------- Spouses helper ---------- */
 function getSpouses(n){
   if(Array.isArray(n.spouses) && n.spouses.length) return n.spouses;
   if(n.spousesJson){
@@ -57,8 +52,7 @@ function getSpouses(n){
 function canAddSpouse(n){
   const sp = getSpouses(n);
   if(sp.length===0) return true;
-  if(n.gender==="L") return true; // lelaki: poligami dibenarkan
-  // perempuan: hanya jika semua pasangan terdahulu telah meninggal
+  if(n.gender==="L") return true;
   return sp.every(s=>s.status==="mati");
 }
 
@@ -66,7 +60,7 @@ function canAddSpouse(n){
 function buildTree(){
   const root = State.nodes.find(n=>!n.parentId);
   const host = $("#tree-root");
-  if(!root){host.innerHTML='<p class="text-slate-400 text-center mt-32">Belum ada data. Admin perlu Init Root.</p>';return;}
+  if(!root){host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Belum ada data. Admin perlu Init Root.</p>';return;}
   host.className=""; host.innerHTML="";
   const ul = document.createElement("ul");
   ul.className="tree";
@@ -77,16 +71,27 @@ function renderNode(n){
   const li = document.createElement("li");
   const branch = document.createElement("div");
   branch.className="branch";
-  branch.appendChild(card(n));
+
+  // Couple: person + spouses
+  const couple = document.createElement("div");
+  couple.className = "couple";
+  couple.appendChild(card(n));
   getSpouses(n).forEach(sp=>{
+    const link = document.createElement("div");
+    link.className = "couple-link";
+    link.title = "Pasangan";
+    couple.appendChild(link);
+
     const el = document.createElement("div");
-    el.className="node";
+    el.className = "node spouse";
     el.innerHTML=`<img src="${fixPhoto(sp.photo)||placeholder(n.gender==='L'?'P':'L')}" onerror="this.src='${placeholder(n.gender==='L'?'P':'L')}'"/>
       <div class="name">${escape(sp.name)}</div>
       <div class="meta">Pasangan${sp.status==='mati'?' †':''}</div>`;
     el.addEventListener("click",e=>{e.stopPropagation();showSpouseProfile(n, sp);});
-    branch.appendChild(el);
+    couple.appendChild(el);
   });
+  branch.appendChild(couple);
+
   li.appendChild(branch);
   const kids = State.nodes.filter(x=>x.parentId===n.id);
   if(kids.length){
@@ -108,20 +113,20 @@ function card(n){
   return d;
 }
 function placeholder(g){
-  const c = g==="P" ? "%23ec4899" : "%2338bdf8";
-  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='${c}'/%3E%3Ctext x='32' y='40' font-size='28' text-anchor='middle' fill='white'%3E${g==='P'?'♀':'♂'}%3C/text%3E%3C/svg%3E`;
+  const c = g==="P" ? "%23b85a72" : "%233b6fa0";
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='${c}'/%3E%3Ctext x='32' y='42' font-size='30' text-anchor='middle' fill='white' font-family='serif'%3E${g==='P'?'♀':'♂'}%3C/text%3E%3C/svg%3E`;
 }
 function escape(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
 /* ---------- Context Menu ---------- */
 function showCtx(x,y,n){
   const m = $("#ctx-menu");
-  const canEdit = !!State.user;        // pengguna berdaftar yang log masuk
+  const canEdit = !!State.user;
   const isAdmin = State.user?.role==="admin";
   m.innerHTML = "";
   const items = [
     {l:"👁 Lihat Profil", fn:()=>viewProfile(n)},
-    canEdit && {l:"✎ Edit", fn:()=>openNodeEditor(n)},
+    canEdit && {l:"✎ Edit Maklumat", fn:()=>openNodeEditor(n)},
     canEdit && {l:"➕ Tambah Anak", fn:()=>openNodeEditor(null,n.id,"child")},
     canEdit && canAddSpouse(n) && {l:"💍 Tambah Pasangan", fn:()=>openSpouseEditor(n)},
     isAdmin && {l:"🗑 Padam", fn:()=>delNode(n)},
@@ -133,41 +138,41 @@ function showCtx(x,y,n){
 }
 document.addEventListener("click",()=>$("#ctx-menu").classList.add("hidden"));
 
-/* ---------- Profile Viewer (semua pengguna boleh lihat) ---------- */
+/* ---------- Profile Viewer ---------- */
 function viewProfile(n){
   const sp = getSpouses(n);
   const photo = fixPhoto(n.photo) || placeholder(n.gender);
   $("#profile-body").innerHTML = `
     <div class="flex flex-col items-center mb-4">
-      <img src="${photo}" onerror="this.src='${placeholder(n.gender)}'" class="w-28 h-28 rounded-full object-cover border-2 border-yellow-500 mb-2"/>
-      <h2 class="text-xl font-bold text-center">${escape(n.name)}</h2>
-      ${n.nickname?`<p class="text-sm text-yellow-400">"${escape(n.nickname)}"</p>`:""}
-      <p class="text-xs text-slate-400">#${n.no||"-"} • ${n.gender==='P'?'Perempuan':'Lelaki'} • ${n.status==='mati'?'Almarhum':'Hidup'}</p>
+      <img src="${photo}" onerror="this.src='${placeholder(n.gender)}'" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--gold)"/>
+      <h2 class="text-2xl font-bold text-center serif">${escape(n.name)}</h2>
+      ${n.nickname?`<p class="text-sm serif italic" style="color:var(--gold-dark)">"${escape(n.nickname)}"</p>`:""}
+      <p class="text-xs" style="color:var(--ink-soft)">#${n.no||"-"} • ${n.gender==='P'?'Perempuan':'Lelaki'} • ${n.status==='mati'?'Almarhum':'Hidup'}</p>
     </div>
     <div class="space-y-2 text-sm">
       ${rowField("Tahun Lahir", n.birth)}
       ${rowField("Tempat Lahir", n.birthplace)}
       ${rowField("Tahun Wafat", n.death)}
       ${rowField("Tempat Wafat", n.deathplace)}
-      ${sp.length?`<div><div class="text-slate-400 text-xs mb-1">Pasangan (${sp.length})</div>
-        <ul class="space-y-1">${sp.map(s=>`<li class="text-slate-200">• ${escape(s.name)} ${s.status==='mati'?'<span class="text-slate-500">(almarhum'+(s.death?' '+escape(s.death):'')+')</span>':''}</li>`).join("")}</ul></div>`:""}
-      ${n.notes?`<div><div class="text-slate-400 text-xs mb-1">Catatan</div><p class="text-slate-200 whitespace-pre-wrap">${escape(n.notes)}</p></div>`:""}
+      ${sp.length?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Pasangan (${sp.length})</div>
+        <ul class="space-y-1">${sp.map(s=>`<li>• ${escape(s.name)} ${s.status==='mati'?'<span style="color:var(--ink-soft)">(almarhum'+(s.death?' '+escape(s.death):'')+')</span>':''}</li>`).join("")}</ul></div>`:""}
+      ${n.notes?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Catatan</div><p class="whitespace-pre-wrap">${escape(n.notes)}</p></div>`:""}
     </div>
-    ${!State.user?'<p class="text-[11px] text-slate-500 mt-4 text-center">Mod pelawat — lihat sahaja. Daftar &amp; dapatkan kelulusan admin untuk menyumbang.</p>':''}
+    ${!State.user?'<p class="text-[11px] mt-4 text-center" style="color:var(--ink-soft)">Mod pelawat — lihat sahaja.</p>':''}
   `;
   openModal("modal-profile");
 }
 function rowField(label,val){
-  if(!val) return "";
-  return `<div class="flex justify-between gap-3"><span class="text-slate-400">${label}</span><span class="text-slate-100 text-right">${escape(val)}</span></div>`;
+  if(!val && val!==0) return "";
+  return `<div class="flex justify-between gap-3"><span style="color:var(--ink-soft)">${label}</span><span class="text-right">${escape(val)}</span></div>`;
 }
 function showSpouseProfile(parent, sp){
   $("#profile-body").innerHTML = `
     <div class="flex flex-col items-center mb-4">
-      <img src="${fixPhoto(sp.photo)||placeholder(parent.gender==='L'?'P':'L')}" class="w-28 h-28 rounded-full object-cover border-2 border-pink-400 mb-2"/>
-      <h2 class="text-xl font-bold text-center">${escape(sp.name)}</h2>
-      <p class="text-xs text-slate-400">Pasangan kepada ${escape(parent.name)}</p>
-      <p class="text-xs text-slate-400">${sp.status==='mati'?'Almarhum'+(sp.death?' ('+escape(sp.death)+')':''):'Hidup'}</p>
+      <img src="${fixPhoto(sp.photo)||placeholder(parent.gender==='L'?'P':'L')}" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--rose)"/>
+      <h2 class="text-2xl font-bold text-center serif">${escape(sp.name)}</h2>
+      <p class="text-xs" style="color:var(--ink-soft)">Pasangan kepada ${escape(parent.name)}</p>
+      <p class="text-xs" style="color:var(--ink-soft)">${sp.status==='mati'?'Almarhum'+(sp.death?' ('+escape(sp.death)+')':''):'Hidup'}</p>
     </div>
   `;
   openModal("modal-profile");
@@ -178,16 +183,19 @@ function openNodeEditor(node, parentId=null, relation="child"){
   if(!State.user){toast("Sila log masuk");return;}
   const f = $("#form-node");
   f.reset();
-  f.id.value = node?.id||"";
-  f.parentId.value = parentId||node?.parentId||"";
-  f.relation.value = relation;
+  // FIX: pastikan id sentiasa ditetapkan untuk mod edit
+  f.id.value = node?.id || "";
+  f.parentId.value = parentId || node?.parentId || "";
+  f.relation.value = node ? "edit" : relation;
   if(node){
     f.name.value=node.name||"";
-    if(f.nickname) f.nickname.value=node.nickname||"";
-    f.gender.value=node.gender||"L"; f.status.value=node.status||"hidup";
-    f.birth.value=node.birth||""; f.death.value=node.death||"";
-    if(f.birthplace) f.birthplace.value=node.birthplace||"";
-    if(f.deathplace) f.deathplace.value=node.deathplace||"";
+    f.nickname.value=node.nickname||"";
+    f.gender.value=node.gender||"L";
+    f.status.value=node.status||"hidup";
+    f.birth.value=node.birth||"";
+    f.death.value=node.death||"";
+    f.birthplace.value=node.birthplace||"";
+    f.deathplace.value=node.deathplace||"";
     f.notes.value=node.notes||"";
   }
   $("#node-title").textContent = node?"Edit Ahli":"Tambah Anak";
@@ -202,19 +210,21 @@ $("#form-node").addEventListener("submit", async e=>{
   const payload = Object.fromEntries(fd.entries());
   delete payload.photo;
   if(photo) payload.photo = photo;
+  // FIX: jika ada id, ini adalah edit — pastikan backend tahu
+  if(payload.id) payload.relation = "edit";
   try{
     await api("saveNode", payload);
     toast(State.user.role==="admin"?"Disimpan":"Dihantar untuk semakan admin");
     closeModal("modal-node");
     await refresh();
-  }catch(err){toast(err.message);}
+  }catch(err){toast("Ralat: "+err.message);}
 });
 
-/* ---------- Spouse Editor (kuatkuasakan peraturan) ---------- */
+/* ---------- Spouse Editor ---------- */
 function openSpouseEditor(parent){
   if(!State.user){toast("Sila log masuk");return;}
   if(!canAddSpouse(parent)){
-    if(parent.gender==="P") toast("Wanita hanya boleh ada satu suami pada satu masa. Tunggu sehingga suami sedia ada bertukar status 'Almarhum'.");
+    if(parent.gender==="P") toast("Wanita hanya boleh ada satu suami pada satu masa. Tetapkan suami sedia ada sebagai 'Almarhum' dahulu.");
     else toast("Tidak boleh tambah pasangan.");
     return;
   }
@@ -243,7 +253,7 @@ $("#form-spouse").addEventListener("submit", async e=>{
     toast(State.user.role==="admin"?"Pasangan ditambah":"Dihantar untuk semakan admin");
     closeModal("modal-spouse");
     await refresh();
-  }catch(err){toast(err.message);}
+  }catch(err){toast("Ralat: "+err.message);}
 });
 
 async function delNode(n){
@@ -300,11 +310,11 @@ async function loadAdmin(){
   try{
     const d = await api("adminData",{});
     const p = $("#admin-pending");
-    p.innerHTML = d.pending.length?"":'<p class="text-slate-400 text-sm">Tiada item pending.</p>';
+    p.innerHTML = d.pending.length?"":'<p class="text-sm" style="color:var(--ink-soft)">Tiada item pending.</p>';
     d.pending.forEach(it=>{
       const div=document.createElement("div");
       div.className="glass rounded-lg p-3 mb-2 flex justify-between items-center gap-2";
-      div.innerHTML=`<div class="text-sm"><b>${escape(it.action)}</b> oleh ${escape(it.by)}<br><span class="text-xs text-slate-400">${escape(it.summary)}</span></div>`;
+      div.innerHTML=`<div class="text-sm"><b>${escape(it.action)}</b> oleh ${escape(it.by)}<br><span class="text-xs" style="color:var(--ink-soft)">${escape(it.summary)}</span></div>`;
       const ok=document.createElement("button");ok.className="btn btn-primary";ok.textContent="✓";
       const no=document.createElement("button");no.className="btn btn-ghost";no.textContent="✕";
       ok.onclick=async()=>{await api("moderate",{id:it.id,decision:"approve"});loadAdmin();refresh();};
@@ -313,7 +323,7 @@ async function loadAdmin(){
       div.appendChild(wrap);p.appendChild(div);
     });
     const u=$("#admin-users");
-    u.innerHTML='<table class="w-full text-xs"><thead><tr class="text-left text-slate-400"><th>#</th><th>Username</th><th>Nama</th><th>Peranan</th></tr></thead><tbody></tbody></table>';
+    u.innerHTML='<table class="w-full text-xs"><thead><tr class="text-left" style="color:var(--ink-soft)"><th>#</th><th>Username</th><th>Nama</th><th>Peranan</th></tr></thead><tbody></tbody></table>';
     const tb=u.querySelector("tbody");
     d.users.forEach(x=>{const tr=document.createElement("tr");tr.innerHTML=`<td>${x.no}</td><td>${escape(x.username)}</td><td>${escape(x.fullname)}</td><td>${x.role}</td>`;tb.appendChild(tr);});
   }catch(e){toast(e.message);}
@@ -327,16 +337,12 @@ $("#btn-init-root").addEventListener("click",async()=>{
 /* ---------- Settings ---------- */
 $("#btn-settings").addEventListener("click",()=>openModal("modal-settings"));
 
-/* ---------- Panzoom (ruang lebih luas, zoom out lebih jauh) ---------- */
+/* ---------- Panzoom ---------- */
 function initPanzoom(){
   const el = $("#canvas");
   State.panzoom = Panzoom(el,{
-    maxScale: 4,
-    minScale: 0.05,        // boleh zoom out sangat jauh untuk salasilah besar
-    step: 0.15,
-    canvas: true,
-    contain: false,
-    cursor: "grab",
+    maxScale: 4, minScale: 0.05, step: 0.15,
+    canvas: true, contain: false, cursor: "grab",
   });
   $("#stage").addEventListener("wheel", e => State.panzoom.zoomWithWheel(e, {step:0.15}));
   $("#btn-zoom-in").onclick=()=>State.panzoom.zoomIn();
@@ -344,7 +350,7 @@ function initPanzoom(){
   $("#btn-reset").onclick=()=>State.panzoom.reset();
 }
 
-/* ---------- Carian + auto-zoom ---------- */
+/* ---------- Carian ---------- */
 $("#btn-search").addEventListener("click",()=>{
   const bar = $("#search-bar");
   bar.classList.toggle("hidden");
@@ -391,13 +397,11 @@ function focusNode(n){
   const el = document.querySelector(`.node[data-node-id="${n.id}"]`);
   if(!el || !State.panzoom) return;
   el.classList.add("highlight");
-  // kira posisi node relatif kepada stage, kemudian pan/zoom
   const stage = $("#stage");
   const sRect = stage.getBoundingClientRect();
   const nRect = el.getBoundingClientRect();
   const scale = State.panzoom.getScale();
   const targetScale = Math.max(0.9, Math.min(scale, 1.4));
-  // Pusatkan: dapatkan kedudukan semasa pan dan adjust
   const pan = State.panzoom.getPan();
   const dx = (sRect.left + sRect.width/2) - (nRect.left + nRect.width/2);
   const dy = (sRect.top + sRect.height/2) - (nRect.top + nRect.height/2);

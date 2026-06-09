@@ -278,8 +278,9 @@ function insertNode_(p, photoUrl, auth) {
 function applyNodeUpdate_(p, photoUrl, auth) {
   const sh = sheet_(SHEET_TREE);
   const rows = readSheet_(SHEET_TREE);
-  const n = rows.find(r=>r.id===p.id);
-  if (!n) throw new Error("Node tidak dijumpai");
+  // Padanan id sebagai string supaya tak gagal kerana jenis berbeza (UUID vs nombor)
+  const n = rows.find(r => String(r.id) === String(p.id));
+  if (!n) throw new Error("Node tidak dijumpai (id=" + p.id + ")");
   const map = {
     name:p.name, nickname:p.nickname,
     gender:p.gender, status:p.status,
@@ -290,8 +291,11 @@ function applyNodeUpdate_(p, photoUrl, auth) {
   if (photoUrl) map.photo = photoUrl;
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
   Object.keys(map).forEach(k=>{
-    const c=h.indexOf(k)+1;
-    if(c>0 && map[k]!==undefined && map[k]!=="") sh.getRange(n._row,c).setValue(map[k]);
+    const c = h.indexOf(k)+1;
+    if (c <= 0) return;
+    // Hanya skip jika field langsung tidak dihantar (undefined). Benarkan "" supaya field boleh dikosongkan.
+    if (map[k] === undefined) return;
+    sh.getRange(n._row, c).setValue(map[k]);
   });
 }
 function markNodePending_(id, val) {
