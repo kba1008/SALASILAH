@@ -9,6 +9,8 @@ const SHEET_USERS   = "PENGGUNA";
 const SHEET_TREE    = "SALASILAH";
 const SHEET_PENDING = "PENDING";
 const SHEET_NOTES   = "NOTA";
+const GOOGLE_SHEET_ID = "1wqIc6971U96VXqOJ55pD-wzxQicC4RT4TBNoUrUVtig";
+const DRIVE_FOLDER_ID = "1tb1YIWlxbHkN-HzdAXtFlMWp136JXxN4";
 const DRIVE_FOLDER  = "SalasilahImages";
 
 const MASTER_USER = "admin";
@@ -16,13 +18,13 @@ const MASTER_PASS = "101010";
 
 // v2.7: spouseIndex (anak dari pasangan keberapa) + hanging (root tergantung)
 const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
-const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned"];
+const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned","approved","approvedBy","approvedAt"];
 // v2.6: NOTA pada map
 const NOTE_HEADERS = ["id","text","x","y","font","size","color","pinned","pending","createdBy","createdAt","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 
 /* ============ INIT ============ */
 function INITIALIZE_SYSTEM() {
-  const ss = SpreadsheetApp.getActive();
+  const ss = ss_();
   ensureSheet_(ss, SHEET_USERS,   USER_HEADERS);
   ensureSheet_(ss, SHEET_TREE,    TREE_HEADERS);
   ensureSheet_(ss, SHEET_PENDING, ["id","action","targetId","payload","by","summary","createdAt"]);
@@ -33,7 +35,7 @@ function INITIALIZE_SYSTEM() {
   ensureFolder_();
   const users = ss.getSheetByName(SHEET_USERS);
   if (users.getLastRow() < 2) {
-    appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date() });
+    appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date(), approved:true, approvedBy:"SYSTEM", approvedAt:new Date() });
   }
   return "OK";
 }
@@ -54,9 +56,13 @@ function migrateHeaders_(name, headers){
   });
 }
 function ensureFolder_() {
-  const it = DriveApp.getFoldersByName(DRIVE_FOLDER);
-  if (it.hasNext()) return it.next();
-  return DriveApp.createFolder(DRIVE_FOLDER);
+  try {
+    return DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  } catch (e) {
+    const it = DriveApp.getFoldersByName(DRIVE_FOLDER);
+    if (it.hasNext()) return it.next();
+    return DriveApp.createFolder(DRIVE_FOLDER);
+  }
 }
 
 /* ============ ENTRY ============ */
@@ -77,7 +83,7 @@ function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
 function ensureInit_() {
-  const ss = SpreadsheetApp.getActive();
+  const ss = ss_();
   if (!ss.getSheetByName(SHEET_USERS) || !ss.getSheetByName(SHEET_TREE) || !ss.getSheetByName(SHEET_PENDING) || !ss.getSheetByName(SHEET_NOTES)) {
     INITIALIZE_SYSTEM();
     return;
@@ -87,7 +93,7 @@ function ensureInit_() {
   migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
   const u = findUserBy_("username", MASTER_USER);
   if (!u) {
-    appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date() });
+    appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date(), approved:true, approvedBy:"SYSTEM", approvedAt:new Date() });
   }
 }
 
@@ -106,6 +112,12 @@ function authenticate_(auth) {
 function requireAuth_(a){if(!a)throw new Error("Sesi tamat. Sila log masuk semula.");return a;}
 function requireAdmin_(a){requireAuth_(a);if(a.role!=="admin")throw new Error("Hak admin diperlukan");return a;}
 function requireMaster_(a){requireAuth_(a);if(a.username!==MASTER_USER)throw new Error("Hanya Master Admin (akaun '"+MASTER_USER+"') dibenarkan.");return a;}
+function requireVerifiedUser_(a){
+  requireAuth_(a);
+  if (a.role === "admin") return a;
+  if (!isUserApproved_(a)) throw new Error("Akaun anda masih menunggu pengesahan admin. Sila tunggu admin hubungi anda terlebih dahulu.");
+  return a;
+}
 
 function hash_(s){return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s+"|salasilah"));}
 function genToken_(){return Utilities.getUuid().replace(/-/g,"");}
@@ -117,17 +129,17 @@ const ACTIONS = {
     if (!p.phone) throw new Error("No. telefon (WhatsApp) wajib diisi");
     if (!p.fatherName) throw new Error("Nama penuh BAPA wajib diisi untuk rujukan admin");
     if (!p.motherName) throw new Error("Nama penuh IBU wajib diisi untuk rujukan admin");
+    if (!p.photo || !p.photo.data) throw new Error("Gambar profil yang sah adalah wajib untuk pendaftaran");
     if (String(p.username).toLowerCase() === MASTER_USER) throw new Error("Nama samaran ini dilindungi");
     if (findUserBy_("username", p.username)) throw new Error("Nama samaran sudah wujud");
-    const sh = sheet_(SHEET_USERS);
-    const no = Math.max(0, sh.getLastRow() - 1) + 1;
     const photoUrl = p.photo ? saveImage_(p.photo, "user_"+p.username) : "";
     appendUserRow_({
-      no, username:p.username, fullname:p.fullname||"", email:p.email||"", phone:p.phone||"",
+      no:"", username:p.username, fullname:p.fullname||"", email:p.email||"", phone:p.phone||"",
       passwordHash:hash_(p.password), photo:photoUrl, role:"ahli", token:"", createdAt:new Date(),
-      fatherName:p.fatherName||"", motherName:p.motherName||"", banned:false
+      fatherName:p.fatherName||"", motherName:p.motherName||"", banned:false,
+      approved:false, approvedBy:"", approvedAt:""
     });
-    return { no };
+    return { pending:true };
   },
   login(p) {
     if (!p || !p.username || !p.password) throw new Error("Sila isi nama samaran dan password");
@@ -139,14 +151,35 @@ const ACTIONS = {
       }
       const token = genToken_();
       updateUserField_(u.row, "token", token);
-      return { username: MASTER_USER, role: "admin", no: 0, token, isMaster:true };
+      return { username: MASTER_USER, fullname:"Master Admin", role: "admin", no: 0, token, isMaster:true, approved:true };
     }
     const u = findUserBy_("username", p.username);
     if (!u || u.passwordHash !== hash_(p.password)) throw new Error("Nama samaran atau password salah");
     if (u.banned === true || u.banned === "TRUE" || u.banned === "true" || u.banned === 1) throw new Error("Akaun anda telah disekat oleh admin. Hubungi Master Admin.");
     const token = genToken_();
     updateUserField_(u.row, "token", token);
-    return { username: u.username, role: u.role || "ahli", no: u.no, token, photo: u.photo, isMaster:false };
+    return {
+      username: u.username,
+      fullname: u.fullname || "",
+      role: u.role || "ahli",
+      no: isUserApproved_(u) ? u.no : "",
+      token,
+      photo: u.photo,
+      phone: u.phone || "",
+      email: u.email || "",
+      fatherName: u.fatherName || "",
+      motherName: u.motherName || "",
+      approved: isUserApproved_(u),
+      approvedBy: u.approvedBy || "",
+      approvedAt: u.approvedAt || "",
+      isMaster:false
+    };
+  },
+  myProfile(_, auth) {
+    const me = requireAuth_(auth);
+    const u = findUserBy_("username", me.username);
+    if (!u) throw new Error("Profil pengguna tidak dijumpai");
+    return normalizeUserClient_(u);
   },
   getTree(_, auth) {
     const nodeRows = readSheet_(SHEET_TREE);
@@ -183,6 +216,8 @@ const ACTIONS = {
       username: u.username, fullname: u.fullname||"", role: u.role||"ahli",
       fatherName: u.fatherName||"", motherName: u.motherName||"",
       photo: u.photo||"",
+      no: isUserApproved_(u) ? (u.no||"") : "",
+      approved: isUserApproved_(u),
     }));
 
     return { nodes, notes, users };
@@ -228,7 +263,7 @@ const ACTIONS = {
     return { ok:true };
   },
   saveNode(p, auth) {
-    requireAuth_(auth);
+    requireVerifiedUser_(auth);
     const isAdmin = auth.role === "admin";
     const photoUrl = p.photo ? saveImage_(p.photo, "node_"+Date.now()) : null;
 
@@ -256,7 +291,7 @@ const ACTIONS = {
     return { ok: true, id: newId };
   },
   deleteNode(p, auth) {
-    requireAuth_(auth);
+    requireVerifiedUser_(auth);
     const isAdmin = auth.role === "admin";
     if (isAdmin) {
       deleteRowById_(SHEET_TREE, p.id);
@@ -274,7 +309,7 @@ const ACTIONS = {
 
   /* ===== NOTA pada map ===== */
   saveNote(p, auth) {
-    requireAuth_(auth);
+    requireVerifiedUser_(auth);
     const isAdmin = auth.role === "admin";
     const data = {
       text: String(p.text||"").slice(0,500),
@@ -332,7 +367,7 @@ const ACTIONS = {
 
   /* ===== EDIT / DELETE PASANGAN (di dalam spousesJson) ===== */
   editSpouse(p, auth) {
-    requireAuth_(auth);
+    requireVerifiedUser_(auth);
     const isAdmin = auth.role === "admin";
     if (!p.parentId || !p.order) throw new Error("Maklumat tidak lengkap");
     const photoUrl = p.photo ? saveImage_(p.photo, "spouse_"+Date.now()) : null;
@@ -352,7 +387,7 @@ const ACTIONS = {
     return { pending:true };
   },
   deleteSpouse(p, auth) {
-    requireAuth_(auth);
+    requireVerifiedUser_(auth);
     const isAdmin = auth.role === "admin";
     if (!p.parentId || !p.order) throw new Error("Maklumat tidak lengkap");
     if (isAdmin) {
@@ -379,9 +414,28 @@ const ACTIONS = {
       users: usersAll.map(u => ({
         no: u.no, username: u.username, fullname: u.fullname, phone: u.phone, email: u.email, role: u.role,
         fatherName: u.fatherName||"", motherName: u.motherName||"",
+        photo: u.photo||"",
+        approved: isUserApproved_(u),
+        approvedBy: u.approvedBy||"",
+        approvedAt: u.approvedAt||"",
         banned: u.banned===true||u.banned==="TRUE"||u.banned==="true"||u.banned===1
       })),
     };
+  },
+  setUserApproval(p, auth) {
+    requireAdmin_(auth);
+    if (!p.username) throw new Error("Username diperlukan");
+    if (p.username === MASTER_USER) throw new Error("Master Admin sentiasa sah");
+    const u = findUserBy_("username", p.username);
+    if (!u) throw new Error("Pengguna tidak dijumpai");
+    const approved = !!p.approved;
+    if (approved && !u.photo) throw new Error("Pengguna wajib memuat naik gambar profil yang sah sebelum boleh disahkan");
+    updateUserField_(u.row, "approved", approved);
+    updateUserField_(u.row, "approvedBy", approved ? auth.username : "");
+    updateUserField_(u.row, "approvedAt", approved ? new Date() : "");
+    if (approved && !u.no) updateUserField_(u.row, "no", nextMemberNo_());
+    if (!approved) updateUserField_(u.row, "no", "");
+    return { ok:true };
   },
   moderate(p, auth) {
     requireAdmin_(auth);
@@ -429,6 +483,31 @@ function toBool_(v){
 function parseJsonSafe_(text, fallback){
   try { return text ? JSON.parse(text) : fallback; }
   catch (e) { return fallback; }
+}
+function isUserApproved_(u){
+  if (!u) return false;
+  if (u.username === MASTER_USER) return true;
+  if (u.role === "admin") return true;
+  if (toBool_(u.approved)) return true;
+  if (u.no !== "" && u.no !== null && u.no !== undefined && !isNaN(Number(u.no)) && Number(u.no) > 0) return true;
+  return false;
+}
+function normalizeUserClient_(u){
+  return {
+    username: u.username,
+    fullname: u.fullname || "",
+    email: u.email || "",
+    phone: u.phone || "",
+    photo: u.photo || "",
+    role: u.role || "ahli",
+    no: isUserApproved_(u) ? (u.no || "") : "",
+    fatherName: u.fatherName || "",
+    motherName: u.motherName || "",
+    approved: isUserApproved_(u),
+    approvedBy: u.approvedBy || "",
+    approvedAt: u.approvedAt || "",
+    banned: toBool_(u.banned),
+  };
 }
 function normalizeNodeClient_(r){
   let spouses = [];
@@ -663,7 +742,10 @@ function applySpouseDelete_(parentId, order, auth){
 }
 
 /* ============ HELPERS ============ */
-function sheet_(n){return SpreadsheetApp.getActive().getSheetByName(n);}
+function ss_(){
+  return SpreadsheetApp.openById(GOOGLE_SHEET_ID);
+}
+function sheet_(n){return ss_().getSheetByName(n);}
 function readSheet_(name) {
   const sh = sheet_(name);
   const v = sh.getDataRange().getValues();
@@ -682,6 +764,15 @@ function updateUserField_(row, field, value) {
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
   const col = h.indexOf(field)+1;
   if (col > 0) sh.getRange(row,col).setValue(value);
+}
+function nextMemberNo_() {
+  const rows = readSheet_(SHEET_USERS);
+  let maxNo = 0;
+  rows.forEach(r=>{
+    const n = Number(r.no);
+    if (!isNaN(n) && n > maxNo) maxNo = n;
+  });
+  return maxNo + 1;
 }
 function setCellByHeader_(sh, row, field, value) {
   const headers = sh.getRange(1,1,1,Math.max(1, sh.getLastColumn())).getValues()[0];

@@ -497,6 +497,7 @@
     <button id="btn-zoom-out" class="btn btn-ghost px-2">−</button>
     <button id="btn-reset" class="btn btn-ghost px-2">⟳</button>
     <button id="btn-add-note" class="btn btn-ghost hidden" title="Tambah Nota">📝</button>
+    <button id="btn-my-profile" class="btn btn-ghost hidden">Profil Saya</button>
     <button id="btn-admin" class="btn btn-ghost hidden">Admin</button>
     <button id="btn-settings" class="btn btn-ghost px-2">⚙</button>
     <button id="btn-auth" class="btn btn-primary">Log Masuk</button>
@@ -549,9 +550,9 @@
       <p class="text-[10px] -mt-1" style="color:var(--ink-soft)">Nama ibu & bapa wajib supaya admin tahu anda anak siapa dalam salasilah ini.</p>
       <input class="input" name="password" type="password" placeholder="Password" required minlength="4" />
       <label class="text-xs block" style="color:var(--ink-soft)">Gambar Wajah</label>
-      <input class="input" name="photo" type="file" accept="image/*" />
+      <input class="input" name="photo" type="file" accept="image/*" required />
       <button class="btn btn-primary w-full">Daftar</button>
-      <p class="text-[11px]" style="color:var(--ink-soft)">Akaun baru boleh menambah/edit data, tetapi memerlukan kelulusan admin sebelum dipaparkan rasmi.</p>
+      <p class="text-[11px]" style="color:var(--ink-soft)">Selepas daftar, akaun anda akan menunggu pengesahan admin. Admin akan hubungi anda, dan nombor keahlian sah hanya diberikan selepas diluluskan.</p>
     </form>
     <button onclick="closeModal('modal-auth')" class="mt-3 text-xs w-full" style="color:var(--ink-soft)">Tutup</button>
   </div>
@@ -562,6 +563,14 @@
   <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
     <div id="profile-body"></div>
     <button onclick="closeModal('modal-profile')" class="btn btn-ghost w-full mt-4">Tutup</button>
+  </div>
+</div>
+
+<!-- MY PROFILE -->
+<div id="modal-my-profile" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+  <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+    <div id="my-profile-body"></div>
+    <button onclick="closeModal('modal-my-profile')" class="btn btn-ghost w-full mt-4">Tutup</button>
   </div>
 </div>
 
@@ -666,7 +675,7 @@
       <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid var(--gold-dark);background:#fff4cd"></span> Node induk (Root)</div>
     </div>
     <hr style="border-color:var(--line-soft)"/>
-    <p class="text-xs" style="color:var(--ink-soft)">Versi 2.7 — mod pelawat hanya lihat data disahkan, pratonton perubahan pending untuk ahli/admin, kotak pending kelabu, dan pengesahan terus dari profil admin.</p>
+    <p class="text-xs" style="color:var(--ink-soft)">Versi 2.8 — pembetulan ralat `parents`, kelulusan akaun ahli oleh admin, nombor keahlian sah selepas lulus, dan cetakan kad ahli dari profil pengguna.</p>
     <div class="flex gap-2">
       <button onclick="closeModal('modal-settings')" class="btn btn-primary flex-1">Tutup</button>
     </div>
