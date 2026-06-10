@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.9 login-lock-cachefix */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxho1YD2gtgIo197u58A9Hz94RJ6hMrv2YhAA9Rhu3Mr-hw-U1i-i7usUErHQSbp2ri/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyYAwpTJ-NMjsML9k8-NZjHgduHRnGtkFzjRSMP5vxa1yujJnnb2Jou3e0H6EVX78HW/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
@@ -270,9 +270,18 @@ function getSpouses(n){
     try{ const x = JSON.parse(n.spousesJson); if(Array.isArray(x)) a=x; }catch(e){}
   }
   else if(n.spouseName) a=[{name:n.spouseName, photo:n.spousePhoto||"", status:n.spouseStatus||"hidup", order:1, death:""}];
-  a.forEach((s,i)=>{ if(!s.order) s.order=i+1; });
+  a = a.map((s,i)=>({ ...s, id:s.id||`legacy-${n.id||"node"}-${i+1}`, order:s.order||i+1, gender:s.gender||oppositeGender(n.gender) }));
   a.sort((x,y)=>(x.order||99)-(y.order||99));
   return a;
+}
+function oppositeGender(gender){
+  if(gender === "L") return "P";
+  if(gender === "P") return "L";
+  return "";
+}
+function makeSpouseId(){
+  if(window.crypto?.randomUUID) return window.crypto.randomUUID();
+  return "spouse-" + Date.now() + "-" + Math.random().toString(36).slice(2,10);
 }
 function getChildParents(n){
   if(!n?.parentId) return { father:"", mother:"", fatherShort:"", motherShort:"" };
@@ -280,7 +289,7 @@ function getChildParents(n){
   if(!parent) return { father:"", mother:"", fatherShort:"", motherShort:"" };
   const spouses = getSpouses(parent);
   const linkedSpouse = n.spouseIndex
-    ? (spouses.find(s=>String(s.order)===String(n.spouseIndex)) || spouses[Number(n.spouseIndex)-1] || null)
+    ? (spouses.find(s=>String(s.id)===String(n.spouseIndex)) || spouses.find(s=>String(s.order)===String(n.spouseIndex)) || spouses[Number(n.spouseIndex)-1] || null)
     : (spouses.length===1 ? spouses[0] : null);
   const father = parent.gender==="L" ? parent.name : (linkedSpouse?.name || "");
   const mother = parent.gender==="P" ? parent.name : (linkedSpouse?.name || "");
@@ -413,7 +422,8 @@ function renderNode(n){
     const el = document.createElement("div");
     el.className = "node spouse"+(sp.status==="cerai"?" divorced":"")+(sp.status==="mati"?" deceased":"");
     const stLabel = sp.status==="mati"?"†":(sp.status==="cerai"?"⚊":"");
-    el.innerHTML=`<img src="${fixPhoto(sp.photo)||placeholder(n.gender==='L'?'P':'L')}" onerror="this.src='${placeholder(n.gender==='L'?'P':'L')}'"/>
+    const spGender = sp.gender || oppositeGender(n.gender);
+    el.innerHTML=`<img src="${fixPhoto(sp.photo)||placeholder(spGender||'P')}" onerror="this.src='${placeholder(spGender||'P')}'"/>
       <div class="name" dir="auto">${escape(sp.name)} ${stLabel}</div>
       <div class="meta">Pasangan ${spouseOrdinal(sp.order||idx+1)} • ${spouseStatusLabel(sp)}</div>`;
     el.addEventListener("click",e=>{e.stopPropagation();showSpouseProfile(n, sp);});
@@ -453,7 +463,7 @@ function renderNode(n){
         lbl.className = "kid-group-label";
         if(key==="0") lbl.textContent = "Tidak ditandakan";
         else {
-          const sp = sps.find(s=>String(s.order)===String(key)) || sps[Number(key)-1];
+        const sp = sps.find(s=>String(s.id)===String(key)) || sps.find(s=>String(s.order)===String(key)) || sps[Number(key)-1];
           if(sp){
             const father = n.gender==="L" ? n.name : sp.name;
             const mother = n.gender==="P" ? n.name : sp.name;
@@ -751,8 +761,11 @@ function openNodeEditor(node, parentId=null, relation="child", parentNode=null){
       const sel = document.createElement("select");
       sel.className = "input"; sel.name = "spouseIndex";
       sel.innerHTML = `<option value="">— Tidak ditandakan —</option>` +
-        sps.map((s,i)=>`<option value="${s.order||i+1}">${spouseOrdinal(s.order||i+1)}: ${escape(s.name)}</option>`).join("");
-      if(node?.spouseIndex) sel.value = String(node.spouseIndex);
+        sps.map((s,i)=>`<option value="${escape(s.id||String(s.order||i+1))}">${spouseOrdinal(s.order||i+1)}: ${escape(s.name)}</option>`).join("");
+      if(node?.spouseIndex){
+        const linkedSpouse = sps.find(s=>String(s.id)===String(node.spouseIndex)) || sps.find(s=>String(s.order)===String(node.spouseIndex));
+        sel.value = String(linkedSpouse?.id || node.spouseIndex);
+      }
       wrap.appendChild(lbl); wrap.appendChild(sel);
     }
   }
@@ -835,6 +848,7 @@ $("#form-spouse").addEventListener("submit", async e=>{
     runCall = ()=>api("editSpouse", payload);
   } else {
     const payload = {
+      id: makeSpouseId(),
       parentId: parent.id, relation: "spouse",
       name: fd.get("name"), nickname: fd.get("nickname")||"",
       gender: fd.get("gender")||"", spouseStatus: fd.get("status"),

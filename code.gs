@@ -566,9 +566,15 @@ function normalizeNodeClient_(r){
   let spouses = [];
   if (r.spousesJson) spouses = parseJsonSafe_(r.spousesJson, []) || [];
   else if (r.spouseName) spouses = [{name:r.spouseName, photo:r.spousePhoto||"", status:"hidup", order:1, death:""}];
+  spouses = (Array.isArray(spouses) ? spouses : []).map((s,i)=>({
+    ...s,
+    id: s.id || ("legacy-" + String(r.id || "node") + "-" + (i+1)),
+    order: s.order || i+1,
+    gender: s.gender || oppositeGender_(r.gender),
+  }));
   return {
     ...r,
-    spouses: Array.isArray(spouses) ? spouses : [],
+    spouses,
     pending: toBool_(r.pending),
     hanging: toBool_(r.hanging),
     pendingDelete: false,
@@ -613,9 +619,10 @@ function applyPendingPreviewToNode_(node, items){
       out.spouses.forEach(s=>{ if (s.order) taken[Number(s.order)] = true; });
       while (taken[order]) order++;
       out.spouses.push({
+        id: p.id || Utilities.getUuid(),
         name: p.name || "",
         nickname: p.nickname || "",
-        gender: p.gender || "",
+        gender: p.gender || oppositeGender_(node.gender),
         birth: p.birth || "",
         birthplace: p.birthplace || "",
         photo: p.photoUrl || "",
@@ -716,8 +723,15 @@ function validateSpouseRule_(parentId, p){
   }
   // Lelaki: bebas (poligami)
 }
+function oppositeGender_(gender){
+  const g = String(gender || "").toUpperCase();
+  if (g === "L") return "P";
+  if (g === "P") return "L";
+  return "";
+}
 function normalizeSpousePayload_(p, photoUrl){
   return {
+    id: p.id || "",
     parentId: p.parentId || "",
     relation: "spouse",
     name: String(p.name || "").trim(),
@@ -740,15 +754,14 @@ function addSpouse_(parentId, p, photoUrl, auth){
   const rows = readSheet_(SHEET_TREE);
   const n = rows.find(r=>r.id===parentId);
   if(!n) throw new Error("Node tidak dijumpai");
-  let spouses = [];
-  if (n.spousesJson) { try { spouses = JSON.parse(n.spousesJson)||[]; } catch(e){} }
-  else if (n.spouseName) spouses = [{name:n.spouseName, photo:n.spousePhoto||"", status:"hidup", order:1, death:""}];
+  let spouses = _loadSpouses_(n);
   // pastikan APPEND — order yang diminta; jika konflik, auto-bump ke nombor seterusnya yang kosong
   let order = Number(p.spouseOrder)>0 ? Number(p.spouseOrder) : (spouses.length+1);
   const taken = {}; spouses.forEach(s=>{ if(s.order) taken[Number(s.order)] = true; });
   while (taken[order]) order++;
   spouses.push({
-    name: p.name, nickname: p.nickname || "", gender: p.gender || "",
+    id: p.id || Utilities.getUuid(),
+    name: p.name, nickname: p.nickname || "", gender: p.gender || oppositeGender_(n.gender),
     birth: p.birth || "", birthplace: p.birthplace || "",
     photo: p.photoUrl || photoUrl || "",
     status: p.spouseStatus || "hidup",
@@ -757,9 +770,6 @@ function addSpouse_(parentId, p, photoUrl, auth){
     notes: p.notes || "",
     order: order,
   });
-  // dedupe: kalau ada dua entri dengan nama+order yang sama persis, biar satu sahaja
-  const seen = {};
-  spouses = spouses.filter(s=>{ const k=(s.name||"")+"|"+(s.order||""); if(seen[k]) return false; seen[k]=1; return true; });
   spouses.sort((a,b)=>(a.order||99)-(b.order||99));
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
    setCellByHeader_(sh, n._row, "spousesJson", JSON.stringify(spouses));
@@ -771,9 +781,21 @@ function _loadSpouses_(n){
   let spouses = [];
   if (n.spousesJson) { try { spouses = JSON.parse(n.spousesJson)||[]; } catch(e){} }
   else if (n.spouseName) spouses = [{name:n.spouseName, photo:n.spousePhoto||"", status:"hidup", order:1, death:""}];
-  return spouses;
+  if (!Array.isArray(spouses)) spouses = spouses ? [spouses] : [];
+  return spouses.map((s,i)=>({
+    ...s,
+    id: s.id || ("legacy-" + String(n.id || "node") + "-" + (i+1)),
+    order: s.order || i+1,
+    gender: s.gender || oppositeGender_(n.gender),
+  }));
 }
 function _saveSpouses_(sh, n, spouses, auth){
+  spouses = (Array.isArray(spouses) ? spouses : []).map((s,i)=>({
+    ...s,
+    id: s.id || ("legacy-" + String(n.id || "node") + "-" + (i+1)),
+    order: s.order || i+1,
+    gender: s.gender || oppositeGender_(n.gender),
+  }));
   spouses.sort((a,b)=>(a.order||99)-(b.order||99));
   setCellByHeader_(sh, n._row, "spousesJson", JSON.stringify(spouses));
   // JANGAN gabungkan nama pasangan
