@@ -1,5 +1,10 @@
 /**
- * SALASILAH KELUARGA ELIT — Apps Script Backend v2.9 login-lock-cachefix
+ * SALASILAH KELUARGA ELIT — Apps Script Backend v3.0 multi-spouse-cards
+ * PERUBAHAN v3.0:
+ *   - validateSpouseRule_() kini menggunakan _loadSpouses_() untuk semak semua baris spouseOf
+ *   - Setiap pasangan SENTIASA disimpan sebagai baris BERASINGAN dalam Google Sheet (spouseOf/spouseOrder)
+ *   - Fungsi lain tidak diubah
+ *
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
  *   Execute as: Me   |   Access: Anyone
  * Pertama kali: Jalankan INITIALIZE_SYSTEM() secara manual sekali.
@@ -16,10 +21,9 @@ const DRIVE_FOLDER  = "SalasilahImages";
 const MASTER_USER = "admin";
 const MASTER_PASS = "101010";
 
-// v2.10: spouseOf/spouseOrder = setiap pasangan disimpan sebagai baris berasingan
+// v3.0: spouseOf/spouseOrder = setiap pasangan disimpan sebagai baris berasingan
 const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","spouseOf","spouseOrder","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned","approved","approvedBy","approvedAt"];
-// v2.6: NOTA pada map
 const NOTE_HEADERS = ["id","text","x","y","font","size","color","pinned","pending","createdBy","createdAt","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 
 /* ============ INIT ============ */
@@ -75,7 +79,6 @@ function doPost(e) {
     if (!handler) throw new Error("Unknown action: " + req.action);
     const auth = authenticate_(req.auth);
     const data = handler(req.payload || {}, auth);
-    // TURBO: invalidate tree cache untuk semua action selain bacaan
     if (req.action && req.action !== "getTree" && req.action !== "myProfile" && req.action !== "ping" && req.action !== "login") {
       invalidateTreeCache_();
     }
@@ -84,11 +87,11 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.9 login-lock-cachefix"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v3.0 multi-spouse-cards"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-/* TURBO: ensureInit cache — skip jika dah migrate dalam 6 jam */
-const _INIT_VERSION = "v2.10-spouse-row-records";
+/* TURBO: ensureInit cache */
+const _INIT_VERSION = "v3.0-multi-spouse-cards";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -109,7 +112,7 @@ function ensureInit_() {
 }
 
 /* TURBO: cache hasil getTree 30 saat */
-const _TREE_CACHE_KEY = "tree:v2";
+const _TREE_CACHE_KEY = "tree:v3";
 const _TREE_CACHE_TTL = 30;
 function _treeCacheGet_(authed){
   try {
@@ -289,7 +292,6 @@ const ACTIONS = {
   initRoot(p, auth) {
     requireAdmin_(auth);
     const sh = sheet_(SHEET_TREE);
-    // Membenarkan banyak root: root utama jika belum ada, atau root tambahan (tergantung) jika hanging=true
     const existingRoots = readSheet_(SHEET_TREE).filter(r=>!r.parentId);
     const isHanging = !!p.hanging;
     if (existingRoots.length > 0 && !isHanging) throw new Error("Root utama sudah wujud. Gunakan 'Cipta Root Tergantung' untuk root tambahan.");
@@ -301,7 +303,6 @@ const ACTIONS = {
     requireAdmin_(auth);
     if (!p.id) throw new Error("Node id diperlukan");
     if (p.id === p.newParentId) throw new Error("Tidak boleh jadikan diri sendiri sebagai parent");
-    // pastikan tidak buat kitaran (parent baharu bukan keturunan kepada node ini)
     if (p.newParentId) {
       const rows = readSheet_(SHEET_TREE);
       let cur = rows.find(r=>r.id===p.newParentId);
@@ -319,7 +320,6 @@ const ACTIONS = {
     if (!n) throw new Error("Node tidak dijumpai");
     const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
     sh.getRange(n._row, h.indexOf("parentId")+1).setValue(p.newParentId||"");
-    // jika menjadi root, tandakan hanging mengikut pilihan; jika disambung, buang hanging
     const cH = h.indexOf("hanging")+1;
     if (cH>0) sh.getRange(n._row, cH).setValue(p.newParentId ? false : !!p.hanging);
     stampEdit_(p.id, auth);
@@ -332,7 +332,9 @@ const ACTIONS = {
     const photoUrl = p.photo ? saveImage_(p.photo, "node_"+Date.now()) : null;
 
     if (p.relation === "spouse" && p.parentId) {
-      // Tiada had pasangan — sesiapa boleh tambah berapa banyak (poligami / kahwin semula)
+      // v3.0: SETIAP pasangan disimpan sebagai BARIS BERASINGAN
+      // validateSpouseRule_ kini guna _loadSpouses_ untuk semak semua baris
+      validateSpouseRule_(p.parentId, p);
       const spousePayload = normalizeSpousePayload_(p, photoUrl);
       if (isAdmin) { addSpouse_(p.parentId, spousePayload, spousePayload.photoUrl, auth); stampApprove_(p.parentId, auth); return { ok: true }; }
       addPending_({ action: "spouse", targetId: p.parentId, payload: spousePayload, by: auth.username, summary: "Pasangan ke-"+(spousePayload.spouseOrder||"?")+": "+(spousePayload.name||"") });
@@ -385,7 +387,6 @@ const ACTIONS = {
       pinned: !!p.pinned,
     };
     if (p.id) {
-      // edit nota sedia ada
       const existing = readSheet_(SHEET_NOTES).find(n=>String(n.id)===String(p.id));
       if (!existing) throw new Error("Nota tidak dijumpai");
       const isOwner = existing.createdBy === auth.username;
@@ -402,7 +403,6 @@ const ACTIONS = {
       markNotePending_(p.id, true);
       return { pending:true };
     }
-    // nota baharu
     const id = Utilities.getUuid();
     appendNoteRow_({ id, ...data, pending: !isAdmin, createdBy: auth.username, createdAt: new Date(), lastEditBy: auth.username, lastEditAt: new Date(), approvedBy: isAdmin?auth.username:"", approvedAt: isAdmin?new Date():"" });
     if (!isAdmin) {
@@ -430,7 +430,7 @@ const ACTIONS = {
     return { pending:true };
   },
 
-  /* ===== EDIT / DELETE PASANGAN (di dalam spousesJson) ===== */
+  /* ===== EDIT / DELETE PASANGAN ===== */
   editSpouse(p, auth) {
     requireVerifiedUser_(auth);
     const isAdmin = auth.role === "admin";
@@ -754,20 +754,26 @@ function resolvePendingById_(pendingId, decision, auth) {
 }
 
 /* ============ SPOUSE LOGIC ============ */
+
+/**
+ * v3.0 FIX: validateSpouseRule_ kini menggunakan _loadSpouses_() yang
+ * membaca SEMUA baris spouseOf dari sheet, bukan hanya spousesJson sahaja.
+ * Ini memastikan pemeriksaan isteri tunggal untuk wanita berfungsi betul
+ * walaupun data sudah dipindah kepada baris berasingan.
+ */
 function validateSpouseRule_(parentId, p){
   const rows = readSheet_(SHEET_TREE);
   const n = rows.find(r=>r.id===parentId);
   if(!n) throw new Error("Node tidak dijumpai");
-  let spouses = [];
-  if (n.spousesJson) { try { spouses = JSON.parse(n.spousesJson)||[]; } catch(e){} }
-  else if (n.spouseName) spouses = [{name:n.spouseName, status:"hidup"}];
+  // Guna _loadSpouses_ untuk dapatkan SEMUA pasangan (termasuk baris spouseOf)
+  const spouses = _loadSpouses_(n, rows);
   if (spouses.length === 0) return;
   // Wanita: hanya boleh ada satu suami HIDUP semasa. Boleh tambah jika sebelumnya mati/cerai.
   if (String(n.gender).toUpperCase()==="P") {
     const adaHidup = spouses.some(s => s.status !== "mati" && s.status !== "cerai");
     if (adaHidup) throw new Error("Wanita hanya boleh ada satu suami pada satu masa. Tetapkan suami terdahulu sebagai 'Almarhum' atau 'Bercerai' dahulu.");
   }
-  // Lelaki: bebas (poligami)
+  // Lelaki: bebas (poligami / kahwin semula tidak terhad)
 }
 function oppositeGender_(gender){
   const g = String(gender || "").toUpperCase();
@@ -793,6 +799,12 @@ function normalizeSpousePayload_(p, photoUrl){
     photoUrl: photoUrl || p.photoUrl || "",
   };
 }
+
+/**
+ * addSpouse_: Menambah pasangan baharu sebagai BARIS BERASINGAN dalam Google Sheet.
+ * Setiap pasangan mempunyai: spouseOf = parentId, spouseOrder = nombor pasangan.
+ * Ini memastikan HAJI AWANG dengan 20 isteri = 20 baris berasingan dalam sheet SALASILAH.
+ */
 function addSpouse_(parentId, p, photoUrl, auth){
   p = normalizeSpousePayload_(p || {}, photoUrl);
   if (!p.name) throw new Error("Nama pasangan wajib diisi");
@@ -801,11 +813,11 @@ function addSpouse_(parentId, p, photoUrl, auth){
   const n = rows.find(r=>r.id===parentId);
   if(!n) throw new Error("Node tidak dijumpai");
   let spouses = _loadSpouses_(n, rows);
-  // pastikan APPEND — order yang diminta; jika konflik, auto-bump ke nombor seterusnya yang kosong
   let order = Number(p.spouseOrder)>0 ? Number(p.spouseOrder) : (spouses.length+1);
   const taken = {}; spouses.forEach(s=>{ if(s.order) taken[Number(s.order)] = true; });
   while (taken[order]) order++;
   const id = p.id || Utilities.getUuid();
+  // SIMPAN sebagai baris berasingan dengan spouseOf dan spouseOrder
   appendNodeRow_(sh, {
     id,
     parentId: "",
@@ -829,6 +841,7 @@ function addSpouse_(parentId, p, photoUrl, auth){
     approvedBy: auth.username,
     approvedAt: new Date(),
   });
+  // Padam format lama (jika ada)
   setCellByHeader_(sh, n._row, "spouseName", "");
   setCellByHeader_(sh, n._row, "spousePhoto", "");
   stampEdit_(parentId, auth);
@@ -856,7 +869,6 @@ function _saveSpouses_(sh, n, spouses, auth){
   }));
   spouses.sort((a,b)=>(a.order||99)-(b.order||99));
   setCellByHeader_(sh, n._row, "spousesJson", JSON.stringify(spouses));
-  // JANGAN gabungkan nama pasangan
   setCellByHeader_(sh, n._row, "spouseName", "");
   stampEdit_(n.id, auth);
 }
@@ -912,6 +924,11 @@ function nextFreeSpouseOrder_(rows, parentId, wanted, ignoreId){
   while (taken[order]) order++;
   return order;
 }
+
+/**
+ * migrateSpousesJsonToRows_: Migrasi data lama dari spousesJson ke baris berasingan.
+ * Dipanggil semasa ensureInit_ untuk pastikan semua data lama dipindah ke format baharu.
+ */
 function migrateSpousesJsonToRows_(){
   const lock = LockService.getScriptLock();
   try { lock.waitLock(10000); } catch(e) {}
