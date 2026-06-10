@@ -323,8 +323,8 @@
     box-shadow:0 8px 14px -12px rgba(217,119,6,.45);
   }
 
-  /* === COUPLE (suami + isteri) === */
-  /* === COUPLE row: semua pasangan dalam SATU BARIS mendatar === */
+  /* === COUPLE (suami + semua isteri/pasangan) === */
+  /* PAKSA SATU BARIS MELINTANG: 1 suami + 10 isteri pun tidak turun menegak */
   .couple{
     display:flex !important;
     flex-direction:row !important;
@@ -333,8 +333,10 @@
     justify-content:center;
     gap:0;
     padding:8px 10px;
-    width:max-content;
-    max-width:none;
+    width:max-content !important;
+    min-width:max-content !important;
+    max-width:none !important;
+    white-space:nowrap !important;
     background:color-mix(in oklab, var(--card) 92%, #ffffff 8%);
     border-radius:20px;
     border:1px dashed color-mix(in oklab, var(--line) 45%, #ffffff 55%);
@@ -343,9 +345,9 @@
   .couple > *{flex:0 0 auto !important;}
   .couple .node{margin:0 4px; flex:0 0 auto !important;}
   .couple .couple-link{flex:0 0 auto !important;}
-  ul.tree li > .branch{display:flex;justify-content:center;position:relative;width:max-content;margin:0 auto;}
+  ul.tree li > .branch{display:flex;justify-content:center;position:relative;width:max-content !important;min-width:max-content !important;max-width:none !important;margin:0 auto;overflow:visible !important;}
   ul.tree li{overflow:visible;}
-  .trees-wrap, .tree-block{overflow-x:auto;}
+  .trees-wrap, .tree-block{overflow-x:auto;overflow-y:visible;}
   /* === COUPLE-LINK: susunan mendatar + nombor perkahwinan Roman === */
   .couple-link{
     display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -436,9 +438,9 @@
   ul.tree li:first-child::before, ul.tree li:last-child::after{border:0 none;}
   ul.tree li:last-child::before{border-right:2px solid var(--line);border-radius:0 8px 0 0;}
   ul.tree li:first-child::after{border-radius:8px 0 0 0;}
-  ul.tree li > .branch{display:flex;justify-content:center;position:relative;}
+  ul.tree li > .branch{display:flex;justify-content:center;position:relative;width:max-content !important;min-width:max-content !important;max-width:none !important;overflow:visible !important;}
   ul.tree > li::before, ul.tree > li::after{display:none;}
-  .children-row{display:flex;}
+  .children-row{display:flex;width:max-content;min-width:max-content;}
   .children-row > li{position:relative;}
 
   /* === MODAL & UI === */
@@ -473,13 +475,17 @@
 
   /* === Kad pasangan dalam profil: satu baris mendatar + scroll === */
   .spouse-cards-row{
-    display:flex;
-    flex-direction:row;
-    flex-wrap:nowrap;
+    display:flex !important;
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
     gap:12px;
-    overflow-x:auto;
+    overflow-x:auto !important;
+    overflow-y:hidden;
     padding-bottom:6px;
     align-items:flex-start;
+    width:100%;
+    max-width:100%;
+    white-space:nowrap;
     /* scrollbar styling */
     scrollbar-width:thin;
     scrollbar-color:var(--line-soft) transparent;
@@ -494,7 +500,9 @@
     /* fixed width so cards sit side by side */
     min-width:200px;
     max-width:220px;
-    flex-shrink:0;
+    flex:0 0 220px !important;
+    display:inline-block;
+    white-space:normal;
   }
 
   .spouse-profile-card.divorced{
@@ -907,7 +915,7 @@
       <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid var(--gold-dark);background:#fff4cd"></span> Node induk (Root)</div>
     </div>
     <hr style="border-color:var(--line-soft)"/>
-    <p class="text-xs" style="color:var(--ink-soft)">Versi 4.0 — Pasangan disusun mendatar (I, II, III…) dengan garis penghubung mengikut status perkahwinan. Anak dari setiap perkahwinan dipaparkan dalam kad pasangan masing-masing. Setiap pasangan = satu baris berasingan dalam Google Sheet.</p>
+    <p class="text-xs" style="color:var(--ink-soft)">Versi 4.1 — Pasangan dipaksa satu baris melintang sepenuhnya walaupun ramai isteri/pasangan; leret kiri kanan untuk lihat semua. Anak dari setiap perkahwinan dipaparkan dalam kad pasangan masing-masing.</p>
     <div class="flex gap-2">
       <button onclick="closeModal('modal-settings')" class="btn btn-primary flex-1">Tutup</button>
     </div>
@@ -982,10 +990,10 @@
 <div id="err-stack"></div>
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] hidden glass px-4 py-2 rounded-full text-sm"></div>
 
-<script src="app.js?v=40-horizontal-spouses"></script>
+<script src="app.js?v=41-force-horizontal-spouses"></script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=40-horizontal-spouses').then(reg=>reg.update()).catch(()=>{});
+  navigator.serviceWorker.register('sw.js?v=41-force-horizontal-spouses').then(reg=>reg.update()).catch(()=>{});
 }
 </script>
 </body>

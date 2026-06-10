@@ -6,7 +6,7 @@
    - Fungsi lain tidak diubah
 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxncWjelGpaYeKF-dKaxSDp8nx-vda1PNGxdhqqJ6cBC83SSSSwXLpsJCC7ziR3KHZI/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycby0_j2tEWHraPkoehMKBn76e5WLYwNk22aYsm7QG5GJ7T5WaHqAt5DzW5YSow0EAlXx/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
@@ -426,6 +426,7 @@ function renderNode(n){
 
   const couple = document.createElement("div");
   couple.className = "couple"+(n.pending?" pending-family":"");
+  couple.style.cssText = "display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center;justify-content:center;width:max-content!important;min-width:max-content!important;max-width:none!important;white-space:nowrap!important;overflow:visible!important;";
   const sps = getSpouses(n);
   /* v3.0: setiap pasangan = kad berasingan dalam pokok */
   const spouseOnLeft = n.gender === "P";
@@ -656,7 +657,7 @@ function viewProfile(n){
         <div class="text-xs font-bold mb-2" style="color:var(--gold-dark);letter-spacing:.06em;text-transform:uppercase;">
           💍 Sejarah Perkahwinan (${sp.length} pasangan)
         </div>
-        <div class="spouse-cards-row">
+        <div class="spouse-cards-row" style="display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:12px;overflow-x:auto!important;overflow-y:hidden;width:100%;max-width:100%;align-items:flex-start;white-space:nowrap;padding-bottom:8px;">
         ${sp.map((s,i)=>{
           const spGender = s.gender || oppositeGender(n.gender);
           const spPhoto = fixPhoto(s.photo) || placeholder(spGender);
@@ -680,7 +681,7 @@ function viewProfile(n){
             : `<div class="spouse-card-children">
                 <div class="spouse-card-children-label" style="color:var(--ink-soft);font-style:italic;">Tiada anak direkodkan dari perkahwinan ini</div>
               </div>`;
-          return `<div class="spouse-profile-card${cardClass}" data-spouse-id="${escape(s.id||"")}">
+          return `<div class="spouse-profile-card${cardClass}" data-spouse-id="${escape(s.id||"")}" style="flex:0 0 220px!important;min-width:220px!important;max-width:220px!important;display:inline-block;white-space:normal;">
             <div class="spouse-card-header">
               <img class="spouse-card-photo" src="${spPhoto}" onerror="this.src='${placeholder(spGender)}'" />
               <div class="spouse-card-info">
