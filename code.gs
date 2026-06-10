@@ -48,15 +48,28 @@ function INITIALIZE_SYSTEM() {
 function ensureSheet_(ss, name, headers) {
   let sh = ss.getSheetByName(name);
   if (!sh) sh = ss.insertSheet(name);
+  trimSheet_(sh);
   if (sh.getLastRow() === 0) sh.appendRow(headers);
+}
+/* Padam baris kosong berlebihan supaya sel tidak melebihi had 10 juta */
+function trimSheet_(sh) {
+  try {
+    const maxRows = sh.getMaxRows();
+    const lastRow = Math.max(sh.getLastRow(), 1);
+    if (maxRows > lastRow + 1) {
+      sh.deleteRows(lastRow + 1, maxRows - lastRow - 1);
+    }
+  } catch(e) { /* abaikan jika sheet kecil */ }
 }
 function migrateHeaders_(name, headers){
   const sh = sheet_(name);
+  trimSheet_(sh); // kurangkan baris kosong sebelum tambah kolum
   const h = sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getValues()[0];
   headers.forEach(col=>{
     if(h.indexOf(col)===-1){
       sh.insertColumnAfter(sh.getLastColumn());
       sh.getRange(1, sh.getLastColumn()).setValue(col);
+      h.push(col); // segerakkan h supaya tidak tambah kolum berganda
     }
   });
 }
@@ -1007,6 +1020,7 @@ function ensureFieldExists_(sh, field){
   let headers = sh.getRange(1,1,1,Math.max(1, sh.getLastColumn())).getValues()[0];
   let col = headers.indexOf(field) + 1;
   if (col > 0) return col;
+  trimSheet_(sh); // padam baris kosong sebelum tambah kolum
   sh.insertColumnAfter(Math.max(1, sh.getLastColumn()));
   col = sh.getLastColumn();
   sh.getRange(1, col).setValue(field);

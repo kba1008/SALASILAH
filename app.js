@@ -6,7 +6,7 @@
    - Fungsi lain tidak diubah
 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwPv7W8XYfVFbmOsWHojZJoIo2HXHmovCnmIwhiAcGWLlti-2NOLoV8f7gaRoB1Z5Va/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
