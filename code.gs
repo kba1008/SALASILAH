@@ -16,8 +16,8 @@ const DRIVE_FOLDER  = "SalasilahImages";
 const MASTER_USER = "admin";
 const MASTER_PASS = "101010";
 
-// v2.7: spouseIndex (anak dari pasangan keberapa) + hanging (root tergantung)
-const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
+// v2.10: spouseOf/spouseOrder = setiap pasangan disimpan sebagai baris berasingan
+const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","spouseOf","spouseOrder","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned","approved","approvedBy","approvedAt"];
 // v2.6: NOTA pada map
 const NOTE_HEADERS = ["id","text","x","y","font","size","color","pinned","pending","createdBy","createdAt","lastEditBy","lastEditAt","approvedBy","approvedAt"];
@@ -32,6 +32,7 @@ function INITIALIZE_SYSTEM() {
   migrateHeaders_(SHEET_TREE, TREE_HEADERS);
   migrateHeaders_(SHEET_USERS, USER_HEADERS);
   migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
+  migrateSpousesJsonToRows_();
   ensureFolder_();
   const users = ss.getSheetByName(SHEET_USERS);
   if (users.getLastRow() < 2) {
@@ -87,7 +88,7 @@ function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
 /* TURBO: ensureInit cache — skip jika dah migrate dalam 6 jam */
-const _INIT_VERSION = "v2.7-turbo-2-spousefix";
+const _INIT_VERSION = "v2.10-spouse-row-records";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -99,6 +100,7 @@ function ensureInit_() {
     migrateHeaders_(SHEET_USERS, USER_HEADERS);
     migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
   }
+  migrateSpousesJsonToRows_();
   const u = findUserBy_("username", MASTER_USER);
   if (!u) {
     appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date(), approved:true, approvedBy:"SYSTEM", approvedAt:new Date() });
@@ -247,7 +249,17 @@ const ACTIONS = {
       (bucket[key] = bucket[key] || []).push(it);
     });
 
-    let nodes = nodeRows.map(normalizeNodeClient_);
+    const allNodes = nodeRows.map(normalizeNodeClient_);
+    const spouseGroups = {};
+    allNodes.forEach(n=>{
+      if (!n.spouseOf) return;
+      const ownerId = String(n.spouseOf || "");
+      if (!ownerId) return;
+      (spouseGroups[ownerId] = spouseGroups[ownerId] || []).push(n);
+    });
+    let nodes = allNodes
+      .filter(n=>!n.spouseOf)
+      .map(n=>({ ...n, spouses: mergeSpouseLists_(n.spouses || [], spouseGroups[String(n.id)] || [], n) }));
     let notes = noteRows.map(normalizeNoteClient_);
 
     if (canSeePending) {
@@ -678,6 +690,40 @@ function applyPendingPreviewToNote_(note, items){
   out.pendingItems = sorted.map(safePendingItem_);
   return out;
 }
+function mergeSpouseLists_(legacySpouses, spouseRows, owner){
+  const list = [];
+  const seen = {};
+  (Array.isArray(spouseRows) ? spouseRows : []).forEach((r,i)=>{
+    const id = String(r.id || "");
+    if (id) seen[id] = true;
+    list.push({
+      id: r.id || Utilities.getUuid(),
+      name: r.name || "",
+      nickname: r.nickname || "",
+      gender: r.gender || oppositeGender_(owner.gender),
+      birth: r.birth || "",
+      birthplace: r.birthplace || "",
+      photo: r.photo || r.spousePhoto || "",
+      status: r.status || "hidup",
+      death: r.death || "",
+      deathplace: r.deathplace || "",
+      notes: r.notes || "",
+      order: Number(r.spouseOrder) > 0 ? Number(r.spouseOrder) : (Number(r.order) > 0 ? Number(r.order) : i + 1),
+    });
+  });
+  (Array.isArray(legacySpouses) ? legacySpouses : []).forEach((s,i)=>{
+    const id = String(s.id || "legacy-" + String(owner.id || "node") + "-" + (i+1));
+    if (seen[id]) return;
+    list.push({
+      ...s,
+      id,
+      order: Number(s.order) > 0 ? Number(s.order) : i + 1,
+      gender: s.gender || oppositeGender_(owner.gender),
+    });
+  });
+  list.sort((a,b)=>(a.order||99)-(b.order||99));
+  return list;
+}
 function resolvePendingById_(pendingId, decision, auth) {
   const rows = readSheet_(SHEET_PENDING);
   const item = rows.find(r => r.id === pendingId);
@@ -754,40 +800,52 @@ function addSpouse_(parentId, p, photoUrl, auth){
   const rows = readSheet_(SHEET_TREE);
   const n = rows.find(r=>r.id===parentId);
   if(!n) throw new Error("Node tidak dijumpai");
-  let spouses = _loadSpouses_(n);
+  let spouses = _loadSpouses_(n, rows);
   // pastikan APPEND — order yang diminta; jika konflik, auto-bump ke nombor seterusnya yang kosong
   let order = Number(p.spouseOrder)>0 ? Number(p.spouseOrder) : (spouses.length+1);
   const taken = {}; spouses.forEach(s=>{ if(s.order) taken[Number(s.order)] = true; });
   while (taken[order]) order++;
-  spouses.push({
-    id: p.id || Utilities.getUuid(),
-    name: p.name, nickname: p.nickname || "", gender: p.gender || oppositeGender_(n.gender),
-    birth: p.birth || "", birthplace: p.birthplace || "",
-    photo: p.photoUrl || photoUrl || "",
+  const id = p.id || Utilities.getUuid();
+  appendNodeRow_(sh, {
+    id,
+    parentId: "",
+    no: sh.getLastRow(),
+    name: p.name,
+    nickname: p.nickname || "",
+    gender: p.gender || oppositeGender_(n.gender),
     status: p.spouseStatus || "hidup",
+    birth: p.birth || "",
     death: p.spouseDeath || "",
+    birthplace: p.birthplace || "",
     deathplace: p.deathplace || "",
+    spouseOf: parentId,
+    spouseOrder: order,
+    photo: p.photoUrl || photoUrl || "",
     notes: p.notes || "",
-    order: order,
+    createdBy: auth.username,
+    pending: false,
+    lastEditBy: auth.username,
+    lastEditAt: new Date(),
+    approvedBy: auth.username,
+    approvedAt: new Date(),
   });
-  spouses.sort((a,b)=>(a.order||99)-(b.order||99));
-  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
-   setCellByHeader_(sh, n._row, "spousesJson", JSON.stringify(spouses));
-   // JANGAN gabungkan nama pasangan — simpan kosong supaya UI sentiasa ambil dari spousesJson (satu kotak per pasangan)
-   setCellByHeader_(sh, n._row, "spouseName", "");
+  setCellByHeader_(sh, n._row, "spouseName", "");
+  setCellByHeader_(sh, n._row, "spousePhoto", "");
   stampEdit_(parentId, auth);
 }
-function _loadSpouses_(n){
+function _loadSpouses_(n, rows){
   let spouses = [];
   if (n.spousesJson) { try { spouses = JSON.parse(n.spousesJson)||[]; } catch(e){} }
   else if (n.spouseName) spouses = [{name:n.spouseName, photo:n.spousePhoto||"", status:"hidup", order:1, death:""}];
   if (!Array.isArray(spouses)) spouses = spouses ? [spouses] : [];
-  return spouses.map((s,i)=>({
+  const legacy = spouses.map((s,i)=>({
     ...s,
     id: s.id || ("legacy-" + String(n.id || "node") + "-" + (i+1)),
     order: s.order || i+1,
     gender: s.gender || oppositeGender_(n.gender),
   }));
+  const spouseRows = (rows || readSheet_(SHEET_TREE)).filter(r=>String(r.spouseOf||"")===String(n.id||""));
+  return mergeSpouseLists_(legacy, spouseRows.map(normalizeNodeClient_), normalizeNodeClient_(n));
 }
 function _saveSpouses_(sh, n, spouses, auth){
   spouses = (Array.isArray(spouses) ? spouses : []).map((s,i)=>({
@@ -807,34 +865,84 @@ function applySpouseEdit_(parentId, order, data, auth){
   const rows = readSheet_(SHEET_TREE);
   const n = rows.find(r=>r.id===parentId);
   if(!n) throw new Error("Node tidak dijumpai");
-  const spouses = _loadSpouses_(n);
-  const idx = spouses.findIndex(s=>Number(s.order||0)===Number(order));
-  if(idx<0) throw new Error("Pasangan tidak dijumpai");
-  spouses[idx].name   = data.name || spouses[idx].name;
-  spouses[idx].nickname = data.nickname !== undefined ? data.nickname : (spouses[idx].nickname || "");
-  spouses[idx].gender = data.gender || spouses[idx].gender || "";
-  spouses[idx].status = data.status || spouses[idx].status;
-  spouses[idx].birth = data.birth !== undefined ? data.birth : (spouses[idx].birth || "");
-  spouses[idx].birthplace = data.birthplace !== undefined ? data.birthplace : (spouses[idx].birthplace || "");
-  spouses[idx].death  = data.death || "";
-  spouses[idx].deathplace = data.deathplace !== undefined ? data.deathplace : (spouses[idx].deathplace || "");
-  spouses[idx].notes = data.notes !== undefined ? data.notes : (spouses[idx].notes || "");
-  if(data.photo) spouses[idx].photo = data.photo;
-  if(data.newOrder && data.newOrder!==order){
-    const taken = {}; spouses.forEach((s,i)=>{ if(i!==idx && s.order) taken[Number(s.order)]=true; });
-    let no = Number(data.newOrder); while(taken[no]) no++;
-    spouses[idx].order = no;
+  const row = rows.find(r=>String(r.spouseOf||"")===String(parentId) && Number(r.spouseOrder||0)===Number(order));
+  if(row){
+    const newOrder = nextFreeSpouseOrder_(rows, parentId, Number(data.newOrder)||Number(order), row.id);
+    const map = {
+      name:data.name || row.name, nickname:data.nickname !== undefined ? data.nickname : (row.nickname || ""),
+      gender:data.gender || row.gender || oppositeGender_(n.gender), status:data.status || row.status || "hidup",
+      birth:data.birth !== undefined ? data.birth : (row.birth || ""), death:data.death || "",
+      birthplace:data.birthplace !== undefined ? data.birthplace : (row.birthplace || ""),
+      deathplace:data.deathplace !== undefined ? data.deathplace : (row.deathplace || ""),
+      notes:data.notes !== undefined ? data.notes : (row.notes || ""), spouseOrder:newOrder,
+      lastEditBy:auth.username, lastEditAt:new Date(), approvedBy:auth.username, approvedAt:new Date(),
+    };
+    if(data.photo) map.photo = data.photo;
+    Object.keys(map).forEach(k=>setCellByHeader_(sh, row._row, k, map[k]));
+    stampEdit_(parentId, auth);
+    return;
   }
-  _saveSpouses_(sh, n, spouses, auth);
+  const spouses = _loadSpouses_(n, rows);
+  const legacy = spouses.find(s=>Number(s.order||0)===Number(order));
+  if(!legacy) throw new Error("Pasangan tidak dijumpai");
+  addSpouse_(parentId, { ...legacy, ...data, spouseOrder:Number(data.newOrder)||Number(order), spouseStatus:data.status||legacy.status, spouseDeath:data.death||legacy.death, photoUrl:data.photo||legacy.photo }, data.photo||legacy.photo, auth);
 }
 function applySpouseDelete_(parentId, order, auth){
   const sh = sheet_(SHEET_TREE);
   const rows = readSheet_(SHEET_TREE);
   const n = rows.find(r=>r.id===parentId);
   if(!n) throw new Error("Node tidak dijumpai");
-  let spouses = _loadSpouses_(n);
-  spouses = spouses.filter(s=>Number(s.order||0)!==Number(order));
+  const row = rows.find(r=>String(r.spouseOf||"")===String(parentId) && Number(r.spouseOrder||0)===Number(order));
+  if(row){
+    deleteRowById_(SHEET_TREE, row.id);
+    stampEdit_(parentId, auth);
+    return;
+  }
+  let spouses = _loadSpouses_(n, rows).filter(s=>Number(s.order||0)!==Number(order));
   _saveSpouses_(sh, n, spouses, auth);
+}
+function nextFreeSpouseOrder_(rows, parentId, wanted, ignoreId){
+  let order = Number(wanted) > 0 ? Number(wanted) : 1;
+  const taken = {};
+  (rows || []).forEach(r=>{
+    if (String(r.spouseOf||"") !== String(parentId)) return;
+    if (ignoreId && String(r.id||"") === String(ignoreId)) return;
+    if (Number(r.spouseOrder) > 0) taken[Number(r.spouseOrder)] = true;
+  });
+  while (taken[order]) order++;
+  return order;
+}
+function migrateSpousesJsonToRows_(){
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(10000); } catch(e) {}
+  try {
+    const sh = sheet_(SHEET_TREE);
+    migrateHeaders_(SHEET_TREE, TREE_HEADERS);
+    const rows = readSheet_(SHEET_TREE);
+    rows.forEach(n=>{
+      if (n.spouseOf) return;
+      const spouses = _loadSpouses_(n, rows).filter(s=>!rows.some(r=>String(r.id||"")===String(s.id||"") || (String(r.spouseOf||"")===String(n.id||"") && String(r.name||"").trim()===String(s.name||"").trim() && Number(r.spouseOrder||0)===Number(s.order||0))));
+      spouses.forEach((s,i)=>{
+        const order = nextFreeSpouseOrder_(readSheet_(SHEET_TREE), n.id, Number(s.order)||i+1, "");
+        appendNodeRow_(sh, {
+          id: s.id || Utilities.getUuid(),
+          parentId: "", no: sh.getLastRow(), name: s.name || "", nickname: s.nickname || "",
+          gender: s.gender || oppositeGender_(n.gender), status: s.status || "hidup",
+          birth: s.birth || "", death: s.death || "", birthplace: s.birthplace || "", deathplace: s.deathplace || "",
+          spouseOf: n.id, spouseOrder: order, photo: s.photo || "", notes: s.notes || "",
+          createdBy: n.createdBy || "SYSTEM", createdAt: n.createdAt || new Date(), pending: false,
+          lastEditBy: n.lastEditBy || n.createdBy || "SYSTEM", lastEditAt: n.lastEditAt || new Date(), approvedBy: n.approvedBy || "SYSTEM", approvedAt: n.approvedAt || new Date(),
+        });
+      });
+      if (spouses.length || n.spouseName || n.spousesJson) {
+        setCellByHeader_(sh, n._row, "spousesJson", "");
+        setCellByHeader_(sh, n._row, "spouseName", "");
+        setCellByHeader_(sh, n._row, "spousePhoto", "");
+      }
+    });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
 }
 
 /* ============ HELPERS ============ */

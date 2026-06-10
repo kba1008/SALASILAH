@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.9 login-lock-cachefix */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzK3_R9BQ1bz1OGQgA6DlV2WVq0z41FZI0VgOSnHxlF8sqzqh83qim5_34hshay_Qh6/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyYAwpTJ-NMjsML9k8-NZjHgduHRnGtkFzjRSMP5vxa1yujJnnb2Jou3e0H6EVX78HW/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
@@ -270,6 +270,19 @@ function getSpouses(n){
     try{ const x = JSON.parse(n.spousesJson); if(Array.isArray(x)) a=x; }catch(e){}
   }
   else if(n.spouseName) a=[{name:n.spouseName, photo:n.spousePhoto||"", status:n.spouseStatus||"hidup", order:1, death:""}];
+  const rowSpouses = (State.nodes || []).filter(x=>String(x.spouseOf||"")===String(n.id||""));
+  if(rowSpouses.length){
+    const seen = new Set();
+    a = rowSpouses.map((s,i)=>{
+      if(s.id) seen.add(String(s.id));
+      return {
+        id:s.id, name:s.name||"", nickname:s.nickname||"", gender:s.gender||oppositeGender(n.gender),
+        birth:s.birth||"", birthplace:s.birthplace||"", photo:s.photo||s.spousePhoto||"",
+        status:s.status||"hidup", death:s.death||"", deathplace:s.deathplace||"", notes:s.notes||"",
+        order:Number(s.spouseOrder)>0 ? Number(s.spouseOrder) : (Number(s.order)>0 ? Number(s.order) : i+1),
+      };
+    }).concat(a.filter(s=>!seen.has(String(s.id||""))));
+  }
   a = a.map((s,i)=>({ ...s, id:s.id||`legacy-${n.id||"node"}-${i+1}`, order:s.order||i+1, gender:s.gender||oppositeGender(n.gender) }));
   a.sort((x,y)=>(x.order||99)-(y.order||99));
   return a;
@@ -358,11 +371,11 @@ function buildTree(){
   host.className=""; host.innerHTML="";
 
   // Cari root utama (parentId kosong & tidak hanging) dan root tergantung
-  const roots = State.nodes.filter(n=>!n.parentId);
+  const roots = State.nodes.filter(n=>!n.parentId && !n.spouseOf);
   const mainRoot = roots.find(r=>!r.hanging) || roots[0];
   // Orphan: parentId wujud tapi parent tidak dijumpai
-  const ids = new Set(State.nodes.map(n=>n.id));
-  const orphans = State.nodes.filter(n=> n.parentId && !ids.has(n.parentId));
+  const ids = new Set(State.nodes.filter(n=>!n.spouseOf).map(n=>n.id));
+  const orphans = State.nodes.filter(n=> !n.spouseOf && n.parentId && !ids.has(n.parentId));
   const hangingRoots = roots.filter(r=> r !== mainRoot);
 
   if(!mainRoot && !orphans.length && !hangingRoots.length){
@@ -449,7 +462,7 @@ function renderNode(n){
   branch.appendChild(couple);
 
   li.appendChild(branch);
-  const kids = State.nodes.filter(x=>x.parentId===n.id);
+  const kids = State.nodes.filter(x=>x.parentId===n.id && !x.spouseOf);
   if(kids.length){
     const cu = document.createElement("ul");
     cu.className="children-row";
