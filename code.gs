@@ -763,7 +763,8 @@ function addSpouse_(parentId, p, photoUrl, auth){
   spouses.sort((a,b)=>(a.order||99)-(b.order||99));
   const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
    setCellByHeader_(sh, n._row, "spousesJson", JSON.stringify(spouses));
-   setCellByHeader_(sh, n._row, "spouseName", spouses.map(s=>s.name).join(" / "));
+   // JANGAN gabungkan nama pasangan — simpan kosong supaya UI sentiasa ambil dari spousesJson (satu kotak per pasangan)
+   setCellByHeader_(sh, n._row, "spouseName", "");
   stampEdit_(parentId, auth);
 }
 function _loadSpouses_(n){
@@ -775,7 +776,8 @@ function _loadSpouses_(n){
 function _saveSpouses_(sh, n, spouses, auth){
   spouses.sort((a,b)=>(a.order||99)-(b.order||99));
   setCellByHeader_(sh, n._row, "spousesJson", JSON.stringify(spouses));
-  setCellByHeader_(sh, n._row, "spouseName", spouses.map(s=>s.name).join(" / "));
+  // JANGAN gabungkan nama pasangan
+  setCellByHeader_(sh, n._row, "spouseName", "");
   stampEdit_(n.id, auth);
 }
 function applySpouseEdit_(parentId, order, data, auth){
