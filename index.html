@@ -854,7 +854,11 @@
 <div id="err-stack"></div>
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] hidden glass px-4 py-2 rounded-full text-sm"></div>
 
-<script src="app.js"></script>
-<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});</script>
+<script src="app.js?v=29-login-lock-cachefix"></script>
+<script>
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js?v=29-login-lock-cachefix').then(reg=>reg.update()).catch(()=>{});
+}
+</script>
 </body>
 </html>

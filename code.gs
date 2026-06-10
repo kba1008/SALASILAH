@@ -1,5 +1,5 @@
 /**
- * SALASILAH KELUARGA ELIT — Apps Script Backend v2.8 sessionfix
+ * SALASILAH KELUARGA ELIT — Apps Script Backend v2.9 login-lock-cachefix
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
  *   Execute as: Me   |   Access: Anyone
  * Pertama kali: Jalankan INITIALIZE_SYSTEM() secara manual sekali.
@@ -83,7 +83,7 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.6"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.9 login-lock-cachefix"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
 /* TURBO: ensureInit cache — skip jika dah migrate dalam 6 jam */
@@ -154,6 +154,22 @@ function requireVerifiedUser_(a){
 
 function hash_(s){return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s+"|salasilah"));}
 function genToken_(){return Utilities.getUuid().replace(/-/g,"");}
+function getOrCreateUserToken_(username){
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(10000); } catch(e) {}
+  try {
+    const fresh = findUserBy_("username", username);
+    if (!fresh) throw new Error("Pengguna tidak dijumpai semasa menjana sesi");
+    const existing = fresh.token ? String(fresh.token) : "";
+    if (existing) return existing;
+    const token = genToken_();
+    updateUserField_(fresh.row, "token", token);
+    SpreadsheetApp.flush();
+    return token;
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
 
 /* ============ ACTIONS ============ */
 const ACTIONS = {
@@ -182,15 +198,13 @@ const ACTIONS = {
         appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date(), approved:true, approvedBy:"SYSTEM", approvedAt:new Date() });
         u = findUserBy_("username", MASTER_USER);
       }
-      const token = u.token ? String(u.token) : genToken_();
-      if (!u.token) updateUserField_(u.row, "token", token);
+      const token = getOrCreateUserToken_(MASTER_USER);
       return { username: MASTER_USER, fullname:"Master Admin", role: "admin", no: 0, token, isMaster:true, approved:true };
     }
     const u = findUserBy_("username", p.username);
     if (!u || u.passwordHash !== hash_(p.password)) throw new Error("Nama samaran atau password salah");
     if (u.banned === true || u.banned === "TRUE" || u.banned === "true" || u.banned === 1) throw new Error("Akaun anda telah disekat oleh admin. Hubungi Master Admin.");
-    const token = u.token ? String(u.token) : genToken_();
-    if (!u.token) updateUserField_(u.row, "token", token);
+    const token = getOrCreateUserToken_(u.username);
     return {
       username: u.username,
       fullname: u.fullname || "",

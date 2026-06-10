@@ -1,6 +1,6 @@
-/* Salasilah Keluarga Elit — app.js v2.6 */
+/* Salasilah Keluarga Elit — app.js v2.9 login-lock-cachefix */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzV8k05liZQXrgQLPxcAJOqm0xs_x6ycvDCUfEYCDFPhbPtvJ012jwcojk9MMHg_2ng/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwWZFvygkW5-2Th9xt1w66JiioEsHhD-3gpAm0QclVxTRtugftnTvgx9HAxcty_Ma8t/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
@@ -152,7 +152,7 @@ async function api(action, payload={}){
   const body = JSON.stringify({action, payload, auth});
   let res, raw="";
   try{
-    res = await fetch(GAS_URL, {method:"POST", body, headers:{"Content-Type":"text/plain;charset=utf-8"}});
+    res = await fetch(GAS_URL, {method:"POST", body, headers:{"Content-Type":"text/plain;charset=utf-8"}, cache:"no-store"});
     raw = await res.text();
   }catch(netErr){
     const e = new Error("Gangguan rangkaian: "+(netErr.message||netErr));
