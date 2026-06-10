@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.9 login-lock-cachefix */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyYAwpTJ-NMjsML9k8-NZjHgduHRnGtkFzjRSMP5vxa1yujJnnb2Jou3e0H6EVX78HW/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
