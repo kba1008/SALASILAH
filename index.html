@@ -333,15 +333,19 @@
     justify-content:center;
     gap:0;
     padding:8px 10px;
+    width:max-content;
+    max-width:none;
     background:color-mix(in oklab, var(--card) 92%, #ffffff 8%);
     border-radius:20px;
     border:1px dashed color-mix(in oklab, var(--line) 45%, #ffffff 55%);
     box-shadow:0 8px 18px -16px rgba(0,0,0,.35);
-    width:max-content;
-    max-width:none;
   }
-  .couple .node{margin:0 4px;flex:0 0 auto;}
-  .couple .couple-link{flex:0 0 auto;}
+  .couple > *{flex:0 0 auto !important;}
+  .couple .node{margin:0 4px; flex:0 0 auto !important;}
+  .couple .couple-link{flex:0 0 auto !important;}
+  ul.tree li > .branch{display:flex;justify-content:center;position:relative;width:max-content;margin:0 auto;}
+  ul.tree li{overflow:visible;}
+  .trees-wrap, .tree-block{overflow-x:auto;}
   /* === COUPLE-LINK: susunan mendatar + nombor perkahwinan Roman === */
   .couple-link{
     display:flex;flex-direction:column;align-items:center;justify-content:center;
