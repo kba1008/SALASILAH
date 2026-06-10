@@ -326,15 +326,22 @@
   /* === COUPLE (suami + isteri) === */
   /* === COUPLE row: semua pasangan dalam SATU BARIS mendatar === */
   .couple{
-    display:inline-flex;flex-direction:row;flex-wrap:nowrap;
-    align-items:flex-start;gap:0;
+    display:flex !important;
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
+    align-items:center;
+    justify-content:center;
+    gap:0;
     padding:8px 10px;
     background:color-mix(in oklab, var(--card) 92%, #ffffff 8%);
     border-radius:20px;
     border:1px dashed color-mix(in oklab, var(--line) 45%, #ffffff 55%);
     box-shadow:0 8px 18px -16px rgba(0,0,0,.35);
+    width:max-content;
+    max-width:none;
   }
-  .couple .node{margin:0 4px;}
+  .couple .node{margin:0 4px;flex:0 0 auto;}
+  .couple .couple-link{flex:0 0 auto;}
   /* === COUPLE-LINK: susunan mendatar + nombor perkahwinan Roman === */
   .couple-link{
     display:flex;flex-direction:column;align-items:center;justify-content:center;
