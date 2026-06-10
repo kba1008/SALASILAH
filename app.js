@@ -6,7 +6,7 @@
    - Fungsi lain tidak diubah
 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbysUJBqnzfnVTnvuw4jGTYBJuF8x_zIoWiCffHgsy4lgsvatfnjdhJUhzyOnoxhDEcx/exec;
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
@@ -656,6 +656,7 @@ function viewProfile(n){
         <div class="text-xs font-bold mb-2" style="color:var(--gold-dark);letter-spacing:.06em;text-transform:uppercase;">
           💍 Sejarah Perkahwinan (${sp.length} pasangan)
         </div>
+        <div class="spouse-cards-row">
         ${sp.map((s,i)=>{
           const spGender = s.gender || oppositeGender(n.gender);
           const spPhoto = fixPhoto(s.photo) || placeholder(spGender);
@@ -699,6 +700,7 @@ function viewProfile(n){
             </div>`:""}
           </div>`;
         }).join("")}
+        </div>
       </div>`;
   }
 
