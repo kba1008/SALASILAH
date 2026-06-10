@@ -331,6 +331,8 @@ function spouseGenderLabel(s){
   if(s.gender==="L") return "Lelaki";
   return "Tidak dinyatakan";
 }
+
+const ROMAN = ['I','II','III','IV','V','VI','VII','VIII','IX','X'];
 function spouseOrdinal(n){
   const map={1:"Pertama",2:"Kedua",3:"Ketiga",4:"Keempat",5:"Kelima",6:"Keenam",7:"Ketujuh",8:"Kelapan",9:"Kesembilan",10:"Kesepuluh"};
   return map[n]||("Ke-"+n);
@@ -428,9 +430,28 @@ function renderNode(n){
   /* v3.0: setiap pasangan = kad berasingan dalam pokok */
   const spouseOnLeft = n.gender === "P";
   const buildSpouseBox = (sp, idx) => {
+    const spStatus = sp.status === "cerai" ? " divorced" : sp.status === "mati" ? " deceased" : "";
     const link = document.createElement("div");
-    link.className = "couple-link";
-    link.title = "Pasangan "+spouseOrdinal(sp.order||idx+1);
+    link.className = "couple-link" + spStatus;
+    const ordNum = sp.order || idx + 1;
+    const romanLabel = ROMAN[(ordNum - 1)] || ("ke-" + ordNum);
+    link.title = "Perkahwinan " + romanLabel;
+    // Nombor perkahwinan Roman (I, II, III…)
+    const ordEl = document.createElement("div");
+    ordEl.className = "marriage-ordinal";
+    ordEl.textContent = romanLabel;
+    link.appendChild(ordEl);
+    // Garis penghubung
+    const lineEl = document.createElement("div");
+    lineEl.className = "marriage-line";
+    link.appendChild(lineEl);
+    // Label status (cerai / almarhum)
+    if (sp.status === "cerai" || sp.status === "mati") {
+      const stEl = document.createElement("div");
+      stEl.className = "marriage-status-tag";
+      stEl.textContent = sp.status === "cerai" ? "cerai" : "almarhum";
+      link.appendChild(stEl);
+    }
 
     const el = document.createElement("div");
     el.className = "node spouse"+(sp.status==="cerai"?" divorced":"")+(sp.status==="mati"?" deceased":"");
