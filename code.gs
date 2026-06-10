@@ -1,9 +1,16 @@
 /**
- * SALASILAH KELUARGA ELIT — Apps Script Backend v3.0 multi-spouse-cards
- * PERUBAHAN v3.0:
- *   - validateSpouseRule_() kini menggunakan _loadSpouses_() untuk semak semua baris spouseOf
- *   - Setiap pasangan SENTIASA disimpan sebagai baris BERASINGAN dalam Google Sheet (spouseOf/spouseOrder)
- *   - Fungsi lain tidak diubah
+ * SALASILAH KELUARGA ELIT — Apps Script Backend v3.1 spouse-groups
+ * PERUBAHAN v3.1:
+ *   - Tambah konsep spouseGroupId: ID khas yang mengumpulkan semua pasangan satu orang
+ *       contoh: semua 10 isteri Pak Awang -> spouseGroupId = "SG-<idPakAwang>"
+ *       contoh: semua bekas suami Aminah  -> spouseGroupId = "SG-<idAminah>"
+ *   - Tambah coupleId pada baris pasangan & anak: "<ownerId>::<spouseId>"
+ *       Anak boleh disimpan dengan coupleId supaya tahu dia dari pasangan mana
+ *   - Tambah field "side" pada output pasangan:
+ *       owner lelaki (L)  -> pasangan duduk di "right"  (sebelah kanan)
+ *       owner perempuan(P)-> pasangan duduk di "left"   (sebelah kiri)
+ *   - getTree() kini pulangkan spouseGroups[ownerId] = { groupId, side, members[] }
+ *   - Header SALASILAH bertambah: spouseGroupId, coupleId  (auto-migrasi)
  *
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
  *   Execute as: Me   |   Access: Anyone
@@ -21,8 +28,8 @@ const DRIVE_FOLDER  = "SalasilahImages";
 const MASTER_USER = "admin";
 const MASTER_PASS = "101010";
 
-// v3.0: spouseOf/spouseOrder = setiap pasangan disimpan sebagai baris berasingan
-const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","spouseOf","spouseOrder","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
+// v3.1: tambah spouseGroupId (kumpulan pasangan) + coupleId (anak ikut pasangan mana)
+const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","spouseOf","spouseOrder","spouseGroupId","coupleId","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned","approved","approvedBy","approvedAt"];
 const NOTE_HEADERS = ["id","text","x","y","font","size","color","pinned","pending","createdBy","createdAt","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 
@@ -100,11 +107,11 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v3.0 multi-spouse-cards"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v3.1 spouse-groups"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
 /* TURBO: ensureInit cache */
-const _INIT_VERSION = "v3.0-multi-spouse-cards";
+const _INIT_VERSION = "v3.1-spouse-groups";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -125,7 +132,7 @@ function ensureInit_() {
 }
 
 /* TURBO: cache hasil getTree 30 saat */
-const _TREE_CACHE_KEY = "tree:v3";
+const _TREE_CACHE_KEY = "tree:v31";
 const _TREE_CACHE_TTL = 30;
 function _treeCacheGet_(authed){
   try {
@@ -275,7 +282,15 @@ const ACTIONS = {
     });
     let nodes = allNodes
       .filter(n=>!n.spouseOf)
-      .map(n=>({ ...n, spouses: mergeSpouseLists_(n.spouses || [], spouseGroups[String(n.id)] || [], n) }));
+      .map(n=>{
+        const spouses = mergeSpouseLists_(n.spouses || [], spouseGroups[String(n.id)] || [], n);
+        return {
+          ...n,
+          spouses,
+          spouseGroupId: spouseGroupIdFor_(n.id),
+          spouseSide: spouseSideFor_(n.gender),
+        };
+      });
     let notes = noteRows.map(normalizeNoteClient_);
 
     if (canSeePending) {
@@ -290,6 +305,23 @@ const ACTIONS = {
         .map(n=>({ ...n, pending:false, pendingDelete:false, pendingItems:[] }));
     }
 
+    // v3.1: bina ringkasan kumpulan pasangan untuk kegunaan frontend
+    //   spouseGroupsOut[ownerId] = { groupId, ownerId, side, members:[{id,name,order,coupleId,...}] }
+    const spouseGroupsOut = {};
+    nodes.forEach(n=>{
+      if (!n.spouses || !n.spouses.length) return;
+      spouseGroupsOut[String(n.id)] = {
+        groupId: spouseGroupIdFor_(n.id),
+        ownerId: String(n.id),
+        ownerGender: n.gender || "",
+        side: spouseSideFor_(n.gender),
+        members: n.spouses.map(s=>({
+          id: s.id, name: s.name, order: s.order, gender: s.gender,
+          status: s.status, photo: s.photo, coupleId: s.coupleId,
+        })),
+      };
+    });
+
     const users = readSheet_(SHEET_USERS).map(u=>({
       username: u.username, fullname: u.fullname||"", role: u.role||"ahli",
       fatherName: u.fatherName||"", motherName: u.motherName||"",
@@ -298,7 +330,7 @@ const ACTIONS = {
       approved: isUserApproved_(u),
     }));
 
-    const _out = { nodes, notes, users };
+    const _out = { nodes, notes, users, spouseGroups: spouseGroupsOut };
     _treeCachePut_(!!auth, _out);
     return _out;
   },
@@ -600,6 +632,8 @@ function normalizeNodeClient_(r){
   return {
     ...r,
     spouses,
+    spouseGroupId: r.spouseGroupId || (r.spouseOf ? spouseGroupIdFor_(r.spouseOf) : ""),
+    coupleId: r.coupleId || "",
     pending: toBool_(r.pending),
     hanging: toBool_(r.hanging),
     pendingDelete: false,
@@ -706,11 +740,14 @@ function applyPendingPreviewToNote_(note, items){
 function mergeSpouseLists_(legacySpouses, spouseRows, owner){
   const list = [];
   const seen = {};
+  const groupId = spouseGroupIdFor_(owner.id);
+  const side = spouseSideFor_(owner.gender);
   (Array.isArray(spouseRows) ? spouseRows : []).forEach((r,i)=>{
     const id = String(r.id || "");
     if (id) seen[id] = true;
+    const sid = r.id || Utilities.getUuid();
     list.push({
-      id: r.id || Utilities.getUuid(),
+      id: sid,
       name: r.name || "",
       nickname: r.nickname || "",
       gender: r.gender || oppositeGender_(owner.gender),
@@ -722,6 +759,10 @@ function mergeSpouseLists_(legacySpouses, spouseRows, owner){
       deathplace: r.deathplace || "",
       notes: r.notes || "",
       order: Number(r.spouseOrder) > 0 ? Number(r.spouseOrder) : (Number(r.order) > 0 ? Number(r.order) : i + 1),
+      spouseGroupId: r.spouseGroupId || groupId,
+      coupleId: r.coupleId || coupleIdFor_(owner.id, sid),
+      side: side,
+      ownerId: String(owner.id || ""),
     });
   });
   (Array.isArray(legacySpouses) ? legacySpouses : []).forEach((s,i)=>{
@@ -732,6 +773,10 @@ function mergeSpouseLists_(legacySpouses, spouseRows, owner){
       id,
       order: Number(s.order) > 0 ? Number(s.order) : i + 1,
       gender: s.gender || oppositeGender_(owner.gender),
+      spouseGroupId: groupId,
+      coupleId: coupleIdFor_(owner.id, id),
+      side: side,
+      ownerId: String(owner.id || ""),
     });
   });
   list.sort((a,b)=>(a.order||99)-(b.order||99));
@@ -794,6 +839,30 @@ function oppositeGender_(gender){
   if (g === "P") return "L";
   return "";
 }
+/**
+ * spouseGroupIdFor_(ownerId): ID khas yang mengumpulkan SEMUA pasangan satu orang.
+ *   Pak Awang (id=ABC, lelaki) ada 10 isteri  -> setiap isteri spouseGroupId = "SG-ABC"
+ *   Aminah   (id=XYZ, perempuan) ada 3 bekas suami -> setiap suami spouseGroupId = "SG-XYZ"
+ */
+function spouseGroupIdFor_(ownerId){ return ownerId ? ("SG-" + String(ownerId)) : ""; }
+/**
+ * coupleIdFor_(ownerId, spouseId): ID khas satu pasangan tertentu (pemilik + 1 pasangan).
+ *   Anak dari pasangan Pak Awang × Mak Limah -> coupleId = "ABC::DEF"
+ *   Berguna untuk frontend kumpul anak di bawah pasangan yang tepat.
+ */
+function coupleIdFor_(ownerId, spouseId){
+  if (!ownerId || !spouseId) return "";
+  return String(ownerId) + "::" + String(spouseId);
+}
+/**
+ * spouseSideFor_(ownerGender): "right" (kanan) untuk owner lelaki, "left" (kiri) untuk owner perempuan.
+ * Frontend guna untuk paparkan isteri sebelah kanan suami, dan bekas suami sebelah kiri isteri.
+ */
+function spouseSideFor_(ownerGender){
+  const g = String(ownerGender || "").toUpperCase();
+  if (g === "P") return "left";
+  return "right";
+}
 function normalizeSpousePayload_(p, photoUrl){
   return {
     id: p.id || "",
@@ -845,6 +914,8 @@ function addSpouse_(parentId, p, photoUrl, auth){
     deathplace: p.deathplace || "",
     spouseOf: parentId,
     spouseOrder: order,
+    spouseGroupId: spouseGroupIdFor_(parentId),
+    coupleId: coupleIdFor_(parentId, id),
     photo: p.photoUrl || photoUrl || "",
     notes: p.notes || "",
     createdBy: auth.username,
@@ -954,12 +1025,16 @@ function migrateSpousesJsonToRows_(){
       const spouses = _loadSpouses_(n, rows).filter(s=>!rows.some(r=>String(r.id||"")===String(s.id||"") || (String(r.spouseOf||"")===String(n.id||"") && String(r.name||"").trim()===String(s.name||"").trim() && Number(r.spouseOrder||0)===Number(s.order||0))));
       spouses.forEach((s,i)=>{
         const order = nextFreeSpouseOrder_(readSheet_(SHEET_TREE), n.id, Number(s.order)||i+1, "");
+        const sid = s.id || Utilities.getUuid();
         appendNodeRow_(sh, {
-          id: s.id || Utilities.getUuid(),
+          id: sid,
           parentId: "", no: sh.getLastRow(), name: s.name || "", nickname: s.nickname || "",
           gender: s.gender || oppositeGender_(n.gender), status: s.status || "hidup",
           birth: s.birth || "", death: s.death || "", birthplace: s.birthplace || "", deathplace: s.deathplace || "",
-          spouseOf: n.id, spouseOrder: order, photo: s.photo || "", notes: s.notes || "",
+          spouseOf: n.id, spouseOrder: order,
+          spouseGroupId: spouseGroupIdFor_(n.id),
+          coupleId: coupleIdFor_(n.id, sid),
+          photo: s.photo || "", notes: s.notes || "",
           createdBy: n.createdBy || "SYSTEM", createdAt: n.createdAt || new Date(), pending: false,
           lastEditBy: n.lastEditBy || n.createdBy || "SYSTEM", lastEditAt: n.lastEditAt || new Date(), approvedBy: n.approvedBy || "SYSTEM", approvedAt: n.approvedAt || new Date(),
         });
@@ -969,6 +1044,13 @@ function migrateSpousesJsonToRows_(){
         setCellByHeader_(sh, n._row, "spouseName", "");
         setCellByHeader_(sh, n._row, "spousePhoto", "");
       }
+    });
+    // Backfill: pastikan SEMUA baris pasangan sedia ada juga ada spouseGroupId + coupleId
+    const rows2 = readSheet_(SHEET_TREE);
+    rows2.forEach(r=>{
+      if (!r.spouseOf) return;
+      if (!r.spouseGroupId) setCellByHeader_(sh, r._row, "spouseGroupId", spouseGroupIdFor_(r.spouseOf));
+      if (!r.coupleId)      setCellByHeader_(sh, r._row, "coupleId",      coupleIdFor_(r.spouseOf, r.id));
     });
   } finally {
     try { lock.releaseLock(); } catch(e) {}
@@ -1068,6 +1150,7 @@ function insertNode_(p, photoUrl, auth, pending) {
     birth: p.birth||"", death: p.death||"",
     birthplace: p.birthplace||"", deathplace: p.deathplace||"",
     spouseIndex: p.spouseIndex||"",
+    coupleId: p.coupleId || "",
     photo: photoUrl||"", notes: p.notes||"",
     createdBy: auth.username,
     pending: !!pending,
@@ -1084,7 +1167,7 @@ function applyNodeUpdate_(p, photoUrl, auth) {
   const map = {
     name:p.name, nickname:p.nickname, gender:p.gender, status:p.status,
     birth:p.birth, death:p.death, birthplace:p.birthplace, deathplace:p.deathplace,
-    notes:p.notes, spouseIndex:p.spouseIndex,
+    notes:p.notes, spouseIndex:p.spouseIndex, coupleId:p.coupleId,
     lastEditBy: auth.username, lastEditAt: new Date(),
   };
   if (photoUrl) map.photo = photoUrl;
