@@ -1,4 +1,4 @@
-const V="salasilah-v12";
+const V="salasilah-v15-sessionfix";
 const ASSETS=["./","./index.html","./app.js","./manifest.json"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==V).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});

@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.6 */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxortYMEtDPv7Px5DGHpP_E50IJjyN-34Lz1rBrNdHsdL_i2WkE_yMg67RyEJ5Q-xue/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwWZFvygkW5-2Th9xt1w66JiioEsHhD-3gpAm0QclVxTRtugftnTvgx9HAxcty_Ma8t/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
@@ -402,76 +402,60 @@ function renderNode(n){
   const couple = document.createElement("div");
   couple.className = "couple"+(n.pending?" pending-family":"");
   couple.appendChild(card(n, parents));
-  branch.appendChild(couple);
-
-  li.appendChild(branch);
   const sps = getSpouses(n);
-  const kids = State.nodes.filter(x=>x.parentId===n.id);
+  sps.forEach((sp,idx)=>{
+    const link = document.createElement("div");
+    link.className = "couple-link";
+    link.title = "Pasangan "+spouseOrdinal(sp.order||idx+1);
+    couple.appendChild(link);
 
-  // Kumpulkan anak ikut pasangan (spouseIndex). Key "0" = belum ditandakan.
-  const kidsByKey = {};
-  kids.forEach(k=>{ const key = String(k.spouseIndex||"0"); (kidsByKey[key]=kidsByKey[key]||[]).push(k); });
-
-  // Bina baris anak: setiap pasangan = SATU kad berasingan dengan anak-anaknya bercabang di bawah.
-  const cu = document.createElement("ul");
-  cu.className = "children-row";
-
-  const buildSpouseCard = (sp, idx) => {
     const el = document.createElement("div");
     el.className = "node spouse"+(sp.status==="cerai"?" divorced":"")+(sp.status==="mati"?" deceased":"");
     const stLabel = sp.status==="mati"?"†":(sp.status==="cerai"?"⚊":"");
-    const relLabel = n.gender==="L" ? "Isteri" : (n.gender==="P" ? "Suami" : "Pasangan");
-    el.innerHTML = `<img src="${fixPhoto(sp.photo)||placeholder(n.gender==='L'?'P':'L')}" onerror="this.src='${placeholder(n.gender==='L'?'P':'L')}'"/>
+    el.innerHTML=`<img src="${fixPhoto(sp.photo)||placeholder(n.gender==='L'?'P':'L')}" onerror="this.src='${placeholder(n.gender==='L'?'P':'L')}'"/>
       <div class="name" dir="auto">${escape(sp.name)} ${stLabel}</div>
-      <div class="meta">${relLabel} ${spouseOrdinal(sp.order||idx+1)} • ${spouseStatusLabel(sp)}</div>
-      <div class="meta parentage" dir="auto">${n.gender==="L"?"Suami":(n.gender==="P"?"Isteri":"Pasangan")}: ${escape(n.name)}</div>`;
+      <div class="meta">Pasangan ${spouseOrdinal(sp.order||idx+1)} • ${spouseStatusLabel(sp)}</div>`;
     el.addEventListener("click",e=>{e.stopPropagation();showSpouseProfile(n, sp);});
-    return el;
-  };
+    couple.appendChild(el);
+  });
+  branch.appendChild(couple);
 
-  if(sps.length){
-    sps.forEach((sp, idx)=>{
-      const key = String(sp.order||idx+1);
-      const grpLi = document.createElement("li");
-      grpLi.className = "kid-group";
-
-      const spBranch = document.createElement("div");
-      spBranch.className = "branch";
-      const spCouple = document.createElement("div");
-      spCouple.className = "couple"+(n.pending?" pending-family":"");
-      spCouple.appendChild(buildSpouseCard(sp, idx));
-      spBranch.appendChild(spCouple);
-      grpLi.appendChild(spBranch);
-
-      const spKids = kidsByKey[key] || [];
-      if(spKids.length){
+  li.appendChild(branch);
+  const kids = State.nodes.filter(x=>x.parentId===n.id);
+  if(kids.length){
+    const cu = document.createElement("ul");
+    cu.className="children-row";
+    if(sps.length>1){
+      const groups = {};
+      kids.forEach(k=>{ const key = k.spouseIndex || "0"; (groups[key]=groups[key]||[]).push(k); });
+      Object.keys(groups).sort().forEach(key=>{
+        const grpLi = document.createElement("li");
+        grpLi.className="kid-group";
+        const lbl = document.createElement("div");
+        lbl.className = "kid-group-label";
+        if(key==="0") lbl.textContent = "Tidak ditandakan";
+        else {
+          const sp = sps.find(s=>String(s.order)===String(key)) || sps[Number(key)-1];
+          if(sp){
+            const father = n.gender==="L" ? n.name : sp.name;
+            const mother = n.gender==="P" ? n.name : sp.name;
+            lbl.textContent = `Bapa: ${father} • Ibu: ${mother}`;
+          } else {
+            lbl.textContent = `Pasangan ${spouseOrdinal(key)}`;
+          }
+        }
+        grpLi.appendChild(lbl);
         const sub = document.createElement("ul");
         sub.className = "children-row";
-        spKids.forEach(k=>sub.appendChild(renderNode(k)));
+        groups[key].forEach(k=>sub.appendChild(renderNode(k)));
         grpLi.appendChild(sub);
-      }
-      cu.appendChild(grpLi);
-    });
-
-    // Anak yang belum ditandakan pasangan — letak di bawah ibu/bapa utama tanpa kad pasangan
-    if(kidsByKey["0"] && kidsByKey["0"].length){
-      const grpLi = document.createElement("li");
-      grpLi.className = "kid-group";
-      const lbl = document.createElement("div");
-      lbl.className = "kid-group-label";
-      lbl.textContent = "Anak (pasangan belum ditandakan)";
-      grpLi.appendChild(lbl);
-      const sub = document.createElement("ul");
-      sub.className = "children-row";
-      kidsByKey["0"].forEach(k=>sub.appendChild(renderNode(k)));
-      grpLi.appendChild(sub);
-      cu.appendChild(grpLi);
+        cu.appendChild(grpLi);
+      });
+    } else {
+      kids.forEach(k=>cu.appendChild(renderNode(k)));
     }
-  } else {
-    kids.forEach(k=>cu.appendChild(renderNode(k)));
+    li.appendChild(cu);
   }
-
-  if(cu.children.length) li.appendChild(cu);
   return li;
 }
 function card(n, parents = getChildParents(n)){

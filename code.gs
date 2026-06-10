@@ -1,5 +1,5 @@
 /**
- * SALASILAH KELUARGA ELIT — Apps Script Backend v2.6
+ * SALASILAH KELUARGA ELIT — Apps Script Backend v2.8 sessionfix
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
  *   Execute as: Me   |   Access: Anyone
  * Pertama kali: Jalankan INITIALIZE_SYSTEM() secara manual sekali.
@@ -182,15 +182,15 @@ const ACTIONS = {
         appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date(), approved:true, approvedBy:"SYSTEM", approvedAt:new Date() });
         u = findUserBy_("username", MASTER_USER);
       }
-      const token = genToken_();
-      updateUserField_(u.row, "token", token);
+      const token = u.token ? String(u.token) : genToken_();
+      if (!u.token) updateUserField_(u.row, "token", token);
       return { username: MASTER_USER, fullname:"Master Admin", role: "admin", no: 0, token, isMaster:true, approved:true };
     }
     const u = findUserBy_("username", p.username);
     if (!u || u.passwordHash !== hash_(p.password)) throw new Error("Nama samaran atau password salah");
     if (u.banned === true || u.banned === "TRUE" || u.banned === "true" || u.banned === 1) throw new Error("Akaun anda telah disekat oleh admin. Hubungi Master Admin.");
-    const token = genToken_();
-    updateUserField_(u.row, "token", token);
+    const token = u.token ? String(u.token) : genToken_();
+    if (!u.token) updateUserField_(u.row, "token", token);
     return {
       username: u.username,
       fullname: u.fullname || "",
