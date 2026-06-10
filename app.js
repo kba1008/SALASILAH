@@ -401,13 +401,14 @@ function renderNode(n){
 
   const couple = document.createElement("div");
   couple.className = "couple"+(n.pending?" pending-family":"");
-  couple.appendChild(card(n, parents));
   const sps = getSpouses(n);
-  sps.forEach((sp,idx)=>{
+  // Suami/isteri di kanan untuk lelaki; di kiri untuk perempuan.
+  // Setiap pasangan adalah kotak profile berasingan (tidak digabungkan).
+  const spouseOnLeft = n.gender === "P";
+  const buildSpouseBox = (sp, idx) => {
     const link = document.createElement("div");
     link.className = "couple-link";
     link.title = "Pasangan "+spouseOrdinal(sp.order||idx+1);
-    couple.appendChild(link);
 
     const el = document.createElement("div");
     el.className = "node spouse"+(sp.status==="cerai"?" divorced":"")+(sp.status==="mati"?" deceased":"");
@@ -416,8 +417,25 @@ function renderNode(n){
       <div class="name" dir="auto">${escape(sp.name)} ${stLabel}</div>
       <div class="meta">Pasangan ${spouseOrdinal(sp.order||idx+1)} • ${spouseStatusLabel(sp)}</div>`;
     el.addEventListener("click",e=>{e.stopPropagation();showSpouseProfile(n, sp);});
-    couple.appendChild(el);
-  });
+    return { link, el };
+  };
+  if(spouseOnLeft){
+    // Susun dari kiri: pasangan order tertinggi paling kiri, terkecil paling hampir dengan pemilik
+    [...sps].slice().reverse().forEach((sp)=>{
+      const idx = sps.indexOf(sp);
+      const { link, el } = buildSpouseBox(sp, idx);
+      couple.appendChild(el);
+      couple.appendChild(link);
+    });
+    couple.appendChild(card(n, parents));
+  } else {
+    couple.appendChild(card(n, parents));
+    sps.forEach((sp, idx)=>{
+      const { link, el } = buildSpouseBox(sp, idx);
+      couple.appendChild(link);
+      couple.appendChild(el);
+    });
+  }
   branch.appendChild(couple);
 
   li.appendChild(branch);
