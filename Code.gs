@@ -79,10 +79,10 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.13 spouse-repair"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.14 sync-guard"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.13-spouse-repair";
+const _INIT_VERSION = "v2.14-sync-guard";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -212,7 +212,7 @@ const ACTIONS = {
     if (!u) throw new Error("Profil pengguna tidak dijumpai");
     return normalizeUserClient_(u);
   },
-  ping() { return { ok:true, t: Date.now() }; },
+  ping() { return { ok:true, t: Date.now(), version: _INIT_VERSION }; },
   getTree(_, auth) {
     const _cached = _treeCacheGet_(!!auth);
     if (_cached) return _cached;
@@ -262,7 +262,7 @@ const ACTIONS = {
       no: isUserApproved_(u) ? (u.no||"") : "", approved: isUserApproved_(u),
     }));
 
-    const _out = { nodes, notes, users };
+    const _out = { nodes, notes, users, apiVersion: _INIT_VERSION };
     _treeCachePut_(!!auth, _out);
     return _out;
   },
@@ -755,6 +755,12 @@ function repairSpouseLinks_(rows){
       for (var i = 0; i < fixes.length; i++) { if (String(fixes[i].row.id) === String(cand.id)) return; }
       fixes.push({ row: cand, ownerId: String(child.parentId) });
     });
+    // Baiki juga baris pasangan yang tersimpan dengan parentId DAN spouseOf serentak
+    rows.forEach(function(r){
+      if (!r.spouseOf || !r.parentId) return;
+      for (var i = 0; i < fixes.length; i++) { if (String(fixes[i].row.id) === String(r.id)) return; }
+      fixes.push({ row: r, ownerId: String(r.spouseOf) });
+    });
     if (!fixes.length) return rows;
     const sh = sheet_(SHEET_TREE);
     fixes.forEach(function(f){
@@ -1012,12 +1018,16 @@ function insertNode_(p, photoUrl, auth, pending) {
   const sh = sheet_(SHEET_TREE);
   const id = p.id || Utilities.getUuid();
   const no = sh.getLastRow();
+  // BELT & BRACES: jika payload sebenarnya pasangan, jangan sekali-kali simpan sebagai anak
+  const isSpouseRow = !!p.spouseOf || p.relation === "spouse";
   appendNodeRow_(sh, {
-    id, parentId: p.parentId||"", no,
+    id, parentId: isSpouseRow ? "" : (p.parentId||""), no,
     name: p.name, nickname: p.nickname||"",
     gender: p.gender||"L", status: p.status||"hidup",
     birth: p.birth||"", death: p.death||"",
     birthplace: p.birthplace||"", deathplace: p.deathplace||"",
+    spouseOf: isSpouseRow ? String(p.spouseOf || p.parentId || "") : "",
+    spouseOrder: isSpouseRow ? (Number(p.spouseOrder)||1) : "",
     spouseIndex: p.spouseIndex||"",
     photo: photoUrl||"", notes: p.notes||"",
     createdBy: auth.username,

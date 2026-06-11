@@ -1,6 +1,7 @@
-/* Salasilah Keluarga Elit — app.js v2.13 spouse-repair */
+/* Salasilah Keluarga Elit — app.js v2.14 sync-guard */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzEqMh7_x83kJQzjc73UAMB2GjXInlYx-3OF-0mTIt4563jvuGyuQ45tO7O745e7HQv/exec";
+const EXPECTED_API_VERSION = "v2.14-sync-guard";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
@@ -128,8 +129,32 @@ function closeModal(id){$("#"+id).classList.add("hidden");$("#"+id).classList.re
 window.closeModal = closeModal;
 
 /* ---------- API ---------- */
+/* PEMETAAN ID: jika pelayan lama menjana ID berbeza utk ahli baru,
+   semua operasi seterusnya dalam baris gilir akan dipetakan ke ID sebenar. */
+const IdMap = {};
+function mapId(v){ return (v && IdMap[v]) ? IdMap[v] : v; }
+function remapPayloadIds(p){
+  if(!p || typeof p !== "object") return p;
+  ["id","parentId","spouseOf","spouseIndex","newParentId"].forEach(k=>{
+    if(p[k]) p[k] = mapId(p[k]);
+  });
+  return p;
+}
+function registerIdMap(oldId, newId){
+  if(!oldId || !newId || String(oldId)===String(newId)) return;
+  IdMap[oldId] = newId;
+  (State.nodes||[]).forEach(n=>{
+    if(String(n.id)===String(oldId)) n.id = newId;
+    if(String(n.parentId||"")===String(oldId)) n.parentId = newId;
+    if(String(n.spouseOf||"")===String(oldId)) n.spouseOf = newId;
+    if(String(n.spouseIndex||"")===String(oldId)) n.spouseIndex = newId;
+  });
+}
+
 async function api(action, payload={}){
   const auth = getAuthPayload();
+  remapPayloadIds(payload);
+  const sentId = payload && payload.id;
   const body = JSON.stringify({action, payload, auth});
   let res, raw="";
   try {
@@ -150,7 +175,25 @@ async function api(action, payload={}){
     }
     throw e;
   }
+  if(action === "saveNode" && payload && payload.isNew && json.data && json.data.id && sentId && String(json.data.id) !== String(sentId)){
+    registerIdMap(sentId, json.data.id);
+  }
   return json.data;
+}
+
+/* AMARAN VERSI PELAYAN: jika Code.gs di Apps Script belum di-deploy semula */
+function checkApiVersion(serverVersion){
+  let bar = document.getElementById("api-version-warn");
+  if(serverVersion === EXPECTED_API_VERSION){ if(bar) bar.remove(); return; }
+  if(!bar){
+    bar = document.createElement("div");
+    bar.id = "api-version-warn";
+    bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fef2f2;padding:10px 14px;font-size:13px;font-weight:600;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.4)";
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = "⚠ Pelayan (Code.gs) masih versi <b>" + (serverVersion || "LAMA / tidak diketahui") +
+    "</b>. Sila buka Apps Script, gantikan Code.gs dengan <b>" + EXPECTED_API_VERSION +
+    "</b> dan <b>Deploy &gt; Manage deployments &gt; Edit &gt; New version</b>. Selagi tidak deploy, susunan selepas SAVE tidak akan sama dengan draf.";
 }
 
 /* ---------- Optimistic save helper ---------- */
@@ -998,6 +1041,7 @@ $("#form-spouse").addEventListener("submit", async e=>{
       birth: fd.get("birth")||"", birthplace: fd.get("birthplace")||"",
       spouseDeath: fd.get("death")||"", deathplace: fd.get("deathplace")||"",
       notes: fd.get("notes")||"", spouseOrder: fd.get("spouseOrder")||"",
+      spouseOf: parent.id,
     };
     if(photo) payload.photo = photo;
     
@@ -1550,6 +1594,7 @@ async function refresh(){
     State.nodes = d.nodes||[];
     State.notes = d.notes||[];
     State.users = d.users||[];
+    checkApiVersion(d.apiVersion || "");
     if(State.user) await loadMyProfile(true);
     buildTree();
     setTimeout(centerOnTree, 60);

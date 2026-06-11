@@ -365,10 +365,10 @@
   <div id="err-stack"></div>
   <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] hidden glass px-4 py-2 rounded-full text-sm font-bold shadow-xl"></div>
 
-  <script src="app.js?v=212-drag-pos"></script>
+  <script src="app.js?v=214-sync-guard"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=212-drag-pos').then(reg => reg.update()).catch(() => {});
+      navigator.serviceWorker.register('sw.js?v=214-sync-guard').then(reg => reg.update()).catch(() => {});
     }
   </script>
 </body>
