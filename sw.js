@@ -1,8 +1,8 @@
-const V = "salasilah-v29-login-lock-cachefix";
+const V = "salasilah-v210-strict-spouses";
 const ASSETS = [
   "./",
   "./index.html",
-  "./app.js?v=29-login-lock-cachefix",
+  "./app.js?v=210-strict-spouses",
   "./manifest.json"
 ];
 

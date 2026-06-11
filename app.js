@@ -1,6 +1,6 @@
-/* Salasilah Keluarga Elit — app.js v2.9 login-lock-cachefix */
+/* Salasilah Keluarga Elit — app.js v2.10 strict-spouses */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzp6OFn36uMIjjowgu42XBQHmMuZv8mCC_9tpgpfNuc1R4aR2gLeRS6l6HyQgBvERxP/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
@@ -475,15 +475,21 @@ function renderNode(n){
   if(kids.length){
     const cu = document.createElement("ul");
     cu.className="children-row";
-    if(sps.length>1){
+    // GROUPING LOGIC ENFORCEMENT: Menekankan anak berada di bawah gabungan ibu bapa sah
+    if(sps.length>=1){
       const groups = {};
-      kids.forEach(k=>{ const key = k.spouseIndex || "0"; (groups[key]=groups[key]||[]).push(k); });
+      kids.forEach(k=>{
+        let key = k.spouseIndex;
+        if(!key && sps.length === 1) key = sps[0].id; // Fallback jika hanya 1 isteri/suami
+        if(!key) key = "0";
+        (groups[key]=groups[key]||[]).push(k);
+      });
       Object.keys(groups).sort().forEach(key=>{
         const grpLi = document.createElement("li");
         grpLi.className="kid-group";
         const lbl = document.createElement("div");
         lbl.className = "kid-group-label";
-        if(key==="0") lbl.textContent = "Tidak ditandakan";
+        if(key==="0") lbl.textContent = "Tidak ditandakan (Hubungan samar)";
         else {
           const sp = sps.find(s=>String(s.id)===String(key)) || sps.find(s=>String(s.order)===String(key)) || sps[Number(key)-1];
           if(sp){
@@ -778,15 +784,17 @@ function openNodeEditor(node, parentId=null, relation="child", parentNode=null){
     const sps = getSpouses(pNode);
     if(sps.length>=1){
       const lbl = document.createElement("label");
-      lbl.className = "text-xs block"; lbl.style.color = "var(--ink-soft)";
-      lbl.textContent = "Anak daripada pasangan yang mana?";
+      lbl.className = "text-xs block font-bold mt-2"; lbl.style.color = "var(--rose)";
+      lbl.textContent = "Ibu/Bapa dari pasangan yang mana? (Wajib pilih)";
       const sel = document.createElement("select");
-      sel.className = "input"; sel.name = "spouseIndex";
-      sel.innerHTML = `<option value="">— Tidak ditandakan —</option>` +
+      sel.className = "input mt-1"; sel.name = "spouseIndex"; sel.required = true;
+      sel.innerHTML = `<option value="">— Sila Pilih Pasangan Sah —</option>` +
         sps.map((s,i)=>`<option value="${escape(s.id||String(s.order||i+1))}">${spouseOrdinal(s.order||i+1)}: ${escape(s.name)}</option>`).join("");
       if(node?.spouseIndex){
         const linkedSpouse = sps.find(s=>String(s.id)===String(node.spouseIndex)) || sps.find(s=>String(s.order)===String(node.spouseIndex));
         sel.value = String(linkedSpouse?.id || node.spouseIndex);
+      } else if (sps.length === 1) {
+        sel.value = sps[0].id; // Auto select if only 1 spouse
       }
       wrap.appendChild(lbl); wrap.appendChild(sel);
     }

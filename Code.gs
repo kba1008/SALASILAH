@@ -1,5 +1,5 @@
 /**
- * SALASILAH KELUARGA ELIT — Apps Script Backend v2.9 login-lock-cachefix
+ * SALASILAH KELUARGA ELIT — Apps Script Backend v2.10 strict-spouses
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
  * Execute as: Me   |   Access: Anyone
  * Pertama kali: Jalankan INITIALIZE_SYSTEM() secara manual sekali.
@@ -81,10 +81,10 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.9 login-lock-cachefix"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.10 strict-spouses"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.10-spouse-row-records";
+const _INIT_VERSION = "v2.10-strict-spouses";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
