@@ -1,7 +1,8 @@
+// ===== SALASILAH app.js — VERSI v2.16 — dijana 11 Jun 2026 17:15 =====
 /* Salasilah Keluarga Elit — app.js v2.15 url-fix */
 
-const EXPECTED_API_VERSION = "v2.14-sync-guard";
-const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbywhEoQAW0VzieDO3qVx2vBJ0VXEcRDmMnIRp19GFg86o7m2szZDQ4fD87EJrWr_-ED/exec";
+const EXPECTED_API_VERSION = "v2.16-sync-guard";
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
 let GAS_URL = (function(){
   try {
     const saved = localStorage.getItem("gasUrl");

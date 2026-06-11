@@ -1,3 +1,4 @@
+// ===== SALASILAH Code.gs — VERSI v2.16 — dijana 11 Jun 2026 17:15 =====
 /**
  * SALASILAH KELUARGA ELIT — Apps Script Backend v2.13 spouse-repair
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
@@ -79,10 +80,10 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.14 sync-guard"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.16 sync-guard"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.14-sync-guard";
+const _INIT_VERSION = "v2.16-sync-guard";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
