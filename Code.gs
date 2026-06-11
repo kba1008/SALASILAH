@@ -1,5 +1,5 @@
 /**
- * SALASILAH KELUARGA ELIT — Apps Script Backend v2.11 draft-mode
+ * SALASILAH KELUARGA ELIT — Apps Script Backend v2.13 spouse-repair
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
  * Execute as: Me   |   Access: Anyone
  */
@@ -79,10 +79,10 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.11 draft-mode"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.13 spouse-repair"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.12-drag-pos";
+const _INIT_VERSION = "v2.13-spouse-repair";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -101,7 +101,7 @@ function ensureInit_() {
   props.setProperty("INIT_OK", _INIT_VERSION);
 }
 
-const _TREE_CACHE_KEY = "tree:v2";
+const _TREE_CACHE_KEY = "tree:v3";
 const _TREE_CACHE_TTL = 30;
 function _treeCacheGet_(authed){
   try {
@@ -216,7 +216,7 @@ const ACTIONS = {
   getTree(_, auth) {
     const _cached = _treeCacheGet_(!!auth);
     if (_cached) return _cached;
-    const nodeRows = readSheet_(SHEET_TREE);
+    const nodeRows = repairSpouseLinks_(readSheet_(SHEET_TREE));
     const noteRows = readSheet_(SHEET_NOTES);
     const pendingRows = readSheet_(SHEET_PENDING).map(p=>({ ...p, payloadObj: parseJsonSafe_(p.payload, {}) }));
     const canSeePending = !!auth;
@@ -308,6 +308,7 @@ const ACTIONS = {
     const isAdmin = auth.role === "admin";
     const photoUrl = p.photo ? saveImage_(p.photo, "node_"+Date.now()) : null;
 
+    if (p.relation === "spouse" && !p.parentId) throw new Error("Pasangan mesti dikaitkan dengan profil induk. Sila cuba semula dari butang 'Tambah Pasangan'.");
     if (p.relation === "spouse" && p.parentId) {
       const spousePayload = normalizeSpousePayload_(p, photoUrl);
       if (isAdmin) { addSpouse_(p.parentId, spousePayload, spousePayload.photoUrl, auth); stampApprove_(p.parentId, auth); return { ok: true }; }
@@ -732,6 +733,44 @@ function resolvePendingById_(pendingId, decision, auth) {
     }
   }
   deleteRowById_(SHEET_PENDING, item.id);
+}
+
+/* ============ AUTO-REPAIR: pasangan yang hilang spouseOf ============ */
+function repairSpouseLinks_(rows){
+  try {
+    const byId = {};
+    rows.forEach(function(r){ byId[String(r.id)] = r; });
+    const hasChildren = {};
+    rows.forEach(function(r){ if (r.parentId) hasChildren[String(r.parentId)] = true; });
+    const fixes = [];
+    rows.forEach(function(child){
+      const spIdx = String(child.spouseIndex || "");
+      if (!spIdx || !child.parentId) return;
+      const cand = byId[spIdx];
+      if (!cand) return;                                   // rujukan legacy/JSON — abaikan
+      if (String(cand.spouseOf || "")) return;             // sudah betul
+      if (String(cand.id) === String(child.parentId)) return;
+      if (cand.parentId) return;                           // ada parent sendiri — bukan pasangan
+      if (hasChildren[String(cand.id)]) return;            // ada anak sendiri — jangan sentuh
+      for (var i = 0; i < fixes.length; i++) { if (String(fixes[i].row.id) === String(cand.id)) return; }
+      fixes.push({ row: cand, ownerId: String(child.parentId) });
+    });
+    if (!fixes.length) return rows;
+    const sh = sheet_(SHEET_TREE);
+    fixes.forEach(function(f){
+      const order = nextFreeSpouseOrder_(rows, f.ownerId, 1, f.row.id);
+      setCellByHeader_(sh, f.row._row, "spouseOf", f.ownerId);
+      setCellByHeader_(sh, f.row._row, "spouseOrder", order);
+      setCellByHeader_(sh, f.row._row, "parentId", "");
+      setCellByHeader_(sh, f.row._row, "hanging", false);
+      f.row.spouseOf = f.ownerId;
+      f.row.spouseOrder = order;
+      f.row.parentId = "";
+      f.row.hanging = false;
+    });
+    invalidateTreeCache_();
+  } catch (e) { /* jangan halang paparan jika repair gagal */ }
+  return rows;
 }
 
 /* ============ SPOUSE LOGIC ============ */
