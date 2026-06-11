@@ -1,8 +1,45 @@
-/* Salasilah Keluarga Elit — app.js v2.14 sync-guard */
+/* Salasilah Keluarga Elit — app.js v2.15 url-fix */
 
 const EXPECTED_API_VERSION = "v2.14-sync-guard";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxH1JVReqGnsYxlZ1E5Pqp9OcFh1_l9epq7FgMswrlbHlGl972zSeF3ALVeIEPFgT7c/exec";
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
+let GAS_URL = (function(){
+  try {
+    const saved = localStorage.getItem("gasUrl");
+    if(saved && /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(saved)) return saved;
+  } catch(_) {}
+  return DEFAULT_GAS_URL;
+})();
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
+
+/* Admin boleh tampal URL deployment /exec BARU tanpa edit kod */
+async function setGasUrl(){
+  const input = prompt(
+    "Tampal URL Web App BARU dari Apps Script (Deploy > New deployment > Web app).\n" +
+    "Mesti berakhir dengan /exec.\n\nURL semasa:\n" + GAS_URL,
+    GAS_URL
+  );
+  if(input === null) return;
+  const url = input.trim();
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)){
+    alert("URL tidak sah. Pastikan ia bermula https://script.google.com/macros/s/... dan berakhir /exec");
+    return;
+  }
+  try{
+    const res = await fetch(url, {method:"POST", body: JSON.stringify({action:"ping"}), headers:{"Content-Type":"text/plain;charset=utf-8"}, cache:"no-store"});
+    const json = await res.json();
+    const ver = (json && json.data && json.data.version) || "";
+    if(ver !== EXPECTED_API_VERSION){
+      if(!confirm("Pelayan di URL ini melapor versi: '" + (ver || "LAMA/tiada") + "' (dijangka " + EXPECTED_API_VERSION + ").\nSimpan juga URL ini?")) return;
+    } else {
+      alert("✅ Pelayan disahkan: " + ver);
+    }
+  } catch(e){
+    if(!confirm("Tidak dapat uji URL ini (" + (e.message||e) + "). Simpan juga?")) return;
+  }
+  localStorage.setItem("gasUrl", url);
+  GAS_URL = url;
+  location.reload();
+}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
   "Menjejak pasangan, anak dan sambungan salasilah…",
@@ -191,9 +228,14 @@ function checkApiVersion(serverVersion){
     bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fef2f2;padding:10px 14px;font-size:13px;font-weight:600;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.4)";
     document.body.appendChild(bar);
   }
-  bar.innerHTML = "⚠ Pelayan (Code.gs) masih versi <b>" + (serverVersion || "LAMA / tidak diketahui") +
-    "</b>. Sila buka Apps Script, gantikan Code.gs dengan <b>" + EXPECTED_API_VERSION +
-    "</b> dan <b>Deploy &gt; Manage deployments &gt; Edit &gt; New version</b>. Selagi tidak deploy, susunan selepas SAVE tidak akan sama dengan draf.";
+  const shortUrl = GAS_URL.replace(/^https:\/\/script\.google\.com\/macros\/s\//, "…/").replace(/\/exec$/, "");
+  bar.innerHTML = "⚠ Pelayan versi <b>" + (serverVersion || "LAMA / tidak diketahui") +
+    "</b> (dijangka <b>" + EXPECTED_API_VERSION + "</b>).<br>" +
+    "URL semasa: <code style='font-size:11px'>" + shortUrl + "</code> — kemungkinan besar 'New deployment' di Apps Script telah cipta <b>URL /exec baru</b>, tetapi app masih guna URL lama.<br>" +
+    "Langkah: Apps Script &gt; <b>Deploy &gt; Manage deployments</b> &gt; salin URL Web App yang aktif, kemudian tekan butang di bawah dan tampal URL itu.<br>" +
+    "<button id='btn-set-gas-url' style='margin-top:6px;background:#fef2f2;color:#7f1d1d;border:0;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer'>📋 Tampal URL Deploy Baru</button>";
+  const btn = bar.querySelector("#btn-set-gas-url");
+  if(btn) btn.onclick = setGasUrl;
 }
 
 /* ---------- Optimistic save helper ---------- */
