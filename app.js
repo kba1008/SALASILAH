@@ -2,7 +2,7 @@
 /* Salasilah Keluarga Elit — app.js v2.17 url-hardcoded + pos-fix */
 
 const EXPECTED_API_VERSION = "v2.16-sync-guard";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyqr2OBS3y84gdsaIVnI6en6MIRzXxffJJfFh4sFz2uKChY06TQ3ANSo0iWlxjFJjOI/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwFEcKuBFcicuI9nXY1IxjIYhrMvkb5H0fjePcKUotqBHBIHDRMQRwIl8RNp3aR-1hr/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
@@ -220,6 +220,9 @@ function runInBackground(promise, opts={}){
 
 /* ---------- Refresh dengan pemulihan kedudukan & viewport ---------- */
 async function refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot){
+  // Tangkap koordinat visual mutlak SEBELUM rebuild supaya paparan kekal sama
+  const absSnapshot = _captureAbsolutePositions(posSnapshot);
+
   setLoading(true, "Sila tunggu sementara maklumat keluarga dipaparkan.");
   try {
     const d = await api("getTree",{});
@@ -229,6 +232,7 @@ async function refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot){
     checkApiVersion(d.apiVersion || "");
     if(State.user) await loadMyProfile(true);
 
+    // Jaminan: jika pelayan tiada data posisi, gunakan snapshot sebagai sandaran
     if(posSnapshot && Object.keys(posSnapshot).length){
       State.nodes.forEach(n=>{
         const snap = posSnapshot[String(n.id)];
@@ -241,6 +245,12 @@ async function refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot){
 
     buildTree();
 
+    // Betulkan hanyutan susun atur: kira semula translate supaya posisi visual kekal
+    if(absSnapshot && Object.keys(absSnapshot).length){
+      _compensateLayoutDrift(absSnapshot);
+    }
+
+    // Pulihkan viewport tepat seperti sebelum simpan
     if(State.panzoom && panSnapshot && scaleSnapshot != null){
       State.panzoom.zoom(scaleSnapshot, {animate:false});
       setTimeout(()=>{ State.panzoom.pan(panSnapshot.x, panSnapshot.y, {animate:false}); }, 30);
@@ -254,6 +264,105 @@ async function refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot){
     if(host) host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Gagal memuat data. Sila lihat notifikasi ralat di atas.</p>';
   } finally {
     setLoading(false);
+  }
+}
+
+// Tangkap posisi visual mutlak (koordinat kanvas) bagi semua node berposisi
+// Dilakukan SEBELUM rebuild supaya tidak ada gangguan visual
+function _captureAbsolutePositions(posSnapshot){
+  if(!posSnapshot || !Object.keys(posSnapshot).length) return {};
+  const canvas = $("#canvas");
+  if(!canvas) return {};
+  const canvasRect = canvas.getBoundingClientRect();
+  const scale = (State.panzoom && State.panzoom.getScale) ? State.panzoom.getScale() : 1;
+  const ids = Object.keys(posSnapshot);
+  const elMap = {};
+  const result = {};
+
+  // Kumpul semua elemen terlebih dahulu
+  ids.forEach(id => {
+    const el = document.querySelector(`.node[data-node-id="${CSS.escape(id)}"]`);
+    if(el) elMap[id] = el;
+  });
+
+  // Tulis: buang semua transform sekaligus (tiada flicker kerana satu microtask)
+  ids.forEach(id => { if(elMap[id]) elMap[id].style.transform = "none"; });
+
+  // Baca: ukur posisi semula jadi tanpa transform (satu reflow)
+  ids.forEach(id => {
+    const el = elMap[id];
+    if(!el) return;
+    const rect = el.getBoundingClientRect();
+    const natX = (rect.left - canvasRect.left) / scale;
+    const natY = (rect.top  - canvasRect.top)  / scale;
+    // Posisi visual mutlak = posisi semula jadi + nilai translate
+    result[id] = {
+      absX: natX + posSnapshot[id].posX,
+      absY: natY + posSnapshot[id].posY,
+    };
+  });
+
+  // Tulis: pulihkan semua transform
+  ids.forEach(id => {
+    if(elMap[id])
+      elMap[id].style.transform = `translate(${posSnapshot[id].posX}px,${posSnapshot[id].posY}px)`;
+  });
+
+  return result;
+}
+
+// Selepas rebuild, kira semula translate supaya node kekal di posisi visual asal
+function _compensateLayoutDrift(absSnapshot){
+  const canvas = $("#canvas");
+  if(!canvas || !Object.keys(absSnapshot).length) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  const scale = (State.panzoom && State.panzoom.getScale) ? State.panzoom.getScale() : 1;
+  const ids = Object.keys(absSnapshot);
+  const elMap = {};
+  const toSave = [];
+
+  // Kumpul elemen (mungkin ada ID baru dari server)
+  ids.forEach(id => {
+    const el = document.querySelector(`.node[data-node-id="${CSS.escape(id)}"]`);
+    if(el) elMap[id] = el;
+  });
+
+  // Tulis: buang semua transform untuk ukur posisi semula jadi pasca-rebuild
+  ids.forEach(id => { if(elMap[id]) elMap[id].style.transform = "none"; });
+
+  // Baca: ukur posisi semula jadi pasca-rebuild (satu reflow)
+  const newNatural = {};
+  ids.forEach(id => {
+    const el = elMap[id];
+    if(!el) return;
+    const rect = el.getBoundingClientRect();
+    newNatural[id] = {
+      x: (rect.left - canvasRect.left) / scale,
+      y: (rect.top  - canvasRect.top)  / scale,
+    };
+  });
+
+  // Tulis: guna translate yang dibetulkan
+  ids.forEach(id => {
+    const el = elMap[id];
+    const nat = newNatural[id];
+    const target = absSnapshot[id];
+    if(!el || !nat || !target) return;
+    const n = State.nodes.find(x => String(x.id) === String(id));
+    if(!n) { el.style.transform = ""; return; }
+    const newPosX = Math.round(target.absX - nat.x);
+    const newPosY = Math.round(target.absY - nat.y);
+    n.posX = newPosX;
+    n.posY = newPosY;
+    el.style.transform = `translate(${newPosX}px,${newPosY}px)`;
+    toSave.push({id, posX: newPosX, posY: newPosY});
+  });
+
+  // Simpan posisi yang dibetulkan ke pelayan (senyap, latar belakang)
+  if(toSave.length){
+    toSave.forEach(item => {
+      api("savePosition", {id: item.id, posX: item.posX, posY: item.posY}).catch(()=>{});
+    });
   }
 }
 
