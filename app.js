@@ -1,6 +1,6 @@
 /* Salasilah Keluarga Elit — app.js v2.11 draft-mode */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbx0ppeIU26Y_6xKpS-zrGLOxUh1SQH_V_jrOuMRddzi_HOj2G65wm62dJyMuC5Hcc8I/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
