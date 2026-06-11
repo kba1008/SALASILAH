@@ -1,8 +1,8 @@
-const V = "salasilah-v210-strict-spouses";
+const V = "salasilah-v211-draft-mode";
 const ASSETS = [
   "./",
   "./index.html",
-  "./app.js?v=210-strict-spouses",
+  "./app.js?v=211-draft-mode",
   "./manifest.json"
 ];
 

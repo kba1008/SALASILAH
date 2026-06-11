@@ -1,7 +1,6 @@
-/* Salasilah Keluarga Elit — app.js v2.10 strict-spouses */
+/* Salasilah Keluarga Elit — app.js v2.11 draft-mode */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxP1i9nqAeM-HASzTd1qrHX-RKmso7tgoWhf8DKDxv040fgccypqz4k8xD6dnx8_pyZ/exec";
-/* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
@@ -20,7 +19,7 @@ const State = {
   searchResults: [],
   searchIndex: 0,
   noteAddMode: false,
-  reparentMode: null, // {nodeId} bila admin sedang pilih parent baharu
+  reparentMode: null,
   loadingTimer: null,
   loadingTipIndex: 0,
 };
@@ -28,9 +27,18 @@ const State = {
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 
+/* UUID GENERATOR FOR OPTIMISTIC DRAFTS */
+function makeUUID(){
+  if(window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 function toast(msg){
   const t=$("#toast"); t.textContent=msg; t.classList.remove("hidden");
-  setTimeout(()=>t.classList.add("hidden"), 2800);
+  setTimeout(()=>t.classList.add("hidden"), 3000);
 }
 function setLoading(show, text="Memuatkan salasilah…"){
   const screen = $("#loading-screen");
@@ -55,38 +63,12 @@ function setLoading(show, text="Memuatkan salasilah…"){
   }
 }
 
-function getStoredUser(){
-  try { return JSON.parse(localStorage.getItem("user") || "null"); }
-  catch(_) { return null; }
-}
-function persistUser(user){
-  State.user = user || null;
-  if(user) localStorage.setItem("user", JSON.stringify(user));
-  else localStorage.removeItem("user");
-}
-function clearSession(silent=false){
-  State.user = null;
-  State.myProfile = null;
-  localStorage.removeItem("user");
-  try { updateUserUI(); } catch(_){}
-  if(!silent) toast("Sesi tamat. Sila log masuk semula.");
-}
-function syncUserFromStorage(){
-  const stored = getStoredUser();
-  if(!stored) return null;
-  if(!State.user || State.user.username !== stored.username || State.user.token !== stored.token){
-    State.user = stored;
-  }
-  return State.user;
-}
-function getAuthPayload(){
-  const current = (State.user?.token ? State.user : syncUserFromStorage()) || null;
-  if(!current?.username || !current?.token) return null;
-  return { username: current.username, token: current.token };
-}
-function hasActiveSession(){
-  return !!getAuthPayload();
-}
+function getStoredUser(){ try { return JSON.parse(localStorage.getItem("user") || "null"); } catch(_) { return null; } }
+function persistUser(user){ State.user = user || null; if(user) localStorage.setItem("user", JSON.stringify(user)); else localStorage.removeItem("user"); }
+function clearSession(silent=false){ State.user = null; State.myProfile = null; localStorage.removeItem("user"); try { updateUserUI(); } catch(_){} if(!silent) toast("Sesi tamat. Sila log masuk semula."); }
+function syncUserFromStorage(){ const stored = getStoredUser(); if(!stored) return null; if(!State.user || State.user.username !== stored.username || State.user.token !== stored.token){ State.user = stored; } return State.user; }
+function getAuthPayload(){ const current = (State.user?.token ? State.user : syncUserFromStorage()) || null; if(!current?.username || !current?.token) return null; return { username: current.username, token: current.token }; }
+function hasActiveSession(){ return !!getAuthPayload(); }
 function ensureSession(actionLabel="meneruskan tindakan ini"){
   if(hasActiveSession()) return true;
   clearSession(true);
@@ -134,19 +116,11 @@ const ErrUI = {
   clearAll(){ const h=this.ensure(); if(h) h.innerHTML=""; }
 };
 function escapeHtmlSafe(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));}
-function showError(message, opts={}){
-  let msg = message;
-  if(message instanceof Error) msg = (message.message||"") + (message.stack?"\n\n"+message.stack:"");
-  return ErrUI.show({title:opts.title||"Ralat", message:String(msg||""), level:opts.level||"error", context:opts.context||""});
-}
+function showError(message, opts={}){ let msg = message; if(message instanceof Error) msg = (message.message||"") + (message.stack?"\n\n"+message.stack:""); return ErrUI.show({title:opts.title||"Ralat", message:String(msg||""), level:opts.level||"error", context:opts.context||""}); }
 function showWarn(m,o={}){return ErrUI.show({title:o.title||"Amaran",message:String(m||""),level:"warn",context:o.context||""});}
 function showInfo(m,o={}){return ErrUI.show({title:o.title||"Maklumat",message:String(m||""),level:"info",context:o.context||""});}
-window.addEventListener("error", e=>{
-  showError(e.error||e.message||"Unknown error",{title:"Ralat JavaScript",context:(e.filename||"")+":"+(e.lineno||"")+":"+(e.colno||"")});
-});
-window.addEventListener("unhandledrejection", e=>{
-  showError(e.reason||"Promise ditolak tanpa pengendalian",{title:"Promise Tidak Dikendalikan"});
-});
+window.addEventListener("error", e=>{ showError(e.error||e.message||"Unknown error",{title:"Ralat JavaScript",context:(e.filename||"")+":"+(e.lineno||"")+":"+(e.colno||"")}); });
+window.addEventListener("unhandledrejection", e=>{ showError(e.reason||"Promise ditolak tanpa pengendalian",{title:"Promise Tidak Dikendalikan"}); });
 window.showError = showError; window.showWarn = showWarn; window.showInfo = showInfo;
 
 function openModal(id){$("#"+id).classList.remove("hidden");$("#"+id).classList.add("flex");}
@@ -172,9 +146,7 @@ async function api(action, payload={}){
     const e=new Error(json.error||"API error"); e.action=action;
     if(/disekat|Sesi tamat/i.test(json.error||"")){
       clearSession(true);
-      if(/Sesi tamat/i.test(json.error||"")){
-        showWarn("Sesi anda telah tamat. Sila log masuk semula untuk meneruskan.",{title:"Sesi Tamat",context:action});
-      }
+      if(/Sesi tamat/i.test(json.error||"")) showWarn("Sesi anda telah tamat. Sila log masuk semula untuk meneruskan.",{title:"Sesi Tamat",context:action});
     }
     throw e;
   }
@@ -217,16 +189,16 @@ const Pending = {
     if(!bar){
       bar = document.createElement("div");
       bar.id = "pending-bar";
-      bar.style.cssText = "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#3b2a14;color:#fff;padding:10px 14px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.3);display:flex;gap:8px;align-items:center;z-index:9999;font-family:inherit;max-width:calc(100vw - 24px);flex-wrap:wrap;justify-content:center;";
+      bar.style.cssText = "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#064e3b;color:#ecfdf5;padding:10px 14px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.4);display:flex;gap:8px;align-items:center;z-index:9999;font-family:inherit;max-width:calc(100vw - 24px);flex-wrap:wrap;justify-content:center; border: 2px solid #10b981;";
       bar.innerHTML = `
         <span id="pending-count" style="font-weight:600;font-size:14px"></span>
-        <button id="pending-save" style="background:#22c55e;color:#fff;border:0;border-radius:999px;padding:8px 16px;cursor:pointer;font-weight:700;font-size:14px">💾 Simpan Semua</button>
-        <button id="pending-discard" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:999px;padding:8px 14px;cursor:pointer;font-size:13px">↺ Buang</button>`;
+        <button id="pending-save" style="background:#10b981;color:#fff;border:0;border-radius:999px;padding:8px 16px;cursor:pointer;font-weight:700;font-size:14px;box-shadow:0 4px 10px rgba(16,185,129,.4)">💾 Hantar Perubahan</button>
+        <button id="pending-discard" style="background:transparent;color:#a7f3d0;border:1px solid rgba(167,243,208,.5);border-radius:999px;padding:8px 14px;cursor:pointer;font-size:13px">↺ Batal Draf</button>`;
       document.body.appendChild(bar);
       bar.querySelector("#pending-save").onclick = ()=>Pending.commit();
       bar.querySelector("#pending-discard").onclick = ()=>Pending.discard();
     }
-    bar.querySelector("#pending-count").textContent = `${this.items.length} perubahan belum disimpan`;
+    bar.querySelector("#pending-count").textContent = `${this.items.length} draf belum dihantar`;
   },
   async commit(){
     if(!this.items.length) return;
@@ -244,17 +216,23 @@ const Pending = {
     }
     this.items = failed;
     this.renderBar();
-    toast(failed.length ? `${failed.length} perubahan gagal disimpan` : "Semua perubahan disimpan");
+    toast(failed.length ? `${failed.length} draf gagal dihantar` : "Semua perubahan berjaya dihantar");
     try { await refresh(); } catch(_){}
   },
   async discard(){
-    if(!confirm("Buang semua perubahan yang belum disimpan?")) return;
+    if(!confirm("Buang semua draf yang belum dihantar? Paparan akan kembali kepada asal.")) return;
     this.clear();
     try { await refresh(); } catch(_){}
   }
 };
+
+/* PERINGATAN BILA KELUAR (UNLOAD WARNING) */
 window.addEventListener("beforeunload", e=>{
-  if(Pending.count()){ e.preventDefault(); e.returnValue = ""; }
+  if(Pending.count()){
+    e.preventDefault();
+    e.returnValue = "Anda mempunyai draf perubahan yang belum dihantar (disimpan)! Adakah anda pasti ingin keluar?";
+    return e.returnValue;
+  }
 });
 function queueChange(op){ Pending.add(op); }
 
@@ -271,6 +249,7 @@ async function fileToBase64(f){
 /* ---------- Foto Drive ---------- */
 function fixPhoto(url){
   if(!url) return "";
+  if(url.startsWith("data:image")) return url;
   const m = String(url).match(/[?&]id=([\w-]+)/) || String(url).match(/\/d\/([\w-]+)/);
   if(m) return `https://lh3.googleusercontent.com/d/${m[1]}=w400`;
   return url;
@@ -295,6 +274,7 @@ function getSpouses(n){
         birth: s.birth||"", birthplace: s.birthplace||"", photo: s.photo||s.spousePhoto||"",
         status: s.status||"hidup", death: s.death||"", deathplace: s.deathplace||"", notes: s.notes||"",
         order: Number(s.spouseOrder)>0 ? Number(s.spouseOrder) : (Number(s.order)>0 ? Number(s.order) : i+1),
+        isDraft: s.isDraft
       };
     }).concat(a.filter(s=>!seen.has(String(s.id||""))));
   }
@@ -306,10 +286,6 @@ function oppositeGender(gender){
   if(gender === "L") return "P";
   if(gender === "P") return "L";
   return "";
-}
-function makeSpouseId(){
-  if(window.crypto?.randomUUID) return window.crypto.randomUUID();
-  return "spouse-" + Date.now() + "-" + Math.random().toString(36).slice(2,10);
 }
 function getChildParents(n){
   if(!n?.parentId) return { father:"", mother:"", fatherShort:"", motherShort:"" };
@@ -328,9 +304,7 @@ function getChildParents(n){
     motherShort: mother || "Tidak dinyatakan",
   };
 }
-function canAddSpouse(n){
-  return true;
-}
+function canAddSpouse(n){ return true; }
 function spouseStatusLabel(s){
   if(s.status==="mati") return "Almarhum"+(s.death?" "+s.death:"");
   if(s.status==="cerai") return "Bercerai";
@@ -442,10 +416,11 @@ function renderNode(n){
     link.title = "Pasangan "+spouseOrdinal(sp.order||idx+1);
 
     const el = document.createElement("div");
-    el.className = "node spouse"+(sp.status==="cerai"?" divorced":"")+(sp.status==="mati"?" deceased":"");
+    el.className = "node spouse"+(sp.status==="cerai"?" divorced":"")+(sp.status==="mati"?" deceased":"")+(sp.isDraft?" is-draft":"");
     const stLabel = sp.status==="mati"?"†":(sp.status==="cerai"?"⚊":"");
     const spGender = sp.gender || oppositeGender(n.gender);
-    el.innerHTML=`<img src="${fixPhoto(sp.photo)||placeholder(spGender||'P')}" onerror="this.src='${placeholder(spGender||'P')}'"/>
+    el.innerHTML=`${sp.isDraft?'<div class="draft-chip">Draf</div>':''}
+      <img src="${fixPhoto(sp.photo)||placeholder(spGender||'P')}" onerror="this.src='${placeholder(spGender||'P')}'"/>
       <div class="name" dir="auto">${escape(sp.name)} ${stLabel}</div>
       <div class="meta">Pasangan ${spouseOrdinal(sp.order||idx+1)} • ${spouseStatusLabel(sp)}</div>`;
     el.addEventListener("click",e=>{e.stopPropagation();showSpouseProfile(n, sp);});
@@ -475,12 +450,11 @@ function renderNode(n){
   if(kids.length){
     const cu = document.createElement("ul");
     cu.className="children-row";
-    // GROUPING LOGIC ENFORCEMENT: Menekankan anak berada di bawah gabungan ibu bapa sah
     if(sps.length>=1){
       const groups = {};
       kids.forEach(k=>{
         let key = k.spouseIndex;
-        if(!key && sps.length === 1) key = sps[0].id; // Fallback jika hanya 1 isteri/suami
+        if(!key && sps.length === 1) key = sps[0].id;
         if(!key) key = "0";
         (groups[key]=groups[key]||[]).push(k);
       });
@@ -519,21 +493,23 @@ function card(n, parents = getChildParents(n)){
   const isApprovedUser = !!(linked && linked.approved);
   const isAdminUser = linked && linked.role === "admin" && linked.approved;
   const d = document.createElement("div");
-  d.className = "node"+(n.pending?" pending":"")+(n.parentId===false||n.parentId==="" && !n.hanging?" root":"")+(n.hanging?" hanging":"")+(isApprovedUser?" is-user":"")+(isAdminUser?" is-admin":"");
+  d.className = "node"+(n.pending?" pending":"")+(n.parentId===false||n.parentId==="" && !n.hanging?" root":"")+(n.hanging?" hanging":"")+(isApprovedUser?" is-user":"")+(isAdminUser?" is-admin":"")+(n.isDraft?" is-draft":"");
   if(!n.parentId && !n.hanging) d.classList.add("root");
   d.dataset.nodeId = n.id;
   const badges = `${isApprovedUser?`<span class="badge-user" title="Ahli berdaftar: @${escape(linked.username)}">👤</span>`:""}${isAdminUser?`<span class="badge-admin" title="Admin">★</span>`:""}`;
   const parentMeta = n.parentId
     ? `<div class="meta parentage" dir="auto">Bapa: ${escape(parents.fatherShort)}</div><div class="meta parentage" dir="auto">Ibu: ${escape(parents.motherShort)}</div>`
     : "";
-  const pendingChip = n.pending ? `<div class="pending-chip" title="Perlu disahkan atau dibatalkan oleh admin">Perlu semakan</div>` : "";
+  const draftChip = n.isDraft ? `<div class="draft-chip">Draf Baru</div>` : "";
+  const pendingChip = (!n.isDraft && n.pending) ? `<div class="pending-chip" title="Perlu disahkan oleh admin">Perlu semakan</div>` : "";
   d.innerHTML = `${badges?`<div class="node-badges">${badges}</div>`:""}
+    ${draftChip}
     ${pendingChip}
     <img src="${fixPhoto(n.photo)||fixPhoto(linked?.photo)||placeholder(n.gender)}" alt="" onerror="this.src='${placeholder(n.gender)}'"/>
     <div class="name" dir="auto">${escape(n.name)}</div>
     <div class="meta">#${n.no||"-"} ${n.birth||""}${n.death?" – "+n.death:""}</div>
     ${parentMeta}
-    ${n.pending?'<div class="meta" style="font-weight:800;color:#92400e">Menunggu keputusan admin</div>':''}`;
+    ${(!n.isDraft && n.pending)?'<div class="meta" style="font-weight:800;color:#92400e">Menunggu kelulusan</div>':''}`;
   d.addEventListener("click",e=>{
     e.stopPropagation();
     if(State.reparentMode){
@@ -542,7 +518,7 @@ function card(n, parents = getChildParents(n)){
       doReparent(targetId, n.id);
       return;
     }
-    if(State.user?.role === "admin" && n.pending){
+    if(State.user?.role === "admin" && n.pending && !n.isDraft){
       viewProfile(n);
       return;
     }
@@ -581,7 +557,7 @@ function showCtx(x,y,n){
 }
 document.addEventListener("click",()=>$("#ctx-menu").classList.add("hidden"));
 
-/* ---------- Reparent (admin) ---------- */
+/* ---------- Reparent (admin optimistik) ---------- */
 function startReparent(n){
   State.reparentMode = { nodeId: n.id, name: n.name };
   document.body.classList.add("reparent-mode");
@@ -599,12 +575,23 @@ async function doReparent(nodeId, newParentId, makeHanging){
     ? `Pindah "${me?.name}" jadi anak kepada "${parent?.name}"?`
     : `Putuskan "${me?.name}" jadi root tergantung (tiada parent)?`;
   if(!confirm(msg)){ cancelReparent(); return; }
+  
+  if(me) {
+     me.parentId = newParentId || "";
+     me.hanging = !!makeHanging;
+     buildTree();
+  }
+  
   try {
     await api("reparent",{id:nodeId, newParentId:newParentId||"", hanging: !!makeHanging});
     showInfo("Salasilah dikemaskini");
     cancelReparent();
     await refresh();
-  } catch(err) { showError(err,{title:"Gagal pindah",context:"reparent"}); cancelReparent(); }
+  } catch(err) { 
+    showError(err,{title:"Gagal pindah",context:"reparent"}); 
+    cancelReparent();
+    await refresh();
+  }
 }
 
 /* ---------- Profile Viewer ---------- */
@@ -613,17 +600,7 @@ function fmtDateTime(v){
   try{ const d=new Date(v); if(isNaN(d.getTime())) return String(v); return d.toLocaleString("ms-MY"); }catch(e){ return String(v); }
 }
 function pendingActionLabel(action){
-  const map = {
-    add:"Ahli baharu",
-    edit:"Kemaskini profil",
-    delete:"Permintaan padam",
-    spouse:"Pasangan baharu",
-    "spouse-edit":"Kemaskini pasangan",
-    "spouse-delete":"Padam pasangan",
-    "note-add":"Nota baharu",
-    "note-edit":"Kemaskini nota",
-    "note-delete":"Padam nota",
-  };
+  const map = { add:"Ahli baharu", edit:"Kemaskini profil", delete:"Permintaan padam", spouse:"Pasangan baharu", "spouse-edit":"Kemaskini pasangan", "spouse-delete":"Padam pasangan", "note-add":"Nota baharu", "note-edit":"Kemaskini nota", "note-delete":"Padam nota" };
   return map[action] || action || "Perubahan";
 }
 function viewProfile(n){
@@ -635,14 +612,15 @@ function viewProfile(n){
   const approvedBy = n.approvedBy || "";
   const approvedAt = fmtDateTime(n.approvedAt);
   const pendingItems = Array.isArray(n.pendingItems) ? n.pendingItems : [];
-  const canApprove = State.user?.role === "admin" && pendingItems.length;
+  const canApprove = State.user?.role === "admin" && pendingItems.length && !n.isDraft;
+  
   $("#profile-body").innerHTML = `
     <div class="flex flex-col items-center mb-4">
       <img src="${photo}" onerror="this.src='${placeholder(n.gender)}'" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--gold)"/>
       <h2 class="text-2xl font-bold text-center serif" dir="auto">${escape(n.name)}</h2>
       ${n.nickname?`<p class="text-sm serif italic" dir="auto" style="color:var(--gold-dark)">"${escape(n.nickname)}"</p>`:""}
       <p class="text-xs" style="color:var(--ink-soft)">#${n.no||"-"} • ${n.gender==='P'?'Perempuan':'Lelaki'} • ${n.status==='mati'?'Almarhum':'Hidup'}</p>
-      ${n.pending?'<p class="text-[11px] mt-1 font-semibold" style="color:#475569">● Belum disahkan admin</p>':''}
+      ${n.isDraft?'<p class="text-[11px] mt-1 font-semibold p-1 px-3 rounded-full" style="background:#059669;color:#fff">Draf Belum Disimpan</p>':(n.pending?'<p class="text-[11px] mt-1 font-semibold" style="color:#475569">● Belum disahkan admin</p>':'')}
     </div>
     <div class="space-y-2 text-sm" dir="auto">
       ${rowField("Tahun Lahir", n.birth)}
@@ -655,14 +633,15 @@ function viewProfile(n){
         <ul class="space-y-1" dir="auto">${sp.map((s,i)=>`<li>• <b>${spouseOrdinal(s.order||i+1)}:</b> ${escape(s.name)} <span style="color:var(--ink-soft)">(${spouseStatusLabel(s)})</span></li>`).join("")}</ul></div>`:""}
       ${n.notes?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Catatan</div><p class="whitespace-pre-wrap" dir="auto">${escape(n.notes)}</p></div>`:""}
     </div>
+    ${!n.isDraft ? `
     <div class="mt-4 pt-3 border-t text-[11px] flex flex-col gap-1" style="border-color:var(--line-soft);color:var(--ink-soft)">
       <div class="font-semibold serif" style="color:var(--gold-dark);font-size:12px">📜 Log Pengesahan</div>
       <div>📝 Terakhir dikemaskini oleh: <b style="color:var(--ink)">${escape(editedBy||"—")}</b></div>
       ${editedAt?`<div>🕒 ${escape(editedAt)}</div>`:""}
       ${approvedBy?`<div>✅ Disahkan oleh admin: <b style="color:#1e7a3b">${escape(approvedBy)}</b>${approvedAt?` • ${escape(approvedAt)}`:""}</div>`:(n.pending?'<div style="color:#475569">● Menunggu pengesahan</div>':'')}
       ${n.createdBy && n.createdBy!==editedBy?`<div>👤 Dicipta oleh: ${escape(n.createdBy)}</div>`:""}
-    </div>
-    ${pendingItems.length?`
+    </div>` : ""}
+    ${pendingItems.length && !n.isDraft ? `
       <div class="mt-4 pt-3 border-t text-[11px] flex flex-col gap-2" style="border-color:var(--line-soft);color:var(--ink-soft)">
         <div class="font-semibold serif" style="color:#475569;font-size:12px">🩶 Perubahan belum disahkan</div>
         ${pendingItems.map(it=>`<div class="rounded-lg px-3 py-2" style="background:rgba(148,163,184,.14);border:1px solid rgba(100,116,139,.28)">
@@ -709,6 +688,7 @@ function showSpouseProfile(parent, sp){
       ${sp.nickname?`<p class="text-sm serif italic" dir="auto" style="color:var(--gold-dark)">"${escape(sp.nickname)}"</p>`:""}
       <p class="text-xs" style="color:var(--ink-soft)">Pasangan ${spouseOrdinal(sp.order||1)} kepada ${escape(parent.name)}</p>
       <p class="text-xs" style="color:var(--ink-soft)">${spouseGenderLabel(sp)} • ${spouseStatusLabel(sp)}</p>
+      ${sp.isDraft?'<p class="text-[11px] mt-1 font-semibold p-1 px-3 rounded-full" style="background:#059669;color:#fff">Draf Belum Disimpan</p>':''}
     </div>
     <div class="space-y-2 text-sm" dir="auto">
       ${rowField("Tahun Lahir", sp.birth)}
@@ -719,7 +699,7 @@ function showSpouseProfile(parent, sp){
     </div>
     ${canEdit?`<div class="flex gap-2 pt-2">
       <button id="btn-edit-spouse" class="btn btn-ghost flex-1">✎ Edit Pasangan</button>
-      ${isAdmin?`<button id="btn-del-spouse" class="btn btn-ghost flex-1" style="color:var(--rose)">🗑 Padam</button>`:""}
+      <button id="btn-del-spouse" class="btn btn-ghost flex-1" style="color:var(--rose)">🗑 Padam</button>
     </div>`:""}
   `;
   openModal("modal-profile");
@@ -732,12 +712,20 @@ function showSpouseProfile(parent, sp){
 }
 async function deleteSpouseEntry(parent, sp){
   if(!confirm(`Padam pasangan "${sp.name}" daripada ${parent.name}?`)) return;
-  try {
-    await api("deleteSpouse",{ parentId: parent.id, order: sp.order||1 });
-    toast("Pasangan dipadam");
-    closeModal("modal-profile");
-    await refresh();
-  } catch(e) { showError(e,{title:"Gagal padam pasangan",context:"deleteSpouse"}); }
+  
+  // Optimistic Delete
+  State.nodes = State.nodes.filter(x => !(x.spouseOf === parent.id && Number(x.spouseOrder) === Number(sp.order)));
+  const pNode = State.nodes.find(x => x.id === parent.id);
+  if (pNode && pNode.spouses) pNode.spouses = pNode.spouses.filter(s => Number(s.order) !== Number(sp.order));
+  buildTree();
+  
+  toast("Padam draf didaftarkan. Sila Simpan Semua.");
+  closeModal("modal-profile");
+  
+  queueChange({
+    label: "Padam pasangan "+sp.name,
+    run: ()=>api("deleteSpouse",{ parentId: parent.id, order: sp.order||1 })
+  });
 }
 
 async function moderateTarget(targetId, targetType, decision="approve"){
@@ -768,7 +756,7 @@ async function moderateTarget(targetId, targetType, decision="approve"){
   }
 }
 
-/* ---------- Node Editor ---------- */
+/* ---------- Node Editor (Optimistik Draf) ---------- */
 function openNodeEditor(node, parentId=null, relation="child", parentNode=null){
   if(!canManageContent()){toast("Akaun anda perlu disahkan admin dahulu");return;}
   const f = $("#form-node");
@@ -794,7 +782,7 @@ function openNodeEditor(node, parentId=null, relation="child", parentNode=null){
         const linkedSpouse = sps.find(s=>String(s.id)===String(node.spouseIndex)) || sps.find(s=>String(s.order)===String(node.spouseIndex));
         sel.value = String(linkedSpouse?.id || node.spouseIndex);
       } else if (sps.length === 1) {
-        sel.value = sps[0].id; // Auto select if only 1 spouse
+        sel.value = sps[0].id;
       }
       wrap.appendChild(lbl); wrap.appendChild(sel);
     }
@@ -823,12 +811,31 @@ $("#form-node").addEventListener("submit", async e=>{
   delete payload.photo;
   if(photo) payload.photo = photo;
   if(payload.id) payload.relation = "edit";
-  toast("Dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+
+  const isEdit = !!payload.id;
+  if(!isEdit) {
+    payload.id = makeUUID();
+    payload.isNew = true;
+    State.nodes.push({
+      ...payload,
+      isDraft: true,
+      photo: photo ? "data:image/jpeg;base64,"+photo.data : ""
+    });
+  } else {
+    const n = State.nodes.find(x => x.id === payload.id);
+    if(n) {
+      Object.assign(n, payload, { isDraft: true });
+      if(photo) n.photo = "data:image/jpeg;base64,"+photo.data;
+    }
+  }
+  
+  buildTree();
+  toast("Paparan draf dikemaskini. Sila tekan 'Hantar Perubahan'.");
   closeModal("modal-node");
   queueChange({label:"Simpan ahli "+(payload.name||""), run:()=>api("saveNode", payload)});
 });
 
-/* ---------- Spouse Editor ---------- */
+/* ---------- Spouse Editor (Optimistik Draf) ---------- */
 function openSpouseEditor(parent, existing=null){
   if(!canManageContent()){toast("Akaun anda perlu disahkan admin dahulu");return;}
   const f = $("#form-spouse"); f.reset();
@@ -863,6 +870,7 @@ $("#form-spouse").addEventListener("submit", async e=>{
   if(!parent){toast("Profil induk tidak dijumpai");return;}
   const photo = await fileToBase64(fd.get("photo"));
   const editOrder = fd.get("editOrder");
+  
   let runCall;
   if(editOrder){
     const payload = {
@@ -875,10 +883,25 @@ $("#form-spouse").addEventListener("submit", async e=>{
       newOrder: Number(fd.get("spouseOrder"))||Number(editOrder),
     };
     if(photo) payload.photo = photo;
+    
+    // Optimistic Update Spouse
+    const rowSpouse = State.nodes.find(x => x.spouseOf === parent.id && Number(x.spouseOrder) === Number(editOrder));
+    if (rowSpouse) {
+       Object.assign(rowSpouse, { ...payload, isDraft: true });
+       if(photo) rowSpouse.photo = "data:image/jpeg;base64,"+photo.data;
+    } else if (parent.spouses) {
+       const sp = parent.spouses.find(s => Number(s.order) === Number(editOrder));
+       if (sp) {
+          Object.assign(sp, { ...payload, isDraft: true });
+          if(photo) sp.photo = "data:image/jpeg;base64,"+photo.data;
+       }
+    }
+    
     runCall = ()=>api("editSpouse", payload);
   } else {
     const payload = {
-      id: makeSpouseId(),
+      id: makeUUID(),
+      isNew: true,
       parentId: parent.id, relation: "spouse",
       name: fd.get("name"), nickname: fd.get("nickname")||"",
       gender: fd.get("gender")||"", spouseStatus: fd.get("status"),
@@ -887,9 +910,24 @@ $("#form-spouse").addEventListener("submit", async e=>{
       notes: fd.get("notes")||"", spouseOrder: fd.get("spouseOrder")||"",
     };
     if(photo) payload.photo = photo;
+    
+    // Optimistic Add Spouse
+    State.nodes.push({
+       id: payload.id,
+       spouseOf: parent.id,
+       spouseOrder: payload.spouseOrder,
+       name: payload.name,
+       gender: payload.gender,
+       status: payload.spouseStatus,
+       isDraft: true,
+       photo: photo ? "data:image/jpeg;base64,"+photo.data : ""
+    });
+    
     runCall = ()=>api("saveNode", payload);
   }
-  toast("Dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+  
+  buildTree();
+  toast("Draf dipaparkan. Sila tekan 'Hantar Perubahan'.");
   closeModal("modal-spouse");
   queueChange({label:"Simpan pasangan", run: runCall});
 });
@@ -898,7 +936,12 @@ async function delNode(n){
   const isAdmin = State.user?.role==="admin";
   const q = isAdmin ? "Padam "+n.name+"? Tindakan ini tidak boleh dibatalkan." : "Pohon admin padam "+n.name+"? Permintaan akan dihantar untuk kelulusan.";
   if(!confirm(q)) return;
-  toast("Padam dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+  
+  // Optimistic Delete
+  State.nodes = State.nodes.filter(x => x.id !== n.id && x.parentId !== n.id && x.spouseOf !== n.id);
+  buildTree();
+  
+  toast("Draf padam diletakkan di bawah.");
   queueChange({key:"del:"+n.id, label:"Padam "+n.name, run:()=>api("deleteNode",{id:n.id})});
 }
 
@@ -908,7 +951,7 @@ function renderNotes(){
   $$(".map-note", canvas).forEach(el=>el.remove());
   (State.notes||[]).forEach(n=>{
     const el = document.createElement("div");
-    el.className = "map-note"+(n.pending?" pending":"")+(n.pinned?" pinned":"");
+    el.className = "map-note"+(n.pending?" pending":"")+(n.pinned?" pinned":"")+(n.isDraft?" is-draft":"");
     el.dataset.noteId = n.id;
     el.style.left = (n.x||0)+"px";
     el.style.top  = (n.y||0)+"px";
@@ -917,7 +960,7 @@ function renderNotes(){
     el.style.fontSize = (n.size||16)+"px";
     el.innerHTML = `<span class="note-text" dir="auto">${escape(n.text||"")}</span>
       ${n.pinned?'<span class="note-pin" title="Dipin">📌</span>':''}
-      ${n.pending?'<span class="note-pending" title="Menunggu kelulusan">⏳</span>':''}`;
+      ${n.isDraft?'<span class="note-pending" style="color:#059669;font-weight:bold" title="Draf Belum Simpan">DRAF</span>':(n.pending?'<span class="note-pending" title="Menunggu kelulusan">⏳</span>':'')}`;
     el.addEventListener("click",e=>{ e.stopPropagation(); openNoteCtx(e.clientX, e.clientY, n); });
     enableNoteDrag(el, n);
     canvas.appendChild(el);
@@ -927,7 +970,7 @@ function enableNoteDrag(el, n){
   const isAdmin = State.user?.role==="admin";
   const isOwner = State.user && n.createdBy===State.user.username;
   if(n.pinned && !isAdmin) return;
-  if(!isAdmin && !isOwner) return;
+  if(!isAdmin && !isOwner && !n.isDraft) return;
   el.style.cursor="move";
   let drag=null;
   el.addEventListener("pointerdown",ev=>{
@@ -949,7 +992,8 @@ function enableNoteDrag(el, n){
     const nx=parseFloat(el.style.left)||0, ny=parseFloat(el.style.top)||0;
     drag=null;
     if(moved){
-      n.x = nx; n.y = ny;
+      n.x = nx; n.y = ny; n.isDraft = true;
+      renderNotes();
       queueChange({
         key:"note:"+n.id,
         label:"Alih nota",
@@ -962,13 +1006,13 @@ function openNoteCtx(x,y,n){
   const m = $("#ctx-menu");
   const isAdmin = State.user?.role==="admin";
   const isOwner = State.user && n.createdBy===State.user.username;
-  const canEdit = isAdmin || (isOwner && !n.pinned);
+  const canEdit = isAdmin || ((isOwner||n.isDraft) && !n.pinned);
   m.innerHTML = "";
   const items = [
     canEdit && {l:"✎ Edit Nota", fn:()=>openNoteEditor(n)},
     isAdmin && {l: n.pinned ? "📍 Buka Pin" : "📌 Pin Nota", fn:()=>togglePin(n)},
     canEdit && {l:"🗑 Padam Nota", fn:()=>deleteNote(n)},
-    {l:"ℹ Info", fn:()=>showInfo(`Dicipta oleh: ${n.createdBy||"-"}\nDikemaskini: ${fmtDateTime(n.lastEditAt)}\n${n.approvedBy?"Disahkan: "+n.approvedBy:"⏳ Belum disahkan"}`,{title:"Maklumat Nota"})},
+    !n.isDraft && {l:"ℹ Info", fn:()=>showInfo(`Dicipta oleh: ${n.createdBy||"-"}\nDikemaskini: ${fmtDateTime(n.lastEditAt)}\n${n.approvedBy?"Disahkan: "+n.approvedBy:"⏳ Belum disahkan"}`,{title:"Maklumat Nota"})},
   ].filter(Boolean);
   if(!items.length) return;
   items.forEach(i=>{const b=document.createElement("button");b.textContent=i.l;b.onclick=()=>{m.classList.add("hidden");i.fn();};m.appendChild(b);});
@@ -998,21 +1042,28 @@ $("#form-note").addEventListener("submit", async e=>{
   const payload = {
     id: fd.get("id")||"",
     text: fd.get("text"),
-    x: Number(fd.get("x"))||0,
-    y: Number(fd.get("y"))||0,
-    font: fd.get("font")||"Cormorant Garamond",
-    size: Number(fd.get("size"))||16,
-    color: fd.get("color")||"#3b2a14",
-    pinned: State.user.role==="admin" ? !!fd.get("pinned") : false,
+    x: Number(fd.get("x"))||0, y: Number(fd.get("y"))||0,
+    font: fd.get("font")||"Cormorant Garamond", size: Number(fd.get("size"))||16,
+    color: fd.get("color")||"#3b2a14", pinned: State.user.role==="admin" ? !!fd.get("pinned") : false,
   };
-  if(!payload.id) delete payload.id;
-  toast("Dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+  if(!payload.id) {
+     payload.id = makeUUID();
+     payload.isNew = true;
+     State.notes.push({...payload, isDraft: true});
+  } else {
+     const n = State.notes.find(x => x.id === payload.id);
+     if(n) Object.assign(n, {...payload, isDraft: true});
+  }
+  renderNotes();
+  
+  toast("Draf nota ditambahkan.");
   closeModal("modal-note");
   queueChange({key: payload.id ? "note:"+payload.id : undefined, label:"Simpan nota", run:()=>api("saveNote", payload)});
 });
 async function togglePin(n){
   const newPinned = !n.pinned;
   n.pinned = newPinned;
+  n.isDraft = true;
   renderNotes();
   queueChange({
     key:"note:"+n.id,
@@ -1023,7 +1074,11 @@ async function togglePin(n){
 async function deleteNote(n){
   const isAdmin = State.user?.role==="admin";
   if(!confirm(isAdmin?"Padam nota ini?":"Pohon padam nota ini? Perlu kelulusan admin.")) return;
-  toast("Padam dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
+  
+  State.notes = State.notes.filter(x => x.id !== n.id);
+  renderNotes();
+  
+  toast("Padam nota dimasukkan ke draf.");
   queueChange({key:"note-del:"+n.id, label:"Padam nota", run:()=>api("deleteNote",{id:n.id})});
 }
 $("#btn-add-note").addEventListener("click",()=>{
@@ -1044,7 +1099,7 @@ $("#canvas").addEventListener("click", e=>{
   openNoteEditor({x: Math.round(x), y: Math.round(y), text:"", font:"Cormorant Garamond", size:18, color:"#3b2a14"});
 });
 
-/* ---------- Profil Saya ---------- */
+/* ---------- Profil Saya & Modals ---------- */
 function showMyProfile(){
   if(!State.user){ openModal("modal-auth"); return; }
   const me = State.myProfile || State.user;
@@ -1087,46 +1142,12 @@ function printMemberCard(me){
   const photo = fixPhoto(me.photo) || placeholder("L");
   const win = window.open("", "_blank", "width=900,height=640");
   if(!win){ toast("Benarkan popup untuk mencetak kad ahli"); return; }
-  win.document.write(`<!DOCTYPE html>
-  <html lang="ms"><head><meta charset="UTF-8"><title>Kad Ahli</title>
-  <style>
-    body{font-family:Inter,Arial,sans-serif;background:#f3ead5;margin:0;padding:24px;color:#2e2418}
-    .sheet{display:flex;align-items:center;justify-content:center;min-height:100vh}
-    .card{width:860px;max-width:100%;background:linear-gradient(145deg,#fffaf0,#edd8a8);border:3px solid #8d6921;border-radius:26px;box-shadow:0 24px 50px -24px rgba(0,0,0,.4);overflow:hidden}
-    .top{padding:22px 28px;background:linear-gradient(135deg,#7a5a14,#b88b2a);color:#fff7dd}
-    .brand{font-size:30px;font-weight:800;letter-spacing:.08em}
-    .sub{font-size:14px;opacity:.92}
-    .body{display:flex;gap:24px;padding:28px}
-    .photo{width:180px;height:220px;border-radius:20px;object-fit:cover;border:4px solid #8d6921;background:#fff}
-    .meta{flex:1}
-    .name{font-size:34px;font-weight:800;line-height:1.1;margin:4px 0 14px}
-    .row{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid rgba(122,90,20,.18)}
-    .label{font-size:13px;color:#6d5a37;text-transform:uppercase;letter-spacing:.06em}
-    .value{font-size:18px;font-weight:700;text-align:right}
-    .foot{padding:0 28px 28px;color:#6d5a37;font-size:13px}
-    @media print{body{background:#fff;padding:0}.sheet{min-height:auto}.card{box-shadow:none;width:100%;border-radius:0}}
-  </style></head>
-  <body><div class="sheet"><div class="card">
-    <div class="top"><div class="brand">SALASILAH ELIT</div><div class="sub">Kad Keahlian Sah</div></div>
-    <div class="body">
-      <img class="photo" src="${photo}" onerror="this.src='${placeholder("L")}'">
-      <div class="meta">
-        <div class="name">${escape(me.fullname || me.username || "-")}</div>
-        <div class="row"><div class="label">No. Keahlian</div><div class="value">#${escape(me.no || "-")}</div></div>
-        <div class="row"><div class="label">Username</div><div class="value">@${escape(me.username || "-")}</div></div>
-        <div class="row"><div class="label">Telefon</div><div class="value">${escape(me.phone || "-")}</div></div>
-        <div class="row"><div class="label">Disahkan oleh</div><div class="value">${escape(me.approvedBy || "-")}</div></div>
-        <div class="row"><div class="label">Tarikh sah</div><div class="value">${escape(fmtDateTime(me.approvedAt) || "-")}</div></div>
-      </div>
-    </div>
-    <div class="foot">Kad ini dijana daripada profil pengguna yang telah disahkan oleh admin.</div>
-  </div></div></body></html>`);
+  win.document.write(`<!DOCTYPE html>\n<html lang="ms"><head><meta charset="UTF-8"><title>Kad Ahli</title><style>body{font-family:Inter,Arial,sans-serif;background:#f3ead5;margin:0;padding:24px;color:#2e2418}.sheet{display:flex;align-items:center;justify-content:center;min-height:100vh}.card{width:860px;max-width:100%;background:linear-gradient(145deg,#fffaf0,#edd8a8);border:3px solid #8d6921;border-radius:26px;box-shadow:0 24px 50px -24px rgba(0,0,0,.4);overflow:hidden}.top{padding:22px 28px;background:linear-gradient(135deg,#7a5a14,#b88b2a);color:#fff7dd}.brand{font-size:30px;font-weight:800;letter-spacing:.08em}.sub{font-size:14px;opacity:.92}.body{display:flex;gap:24px;padding:28px}.photo{width:180px;height:220px;border-radius:20px;object-fit:cover;border:4px solid #8d6921;background:#fff}.meta{flex:1}.name{font-size:34px;font-weight:800;line-height:1.1;margin:4px 0 14px}.row{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid rgba(122,90,20,.18)}.label{font-size:13px;color:#6d5a37;text-transform:uppercase;letter-spacing:.06em}.value{font-size:18px;font-weight:700;text-align:right}.foot{padding:0 28px 28px;color:#6d5a37;font-size:13px}@media print{body{background:#fff;padding:0}.sheet{min-height:auto}.card{box-shadow:none;width:100%;border-radius:0}}</style></head><body><div class="sheet"><div class="card"><div class="top"><div class="brand">SALASILAH ELIT</div><div class="sub">Kad Keahlian Sah</div></div><div class="body"><img class="photo" src="${photo}" onerror="this.src='${placeholder("L")}'"><div class="meta"><div class="name">${escape(me.fullname || me.username || "-")}</div><div class="row"><div class="label">No. Keahlian</div><div class="value">#${escape(me.no || "-")}</div></div><div class="row"><div class="label">Username</div><div class="value">@${escape(me.username || "-")}</div></div><div class="row"><div class="label">Telefon</div><div class="value">${escape(me.phone || "-")}</div></div><div class="row"><div class="label">Disahkan oleh</div><div class="value">${escape(me.approvedBy || "-")}</div></div><div class="row"><div class="label">Tarikh sah</div><div class="value">${escape(fmtDateTime(me.approvedAt) || "-")}</div></div></div></div><div class="foot">Kad ini dijana daripada profil pengguna yang telah disahkan oleh admin.</div></div></div></body></html>`);
   win.document.close();
   win.focus();
   setTimeout(()=>win.print(), 300);
 }
 
-/* ---------- Auth ---------- */
 $("#btn-my-profile").addEventListener("click",async()=>{
   if(!ensureSession("membuka profil anda")) return;
   await loadMyProfile(false);
@@ -1336,7 +1357,6 @@ function initSettingsUI(){
     b.onclick = ()=>{ applyTheme(t.id); initSettingsUI(); showInfo("Tema ditukar: "+t.name); };
     wrap.appendChild(b);
   });
-  $("#theme-note").textContent = isMaster ? "👑 Master Admin — pilihan tema ini akan disimpan setempat pada peranti ini." : "🔒 Hanya Master Admin (akaun 'admin') yang boleh menukar tema aplikasi.";
 }
 $("#btn-settings").addEventListener("click",()=>{ initSettingsUI(); openModal("modal-settings"); });
 

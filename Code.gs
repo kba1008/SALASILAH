@@ -1,8 +1,7 @@
 /**
- * SALASILAH KELUARGA ELIT — Apps Script Backend v2.10 strict-spouses
+ * SALASILAH KELUARGA ELIT — Apps Script Backend v2.11 draft-mode
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
  * Execute as: Me   |   Access: Anyone
- * Pertama kali: Jalankan INITIALIZE_SYSTEM() secara manual sekali.
  */
 
 const SHEET_USERS   = "PENGGUNA";
@@ -30,7 +29,6 @@ function INITIALIZE_SYSTEM() {
   migrateHeaders_(SHEET_TREE, TREE_HEADERS);
   migrateHeaders_(SHEET_USERS, USER_HEADERS);
   migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
-  migrateSpousesJsonToRows_();
   ensureFolder_();
   const users = ss.getSheetByName(SHEET_USERS);
   if (users.getLastRow() < 2) {
@@ -81,10 +79,10 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.10 strict-spouses"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.11 draft-mode"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.10-strict-spouses";
+const _INIT_VERSION = "v2.11-draft-mode";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -96,7 +94,6 @@ function ensureInit_() {
     migrateHeaders_(SHEET_USERS, USER_HEADERS);
     migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
   }
-  migrateSpousesJsonToRows_();
   const u = findUserBy_("username", MASTER_USER);
   if (!u) {
     appendUserRow_({ no:0, username:MASTER_USER, fullname:"Master Admin", passwordHash:hash_(MASTER_PASS), role:"admin", createdAt:new Date(), approved:true, approvedBy:"SYSTEM", approvedAt:new Date() });
@@ -203,20 +200,10 @@ const ACTIONS = {
     if (u.banned === true || u.banned === "TRUE" || u.banned === "true" || u.banned === 1) throw new Error("Akaun anda telah disekat oleh admin. Hubungi Master Admin.");
     const token = getOrCreateUserToken_(u.username);
     return {
-      username: u.username,
-      fullname: u.fullname || "",
-      role: u.role || "ahli",
-      no: isUserApproved_(u) ? u.no : "",
-      token,
-      photo: u.photo,
-      phone: u.phone || "",
-      email: u.email || "",
-      fatherName: u.fatherName || "",
-      motherName: u.motherName || "",
-      approved: isUserApproved_(u),
-      approvedBy: u.approvedBy || "",
-      approvedAt: u.approvedAt || "",
-      isMaster:false
+      username: u.username, fullname: u.fullname || "", role: u.role || "ahli",
+      no: isUserApproved_(u) ? u.no : "", token, photo: u.photo, phone: u.phone || "",
+      email: u.email || "", fatherName: u.fatherName || "", motherName: u.motherName || "",
+      approved: isUserApproved_(u), approvedBy: u.approvedBy || "", approvedAt: u.approvedAt || "", isMaster:false
     };
   },
   myProfile(_, auth) {
@@ -271,10 +258,8 @@ const ACTIONS = {
 
     const users = readSheet_(SHEET_USERS).map(u=>({
       username: u.username, fullname: u.fullname||"", role: u.role||"ahli",
-      fatherName: u.fatherName||"", motherName: u.motherName||"",
-      photo: u.photo||"",
-      no: isUserApproved_(u) ? (u.no||"") : "",
-      approved: isUserApproved_(u),
+      fatherName: u.fatherName||"", motherName: u.motherName||"", photo: u.photo||"",
+      no: isUserApproved_(u) ? (u.no||"") : "", approved: isUserApproved_(u),
     }));
 
     const _out = { nodes, notes, users };
@@ -331,14 +316,15 @@ const ACTIONS = {
       return { pending: true };
     }
 
-    if (p.id) {
+    if (p.id && !p.isNew) {
       if (isAdmin) { applyNodeUpdate_(p, photoUrl, auth); stampApprove_(p.id, auth); return { ok: true }; }
       addPending_({ action: "edit", targetId: p.id, payload: { ...p, photoUrl }, by: auth.username, summary: "Edit "+(p.name||"") });
       markNodePending_(p.id, true);
       return { pending: true };
     }
 
-    const newId = insertNode_(p, photoUrl, auth, !isAdmin);
+    const newId = p.id || Utilities.getUuid();
+    insertNode_({...p, id: newId}, photoUrl, auth, !isAdmin);
     if (!isAdmin) {
       addPending_({ action: "add", targetId: newId, payload: { id:newId, parentId:p.parentId||"" }, by: auth.username, summary: "Tambah ahli: "+(p.name||"") });
       return { pending: true, id: newId };
@@ -366,14 +352,11 @@ const ACTIONS = {
     requireVerifiedUser_(auth);
     const isAdmin = auth.role === "admin";
     const data = {
-      text: String(p.text||"").slice(0,500),
-      x: Number(p.x)||0, y: Number(p.y)||0,
-      font: p.font||"Cormorant Garamond",
-      size: Math.max(8, Math.min(72, Number(p.size)||16)),
-      color: p.color||"#3b2a14",
-      pinned: !!p.pinned,
+      text: String(p.text||"").slice(0,500), x: Number(p.x)||0, y: Number(p.y)||0,
+      font: p.font||"Cormorant Garamond", size: Math.max(8, Math.min(72, Number(p.size)||16)),
+      color: p.color||"#3b2a14", pinned: !!p.pinned,
     };
-    if (p.id) {
+    if (p.id && !p.isNew) {
       const existing = readSheet_(SHEET_NOTES).find(n=>String(n.id)===String(p.id));
       if (!existing) throw new Error("Nota tidak dijumpai");
       const isOwner = existing.createdBy === auth.username;
@@ -390,7 +373,7 @@ const ACTIONS = {
       markNotePending_(p.id, true);
       return { pending:true };
     }
-    const id = Utilities.getUuid();
+    const id = p.id || Utilities.getUuid();
     appendNoteRow_({ id, ...data, pending: !isAdmin, createdBy: auth.username, createdAt: new Date(), lastEditBy: auth.username, lastEditAt: new Date(), approvedBy: isAdmin?auth.username:"", approvedAt: isAdmin?new Date():"" });
     if (!isAdmin) {
       addPending_({ action:"note-add", targetId:id, payload:{ id }, by:auth.username, summary:"Nota baharu: "+data.text.slice(0,40) });
@@ -462,11 +445,8 @@ const ACTIONS = {
       pending,
       users: usersAll.map(u => ({
         no: u.no, username: u.username, fullname: u.fullname, phone: u.phone, email: u.email, role: u.role,
-        fatherName: u.fatherName||"", motherName: u.motherName||"",
-        photo: u.photo||"",
-        approved: isUserApproved_(u),
-        approvedBy: u.approvedBy||"",
-        approvedAt: u.approvedAt||"",
+        fatherName: u.fatherName||"", motherName: u.motherName||"", photo: u.photo||"",
+        approved: isUserApproved_(u), approvedBy: u.approvedBy||"", approvedAt: u.approvedAt||"",
         banned: u.banned===true||u.banned==="TRUE"||u.banned==="true"||u.banned===1
       })),
     };
@@ -892,43 +872,9 @@ function nextFreeSpouseOrder_(rows, parentId, wanted, ignoreId){
   while (taken[order]) order++;
   return order;
 }
-function migrateSpousesJsonToRows_(){
-  const lock = LockService.getScriptLock();
-  try { lock.waitLock(10000); } catch(e) {}
-  try {
-    const sh = sheet_(SHEET_TREE);
-    migrateHeaders_(SHEET_TREE, TREE_HEADERS);
-    const rows = readSheet_(SHEET_TREE);
-    rows.forEach(n=>{
-      if (n.spouseOf) return;
-      const spouses = _loadSpouses_(n, rows).filter(s=>!rows.some(r=>String(r.id||"")===String(s.id||"") || (String(r.spouseOf||"")===String(n.id||"") && String(r.name||"").trim()===String(s.name||"").trim() && Number(r.spouseOrder||0)===Number(s.order||0))));
-      spouses.forEach((s,i)=>{
-        const order = nextFreeSpouseOrder_(readSheet_(SHEET_TREE), n.id, Number(s.order)||i+1, "");
-        appendNodeRow_(sh, {
-          id: s.id || Utilities.getUuid(),
-          parentId: "", no: sh.getLastRow(), name: s.name || "", nickname: s.nickname || "",
-          gender: s.gender || oppositeGender_(n.gender), status: s.status || "hidup",
-          birth: s.birth || "", death: s.death || "", birthplace: s.birthplace || "", deathplace: s.deathplace || "",
-          spouseOf: n.id, spouseOrder: order, photo: s.photo || "", notes: s.notes || "",
-          createdBy: n.createdBy || "SYSTEM", createdAt: n.createdAt || new Date(), pending: false,
-          lastEditBy: n.lastEditBy || n.createdBy || "SYSTEM", lastEditAt: n.lastEditAt || new Date(), approvedBy: n.approvedBy || "SYSTEM", approvedAt: n.approvedAt || new Date(),
-        });
-      });
-      if (spouses.length || n.spouseName || n.spousesJson) {
-        setCellByHeader_(sh, n._row, "spousesJson", "");
-        setCellByHeader_(sh, n._row, "spouseName", "");
-        setCellByHeader_(sh, n._row, "spousePhoto", "");
-      }
-    });
-  } finally {
-    try { lock.releaseLock(); } catch(e) {}
-  }
-}
 
 /* ============ HELPERS ============ */
-function ss_(){
-  return SpreadsheetApp.openById(GOOGLE_SHEET_ID);
-}
+function ss_(){ return SpreadsheetApp.openById(GOOGLE_SHEET_ID); }
 function sheet_(n){return ss_().getSheetByName(n);}
 function readSheet_(name) {
   const sh = sheet_(name);
@@ -1008,7 +954,7 @@ function appendNoteRow_(data){
 }
 function insertNode_(p, photoUrl, auth, pending) {
   const sh = sheet_(SHEET_TREE);
-  const id = Utilities.getUuid();
+  const id = p.id || Utilities.getUuid();
   const no = sh.getLastRow();
   appendNodeRow_(sh, {
     id, parentId: p.parentId||"", no,
