@@ -1,1000 +1,828 @@
 <!DOCTYPE html>
 <html lang="ms">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-<meta name="theme-color" content="#f5ecd7" />
-<title>Salasilah Keluarga Elit</title>
-<link rel="manifest" href="manifest.json" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='50'%3E%F0%9F%8C%B3%3C/text%3E%3C/svg%3E" />
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet">
-<style>
-  /* === TEMA 1: Parchment (default) === */
-  :root, html[data-theme="parchment"]{
-    --bg:#f5ecd7; --bg-alt:#ede0c2; --card:#fffaf0;
-    --line:#b08a4d; --line-soft:#d6b87a;
-    --ink:#3b2a14; --ink-soft:#6b563a;
-    --gold:#a8801f; --gold-dark:#7a5a14;
-    --accent:#3b6fa0; --rose:#a83b5a;
-    --shadow: 0 6px 18px -10px rgba(80,55,15,.45);
-    --bg-radial-a:#fff8e3; --bg-radial-b:#f0e0b8;
-  }
-  /* === TEMA 2: Royal Navy === */
-  html[data-theme="royal"]{
-    --bg:#0f1b3d; --bg-alt:#1e3a5f; --card:#1b2c52;
-    --line:#c9a84c; --line-soft:#8a7a3a;
-    --ink:#f0e8d0; --ink-soft:#b8b090;
-    --gold:#e8c96a; --gold-dark:#c9a84c;
-    --accent:#7cb8ff; --rose:#ff9ec0;
-    --shadow: 0 6px 22px -8px rgba(0,0,0,.6);
-    --bg-radial-a:#1e3a5f; --bg-radial-b:#0a1226;
-  }
-  /* === TEMA 3: Emerald Hutan === */
-  html[data-theme="emerald"]{
-    --bg:#f0ebd8; --bg-alt:#dde3c8; --card:#fbfaef;
-    --line:#4a6741; --line-soft:#87a878;
-    --ink:#1f3322; --ink-soft:#5a6f4f;
-    --gold:#7d9b76; --gold-dark:#4a6741;
-    --accent:#0d7a5f; --rose:#c4654a;
-    --shadow: 0 6px 18px -10px rgba(20,55,30,.45);
-    --bg-radial-a:#e8f0d8; --bg-radial-b:#cfe0b8;
-  }
-  /* === TEMA 4: Rose Garden === */
-  html[data-theme="rose"]{
-    --bg:#fdf1f4; --bg-alt:#f8dce3; --card:#fffafb;
-    --line:#c45c7c; --line-soft:#e88aab;
-    --ink:#4a1230; --ink-soft:#7d3a55;
-    --gold:#c44569; --gold-dark:#8b2848;
-    --accent:#9b72cf; --rose:#c44569;
-    --shadow: 0 6px 18px -10px rgba(150,30,70,.35);
-    --bg-radial-a:#fef0f5; --bg-radial-b:#f6c8d8;
-  }
-  /* === TEMA 5: Midnight Gold === */
-  html[data-theme="midnight"]{
-    --bg:#0d0d12; --bg-alt:#1a1a22; --card:#1a1a22;
-    --line:#c9a84c; --line-soft:#7a5a14;
-    --ink:#f0e8d0; --ink-soft:#a89878;
-    --gold:#f0d78c; --gold-dark:#c9a84c;
-    --accent:#9bd6ff; --rose:#ff7aa2;
-    --shadow: 0 8px 30px -10px rgba(0,0,0,.7);
-    --bg-radial-a:#2a1f10; --bg-radial-b:#0a0a14;
-  }
-  html,body{
-    height:100%;
-    background:
-      radial-gradient(1200px 700px at 20% 10%, var(--bg-radial-a) 0%, transparent 60%),
-      radial-gradient(900px 600px at 80% 90%, var(--bg-radial-b) 0%, transparent 60%),
-      var(--bg);
-    color:var(--ink);
-    font-family:'Inter','Noto Naskh Arabic','Scheherazade New','Amiri',system-ui,sans-serif;
-  }
-  .serif{font-family:'Cormorant Garamond','Amiri','Scheherazade New',serif;}
-  [dir="rtl"], [lang="ar"]{font-family:'Amiri','Scheherazade New','Noto Naskh Arabic',serif;}
-  .node .name:lang(ar), .node .name[dir="rtl"]{font-size:18px;line-height:1.3;}
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <meta name="theme-color" content="#f5ecd7" />
+  <title>Salasilah Keluarga Elit</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='50'%3E%F0%9F%8C%B3%3C/text%3E%3C/svg%3E" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    /* === TEMA 1: Parchment (default) === */
+    :root, html[data-theme="parchment"] {
+      --bg: #f5ecd7; --bg-alt: #ede0c2; --card: #fffaf0;
+      --line: #b08a4d; --line-soft: #d6b87a;
+      --ink: #3b2a14; --ink-soft: #6b563a;
+      --gold: #a8801f; --gold-dark: #7a5a14;
+      --accent: #3b6fa0; --rose: #a83b5a;
+      --shadow: 0 6px 18px -10px rgba(80,55,15,.45);
+      --bg-radial-a: #fff8e3; --bg-radial-b: #f0e0b8;
+    }
+    /* === TEMA 2: Royal Navy === */
+    html[data-theme="royal"] {
+      --bg: #0f1b3d; --bg-alt: #1e3a5f; --card: #1b2c52;
+      --line: #c9a84c; --line-soft: #8a7a3a;
+      --ink: #f0e8d0; --ink-soft: #b8b090;
+      --gold: #e8c96a; --gold-dark: #c9a84c;
+      --accent: #7cb8ff; --rose: #ff9ec0;
+      --shadow: 0 6px 22px -8px rgba(0,0,0,.6);
+      --bg-radial-a: #1e3a5f; --bg-radial-b: #0a1226;
+    }
+    /* === TEMA 3: Emerald Hutan === */
+    html[data-theme="emerald"] {
+      --bg: #f0ebd8; --bg-alt: #dde3c8; --card: #fbfaef;
+      --line: #4a6741; --line-soft: #87a878;
+      --ink: #1f3322; --ink-soft: #5a6f4f;
+      --gold: #7d9b76; --gold-dark: #4a6741;
+      --accent: #0d7a5f; --rose: #c4654a;
+      --shadow: 0 6px 18px -10px rgba(20,55,30,.45);
+      --bg-radial-a: #e8f0d8; --bg-radial-b: #cfe0b8;
+    }
+    /* === TEMA 4: Rose Garden === */
+    html[data-theme="rose"] {
+      --bg: #fdf1f4; --bg-alt: #f8dce3; --card: #fffafb;
+      --line: #c45c7c; --line-soft: #e88aab;
+      --ink: #4a1230; --ink-soft: #7d3a55;
+      --gold: #c44569; --gold-dark: #8b2848;
+      --accent: #9b72cf; --rose: #c44569;
+      --shadow: 0 6px 18px -10px rgba(150,30,70,.35);
+      --bg-radial-a: #fef0f5; --bg-radial-b: #f6c8d8;
+    }
+    /* === TEMA 5: Midnight Gold === */
+    html[data-theme="midnight"] {
+      --bg: #0d0d12; --bg-alt: #1a1a22; --card: #1a1a22;
+      --line: #c9a84c; --line-soft: #7a5a14;
+      --ink: #f0e8d0; --ink-soft: #a89878;
+      --gold: #f0d78c; --gold-dark: #c9a84c;
+      --accent: #9bd6ff; --rose: #ff7aa2;
+      --shadow: 0 8px 30px -10px rgba(0,0,0,.7);
+      --bg-radial-a: #2a1f10; --bg-radial-b: #0a0a14;
+    }
+    html, body {
+      height: 100%;
+      background:
+        radial-gradient(1200px 700px at 20% 10%, var(--bg-radial-a) 0%, transparent 60%),
+        radial-gradient(900px 600px at 80% 90%, var(--bg-radial-b) 0%, transparent 60%),
+        var(--bg);
+      color: var(--ink);
+      font-family: 'Inter', 'Noto Naskh Arabic', 'Scheherazade New', 'Amiri', system-ui, sans-serif;
+    }
+    .serif { font-family: 'Cormorant Garamond', 'Amiri', 'Scheherazade New', serif; }
+    [dir="rtl"], [lang="ar"] { font-family: 'Amiri', 'Scheherazade New', 'Noto Naskh Arabic', serif; }
+    .node .name:lang(ar), .node .name[dir="rtl"] { font-size: 18px; line-height: 1.3; }
 
-  .glass{
-    background:linear-gradient(180deg, color-mix(in oklab, var(--card) 97%, #ffffff 3%), color-mix(in oklab, var(--bg-alt) 90%, #ffffff 10%));
-    border:1px solid color-mix(in oklab, var(--line) 44%, #ffffff 56%);
-    box-shadow:
-      0 16px 34px -18px rgba(0,0,0,.34),
-      0 4px 12px -8px rgba(0,0,0,.18),
-      inset 0 1px 0 rgba(255,255,255,.72),
-      inset 0 -1px 0 rgba(0,0,0,.05);
-    color:var(--ink);
-  }
+    .glass {
+      background: linear-gradient(180deg, color-mix(in oklab, var(--card) 97%, #ffffff 3%), color-mix(in oklab, var(--bg-alt) 90%, #ffffff 10%));
+      border: 1px solid color-mix(in oklab, var(--line) 44%, #ffffff 56%);
+      box-shadow:
+        0 16px 34px -18px rgba(0,0,0,.34),
+        0 4px 12px -8px rgba(0,0,0,.18),
+        inset 0 1px 0 rgba(255,255,255,.72),
+        inset 0 -1px 0 rgba(0,0,0,.05);
+      color: var(--ink);
+    }
 
-  /* === NODE (kad ahli) — 3D solid === */
-  .node{
-    position:relative;display:flex;flex-direction:column;align-items:center;
-    padding:14px 18px;border-radius:18px;
-    background:
-      linear-gradient(180deg, color-mix(in oklab, var(--card) 94%, #ffffff 6%), color-mix(in oklab, var(--bg-alt) 90%, #ffffff 10%));
-    border:1px solid color-mix(in oklab, var(--line) 58%, #ffffff 42%);
-    min-width:160px;
-    box-shadow:
-      0 22px 42px -20px rgba(0,0,0,.42),
-      0 8px 18px -12px color-mix(in oklab, var(--gold) 58%, rgba(0,0,0,.2)),
-      inset 0 1px 0 rgba(255,255,255,.76),
-      inset 0 -1px 0 rgba(0,0,0,.08);
-    cursor:pointer;transition:transform .25s cubic-bezier(.2,.7,.2,1.2), box-shadow .25s, border-color .2s;
-    transform: translateZ(0);
-  }
-  .node::before{
-    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
-    background: radial-gradient(120% 60% at 50% -20%, rgba(255,255,255,.55), transparent 60%);
-    mix-blend-mode: overlay; opacity:.7;
-  }
-  .node:hover{transform:translateY(-3px) scale(1.02);border-color:var(--gold-dark);
-    box-shadow:
-      0 28px 50px -20px rgba(0,0,0,.55),
-      0 10px 24px -10px color-mix(in oklab, var(--gold) 60%, rgba(0,0,0,.18)),
-      inset 0 1px 0 rgba(255,255,255,.82);}
-  .node.pending,
-  .node.pending.is-user,
-  .node.pending.is-admin,
-  .node.pending.root,
-  .node.pending.hanging{
-    background:linear-gradient(180deg, #f2f4f7, #d8dee7);
-    border-color:#5b6472;
-    box-shadow:
-      0 0 0 3px rgba(245,158,11,.36),
-      0 20px 40px -18px rgba(71,85,105,.34),
-      inset 0 1px 0 rgba(255,255,255,.72);
-  }
-  .node.pending .name{color:#111827;text-shadow:0 1px 0 rgba(255,255,255,.45);}
-  .node.pending .meta{color:#334155;font-weight:700;}
-  .couple.pending-family{
-    background:linear-gradient(180deg, rgba(245,158,11,.10), rgba(217,226,236,.96));
-    border:2px dashed #f59e0b;
-    box-shadow:
-      0 0 0 3px rgba(245,158,11,.18),
-      0 10px 22px -16px rgba(71,85,105,.38);
-  }
-  .couple.pending-family .node,
-  .couple.pending-family .node.spouse,
-  .couple.pending-family .node.is-user,
-  .couple.pending-family .node.is-admin{
-    background:linear-gradient(180deg, #f2f4f7, #d8dee7);
-    border-color:#5b6472;
-    box-shadow:
-      0 0 0 2px rgba(245,158,11,.24),
-      0 16px 32px -20px rgba(71,85,105,.35),
-      inset 0 1px 0 rgba(255,255,255,.75);
-  }
-  .couple.pending-family .node .name{color:#111827;}
-  .couple.pending-family .node .meta{color:#334155;}
-  .couple.pending-family .couple-link{
-    background:repeating-linear-gradient(90deg, #f59e0b 0 6px, transparent 6px 10px);
-  }
-  .couple.pending-family .couple-link::before{
-    color:#92400e;
-    background:#fef3c7;
-  }
-  .pending-chip{
-    position:absolute;
-    top:-10px;
-    left:10px;
-    z-index:3;
-    display:inline-flex;
-    align-items:center;
-    gap:5px;
-    padding:4px 8px;
-    border-radius:999px;
-    background:linear-gradient(180deg, #fff4d6, #f7c86b);
-    border:1px solid #d97706;
-    color:#7c2d12;
-    font-size:10px;
-    font-weight:800;
-    letter-spacing:.04em;
-    text-transform:uppercase;
-    box-shadow:0 8px 16px -10px rgba(217,119,6,.6);
-  }
-  .pending-chip::before{
-    content:"●";
-    font-size:9px;
-    color:#b45309;
-  }
-  .node.pending::after{
-    content:"";
-    position:absolute;
-    inset:6px;
-    border-radius:12px;
-    border:1.5px dashed rgba(245,158,11,.65);
-    pointer-events:none;
-  }
-  .node.root{
-    border-color:var(--gold-dark);
-    background:
-      linear-gradient(180deg, color-mix(in oklab, var(--gold) 26%, #fffdf2 74%), color-mix(in oklab, var(--card) 78%, var(--gold) 22%));
-    box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--gold) 35%, transparent),
-      0 24px 50px -18px color-mix(in oklab, var(--gold) 55%, transparent),
-      inset 0 1px 0 rgba(255,255,255,.55);
-  }
-  .node.is-user{
-    background:
-      linear-gradient(180deg, #fff5b5, #ffd874);
-    border-color:#c9a300;
-    box-shadow:
-      0 0 0 2px rgba(255,210,60,.4),
-      0 22px 44px -18px rgba(200,150,0,.5),
-      inset 0 1px 0 rgba(255,255,255,.6);
-  }
-  .node.is-admin{
-    border-color:#b8870a;
-    box-shadow:
-      0 0 0 2px rgba(255,200,40,.55),
-      0 24px 50px -18px rgba(184,135,10,.6),
-      inset 0 1px 0 rgba(255,255,255,.65);
-  }
-  .node-badges{position:absolute;top:-8px;right:-8px;display:flex;gap:4px;z-index:2;}
-  .badge-user, .badge-admin{
-    display:inline-flex;align-items:center;justify-content:center;
-    width:22px;height:22px;border-radius:50%;
-    background:linear-gradient(160deg,#fff,#f3d97a);
-    border:1.5px solid #b8870a; font-size:11px; font-weight:700;
-    box-shadow:0 4px 10px -3px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.7);
-    color:#5a3e00;
-  }
-  .badge-admin{background:linear-gradient(160deg,#ffe88a,#e8b900);font-size:13px;color:#3a2600;}
-  .node.hanging{ border-style:dashed; border-color:#e85d3a; opacity:.95;
-    background:linear-gradient(180deg, #fff3ee, #ffd8c5);
-  }
-  .node.spouse{
-    background:
-      linear-gradient(180deg, #fdf2f4, #f1d1d9);
-    border-color:#b85a72;
-  }
-  .node.spouse.divorced{ border-style:dashed; opacity:.85; }
-  .node.spouse.divorced .meta{ color:#8b2848; font-weight:600; }
-  .node.spouse.deceased{ filter:grayscale(.3); opacity:.9; }
+    /* === NODE (kad ahli) === */
+    .node {
+      position: relative; display: flex; flex-direction: column; align-items: center;
+      padding: 14px 18px; border-radius: 18px;
+      background:
+        linear-gradient(180deg, color-mix(in oklab, var(--card) 94%, #ffffff 6%), color-mix(in oklab, var(--bg-alt) 90%, #ffffff 10%));
+      border: 1px solid color-mix(in oklab, var(--line) 58%, #ffffff 42%);
+      min-width: 160px;
+      flex-shrink: 0 !important; /* PREVENT NODE SQUISHING */
+      box-shadow:
+        0 22px 42px -20px rgba(0,0,0,.42),
+        0 8px 18px -12px color-mix(in oklab, var(--gold) 58%, rgba(0,0,0,.2)),
+        inset 0 1px 0 rgba(255,255,255,.76),
+        inset 0 -1px 0 rgba(0,0,0,.08);
+      cursor: pointer; transition: transform .25s cubic-bezier(.2,.7,.2,1.2), box-shadow .25s, border-color .2s;
+      transform: translateZ(0);
+    }
+    .node::before {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+      background: radial-gradient(120% 60% at 50% -20%, rgba(255,255,255,.55), transparent 60%);
+      mix-blend-mode: overlay; opacity: .7;
+    }
+    .node:hover {
+      transform: translateY(-3px) scale(1.02); border-color: var(--gold-dark);
+      box-shadow:
+        0 28px 50px -20px rgba(0,0,0,.55),
+        0 10px 24px -10px color-mix(in oklab, var(--gold) 60%, rgba(0,0,0,.18)),
+        inset 0 1px 0 rgba(255,255,255,.82);
+    }
+    .node.pending,
+    .node.pending.is-user,
+    .node.pending.is-admin,
+    .node.pending.root,
+    .node.pending.hanging {
+      background: linear-gradient(180deg, #f2f4f7, #d8dee7);
+      border-color: #5b6472;
+      box-shadow:
+        0 0 0 3px rgba(245,158,11,.36),
+        0 20px 40px -18px rgba(71,85,105,.34),
+        inset 0 1px 0 rgba(255,255,255,.72);
+    }
+    .node.pending .name { color: #111827; text-shadow: 0 1px 0 rgba(255,255,255,.45); }
+    .node.pending .meta { color: #334155; font-weight: 700; }
+    .couple.pending-family {
+      background: linear-gradient(180deg, rgba(245,158,11,.10), rgba(217,226,236,.96));
+      border: 2px dashed #f59e0b;
+      box-shadow:
+        0 0 0 3px rgba(245,158,11,.18),
+        0 10px 22px -16px rgba(71,85,105,.38);
+    }
+    .couple.pending-family .node,
+    .couple.pending-family .node.spouse,
+    .couple.pending-family .node.is-user,
+    .couple.pending-family .node.is-admin {
+      background: linear-gradient(180deg, #f2f4f7, #d8dee7);
+      border-color: #5b6472;
+      box-shadow:
+        0 0 0 2px rgba(245,158,11,.24),
+        0 16px 32px -20px rgba(71,85,105,.35),
+        inset 0 1px 0 rgba(255,255,255,.75);
+    }
+    .couple.pending-family .node .name { color: #111827; }
+    .couple.pending-family .node .meta { color: #334155; }
+    .couple.pending-family .couple-link {
+      background: repeating-linear-gradient(90deg, #f59e0b 0 6px, transparent 6px 10px);
+    }
+    .couple.pending-family .couple-link::before {
+      color: #92400e; background: #fef3c7;
+    }
+    .pending-chip {
+      position: absolute; top: -10px; left: 10px; z-index: 3;
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 8px; border-radius: 999px;
+      background: linear-gradient(180deg, #fff4d6, #f7c86b);
+      border: 1px solid #d97706; color: #7c2d12;
+      font-size: 10px; font-weight: 800; letter-spacing: .04em;
+      text-transform: uppercase;
+      box-shadow: 0 8px 16px -10px rgba(217,119,6,.6);
+    }
+    .pending-chip::before { content: "●"; font-size: 9px; color: #b45309; }
+    .node.pending::after {
+      content: ""; position: absolute; inset: 6px; border-radius: 12px;
+      border: 1.5px dashed rgba(245,158,11,.65); pointer-events: none;
+    }
+    .node.root {
+      border-color: var(--gold-dark);
+      background:
+        linear-gradient(180deg, color-mix(in oklab, var(--gold) 26%, #fffdf2 74%), color-mix(in oklab, var(--card) 78%, var(--gold) 22%));
+      box-shadow:
+        0 0 0 2px color-mix(in oklab, var(--gold) 35%, transparent),
+        0 24px 50px -18px color-mix(in oklab, var(--gold) 55%, transparent),
+        inset 0 1px 0 rgba(255,255,255,.55);
+    }
+    .node.is-user {
+      background: linear-gradient(180deg, #fff5b5, #ffd874);
+      border-color: #c9a300;
+      box-shadow:
+        0 0 0 2px rgba(255,210,60,.4),
+        0 22px 44px -18px rgba(200,150,0,.5),
+        inset 0 1px 0 rgba(255,255,255,.6);
+    }
+    .node.is-admin {
+      border-color: #b8870a;
+      box-shadow:
+        0 0 0 2px rgba(255,200,40,.55),
+        0 24px 50px -18px rgba(184,135,10,.6),
+        inset 0 1px 0 rgba(255,255,255,.65);
+    }
+    .node-badges { position: absolute; top: -8px; right: -8px; display: flex; gap: 4px; z-index: 2; }
+    .badge-user, .badge-admin {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: linear-gradient(160deg,#fff,#f3d97a);
+      border: 1.5px solid #b8870a; font-size: 11px; font-weight: 700;
+      box-shadow: 0 4px 10px -3px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.7);
+      color: #5a3e00;
+    }
+    .badge-admin { background: linear-gradient(160deg,#ffe88a,#e8b900); font-size: 13px; color: #3a2600; }
+    .node.hanging {
+      border-style: dashed; border-color: #e85d3a; opacity: .95;
+      background: linear-gradient(180deg, #fff3ee, #ffd8c5);
+    }
+    .node.spouse {
+      background: linear-gradient(180deg, #fdf2f4, #f1d1d9);
+      border-color: #b85a72;
+    }
+    .node.spouse.divorced { border-style: dashed; opacity: .85; }
+    .node.spouse.divorced .meta { color: #8b2848; font-weight: 600; }
+    .node.spouse.deceased { filter: grayscale(.3); opacity: .9; }
 
-  body.reparent-mode .node{ animation: reparentPulse 1.4s ease-in-out infinite; cursor:crosshair; }
-  body.reparent-mode .node[data-node-id]:hover{ box-shadow:0 0 0 4px #3b82f6, 0 24px 50px -18px rgba(59,130,246,.6); }
-  @keyframes reparentPulse{ 0%,100%{outline:1px dashed rgba(59,130,246,.4); outline-offset:4px;} 50%{outline:2px dashed rgba(59,130,246,.9); outline-offset:6px;}}
+    body.reparent-mode .node { animation: reparentPulse 1.4s ease-in-out infinite; cursor: crosshair; }
+    body.reparent-mode .node[data-node-id]:hover { box-shadow: 0 0 0 4px #3b82f6, 0 24px 50px -18px rgba(59,130,246,.6); }
+    @keyframes reparentPulse { 0%,100%{outline:1px dashed rgba(59,130,246,.4); outline-offset:4px;} 50%{outline:2px dashed rgba(59,130,246,.9); outline-offset:6px;} }
 
-  .trees-wrap{ display:flex; flex-direction:column; align-items:center; gap:60px; }
-  .tree-block{ display:flex; flex-direction:column; align-items:center; }
-  .hanging-block{ position:relative; padding-top:24px; }
-  .hanging-label{
-    font-family:'Cormorant Garamond',serif; font-size:13px; color:#c0392b;
-    background:#fff1ea; border:1.5px dashed #e85d3a; border-radius:10px;
-    padding:6px 14px; margin-bottom:6px;
-    box-shadow:0 6px 16px -6px rgba(232,93,58,.35);
-  }
-  .hanging-label .op-60{opacity:.7;font-size:11px;}
-  .dashed-link{
-    width:3px; height:40px;
-    background-image: linear-gradient(180deg, #e85d3a 50%, transparent 50%);
-    background-size: 3px 12px;
-    margin: 0 auto 4px;
-    box-shadow: 0 0 8px rgba(232,93,58,.5);
-    border-radius:2px;
-  }
+    .trees-wrap { display: flex; flex-direction: column; align-items: center; gap: 60px; }
+    .tree-block { display: flex; flex-direction: column; align-items: center; }
+    .hanging-block { position: relative; padding-top: 24px; }
+    .hanging-label {
+      font-family: 'Cormorant Garamond', serif; font-size: 13px; color: #c0392b;
+      background: #fff1ea; border: 1.5px dashed #e85d3a; border-radius: 10px;
+      padding: 6px 14px; margin-bottom: 6px;
+      box-shadow: 0 6px 16px -6px rgba(232,93,58,.35);
+    }
+    .hanging-label .op-60 { opacity: .7; font-size: 11px; }
+    .dashed-link {
+      width: 3px; height: 40px;
+      background-image: linear-gradient(180deg, #e85d3a 50%, transparent 50%);
+      background-size: 3px 12px;
+      margin: 0 auto 4px;
+      box-shadow: 0 0 8px rgba(232,93,58,.5);
+      border-radius: 2px;
+    }
+    .kid-group { position: relative; }
 
-  .kid-group{ position:relative; }
-  .map-note{
-    position:absolute; z-index:5;
-    background:rgba(255,250,225,.92);
-    border:1.5px solid var(--gold);
-    border-radius:10px;
-    padding:6px 10px;
-    box-shadow:0 4px 14px -4px rgba(120,80,10,.4);
-    max-width:300px;
-    white-space:pre-wrap; word-break:break-word;
-    transition:.15s;
-    user-select:none;
-  }
-  .map-note:hover{ box-shadow:0 8px 22px -6px rgba(120,80,10,.55); transform:translateY(-1px); }
-  .map-note.pending{
-    border-color:#d97706;
-    background:linear-gradient(180deg, #fff6df, #f1e2bf);
-    color:#1f2937 !important;
-    box-shadow:0 0 0 2px rgba(245,158,11,.2), 0 10px 24px -14px rgba(146,64,14,.3);
-  }
-  .map-note.pinned{ border-style:double; border-width:3px; }
-  .note-pin, .note-pending{
-    display:inline-block; margin-left:6px; font-size:0.8em;
-  }
-  body.note-add-cursor, body.note-add-cursor #stage, body.note-add-cursor #canvas{ cursor:crosshair !important; }
-  .node.highlight{
-    border-color:var(--accent);
-    box-shadow:0 0 0 3px rgba(59,111,160,.45), var(--shadow);
-  }
-  .node img{
-    width:64px;height:64px;border-radius:50%;object-fit:cover;
-    border:2px solid var(--line-soft);margin-bottom:6px;background:#fff8e3;
-  }
-  .node .name{
-    font-family:'Cormorant Garamond',serif;
-    font-weight:700;
-    font-size:15.5px;
-    text-align:center;
-    line-height:1.15;
-    color:#1f2937;
-    text-shadow:0 1px 0 rgba(255,255,255,.35);
-  }
-  .node .meta{
-    font-size:10px;
-    color:#425466;
-    margin-top:3px;
-    letter-spacing:.02em;
-    font-weight:700;
-  }
-  .node .meta.parentage{
-    max-width:170px;
-    text-align:center;
-    line-height:1.25;
-    white-space:normal;
-    font-size:9.5px;
-  }
-  #user-info,
-  .text-muted-strong{color:#445468 !important;}
-  .kid-group-label{
-    font-family:'Cormorant Garamond',serif; font-size:11.5px;
-    color:#7c2d12; background:#fff4ea;
-    border:1px dashed #d97706; border-radius:8px;
-    padding:3px 10px; margin:4px auto 8px; display:inline-block;
-    text-align:center; font-weight:700;
-    box-shadow:0 8px 14px -12px rgba(217,119,6,.45);
-  }
+    /* === NOTA PADA PETA === */
+    .map-note {
+      position: absolute; z-index: 5;
+      background: rgba(255,250,225,.92);
+      border: 1.5px solid var(--gold);
+      border-radius: 10px; padding: 6px 10px;
+      box-shadow: 0 4px 14px -4px rgba(120,80,10,.4);
+      max-width: 300px; white-space: pre-wrap; word-break: break-word;
+      transition: .15s; user-select: none;
+    }
+    .map-note:hover { box-shadow: 0 8px 22px -6px rgba(120,80,10,.55); transform: translateY(-1px); }
+    .map-note.pending {
+      border-color: #d97706;
+      background: linear-gradient(180deg, #fff6df, #f1e2bf);
+      color: #1f2937 !important;
+      box-shadow: 0 0 0 2px rgba(245,158,11,.2), 0 10px 24px -14px rgba(146,64,14,.3);
+    }
+    .map-note.pinned { border-style: double; border-width: 3px; }
+    .note-pin, .note-pending { display: inline-block; margin-left: 6px; font-size: 0.8em; }
+    body.note-add-cursor, body.note-add-cursor #stage, body.note-add-cursor #canvas { cursor: crosshair !important; }
+    .node.highlight {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59,111,160,.45), var(--shadow);
+    }
+    .node img {
+      width: 64px; height: 64px; border-radius: 50%; object-fit: cover;
+      border: 2px solid var(--line-soft); margin-bottom: 6px; background: #fff8e3;
+    }
+    .node .name {
+      font-family: 'Cormorant Garamond', serif;
+      font-weight: 700; font-size: 15.5px;
+      text-align: center; line-height: 1.15;
+      color: #1f2937; text-shadow: 0 1px 0 rgba(255,255,255,.35);
+    }
+    .node .meta {
+      font-size: 10px; color: #425466; margin-top: 3px;
+      letter-spacing: .02em; font-weight: 700;
+    }
+    .node .meta.parentage {
+      max-width: 170px; text-align: center;
+      line-height: 1.25; white-space: normal; font-size: 9.5px;
+    }
+    #user-info, .text-muted-strong { color: #445468 !important; }
+    .kid-group-label {
+      font-family: 'Cormorant Garamond', serif; font-size: 11.5px;
+      color: #7c2d12; background: #fff4ea;
+      border: 1px dashed #d97706; border-radius: 8px;
+      padding: 3px 10px; margin: 4px auto 8px; display: inline-block;
+      text-align: center; font-weight: 700;
+      box-shadow: 0 8px 14px -12px rgba(217,119,6,.45);
+    }
 
-  /* === COUPLE (suami + semua isteri/pasangan) === */
-  /* PAKSA SATU BARIS MELINTANG: 1 suami + 10 isteri pun tidak turun menegak */
-  .couple{
-    display:flex !important;
-    flex-direction:row !important;
-    flex-wrap:nowrap !important;
-    align-items:center;
-    justify-content:center;
-    gap:0;
-    padding:8px 10px;
-    width:max-content !important;
-    min-width:max-content !important;
-    max-width:none !important;
-    white-space:nowrap !important;
-    background:color-mix(in oklab, var(--card) 92%, #ffffff 8%);
-    border-radius:20px;
-    border:1px dashed color-mix(in oklab, var(--line) 45%, #ffffff 55%);
-    box-shadow:0 8px 18px -16px rgba(0,0,0,.35);
-  }
-  .couple > *{flex:0 0 auto !important;}
-  .couple .node{margin:0 4px; flex:0 0 auto !important;}
-  .couple .couple-link{flex:0 0 auto !important;}
-  ul.tree li > .branch{display:flex;justify-content:center;position:relative;width:max-content !important;min-width:max-content !important;max-width:none !important;margin:0 auto;overflow:visible !important;}
-  ul.tree li{overflow:visible;}
-  .trees-wrap, .tree-block{overflow-x:auto;overflow-y:visible;}
-  /* === COUPLE-LINK: susunan mendatar + nombor perkahwinan Roman === */
-  .couple-link{
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:3px;
-    min-width:56px;max-width:72px;
-    flex-shrink:0;
-    position:relative;
-    padding:4px 0;
-  }
-  /* Nombor perkahwinan Roman (I, II, III…) */
-  .marriage-ordinal{
-    font-family:'Cormorant Garamond',serif;
-    font-size:11px;font-weight:700;
-    color:var(--rose);
-    letter-spacing:.08em;
-    background:var(--bg);
-    padding:0 5px;
-    border-radius:4px;
-    white-space:nowrap;
-    line-height:1.3;
-  }
-  .couple-link.divorced .marriage-ordinal{ color:#a05060; }
-  .couple-link.deceased .marriage-ordinal{ color:#778899; }
-  /* Garis penghubung mendatar */
-  .marriage-line{
-    width:100%;height:3px;border-radius:2px;
-    background:var(--rose);
-    position:relative;
-    flex-shrink:0;
-  }
-  .marriage-line::before{
-    content:"◈";
-    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    font-size:12px;color:var(--rose);
-    background:var(--bg);padding:0 2px;line-height:1;
-  }
-  /* Bercerai: garis putus-putus merah gelap */
-  .couple-link.divorced .marriage-line{
-    background:repeating-linear-gradient(90deg,#c0392b 0 5px,transparent 5px 9px);
-    opacity:.8;
-  }
-  .couple-link.divorced .marriage-line::before{
-    content:"⊗";color:#a03050;
-  }
-  /* Almarhum/ah: garis kelabu */
-  .couple-link.deceased .marriage-line{
-    background:repeating-linear-gradient(90deg,#7a8899 0 5px,transparent 5px 9px);
-    opacity:.7;
-  }
-  .couple-link.deceased .marriage-line::before{
-    content:"†";color:#5a6677;font-size:13px;
-  }
-  /* Tag status kecil di bawah garis */
-  .marriage-status-tag{
-    font-size:8.5px;font-weight:700;letter-spacing:.06em;
-    text-transform:uppercase;
-    padding:1px 5px;border-radius:999px;
-    white-space:nowrap;
-  }
-  .couple-link.divorced .marriage-status-tag{
-    background:rgba(192,57,43,.12);color:#a03050;
-    border:1px solid rgba(192,57,43,.3);
-  }
-  .couple-link.deceased .marriage-status-tag{
-    background:rgba(120,136,153,.14);color:#5a6677;
-    border:1px solid rgba(120,136,153,.3);
-  }
+    /* === COUPLE (suami + isteri) === */
+    .couple {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      padding: 6px;
+      background: color-mix(in oklab, var(--card) 92%, #ffffff 8%);
+      border-radius: 18px;
+      border: 1px dashed color-mix(in oklab, var(--line) 45%, #ffffff 55%);
+      box-shadow: 0 8px 18px -16px rgba(0,0,0,.35);
+      /* PENGUBAHSUAIAN: Memaksa pasangan berada dalam satu baris melintang */
+      flex-direction: row !important;
+      flex-wrap: nowrap !important;
+      white-space: nowrap;
+    }
+    .couple .node { margin: 0 4px; }
+    .couple-link {
+      width: 30px; height: 4px;
+      background: repeating-linear-gradient(90deg, var(--rose) 0 6px, transparent 6px 10px);
+      border-radius: 2px; position: relative; flex-shrink: 0 !important;
+    }
+    .couple-link::before {
+      content: "♥"; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-55%);
+      color: var(--rose); font-size: 14px;
+      background: var(--bg); padding: 0 3px; border-radius: 50%;
+    }
 
-  /* === TREE (cabang) === */
-  ul.tree, ul.tree ul{list-style:none;margin:0;padding:0;position:relative;}
-  ul.tree{display:flex;justify-content:center;}
-  ul.tree li{
-    display:flex;flex-direction:column;align-items:center;
-    padding:36px 14px 0;position:relative;
-  }
-  ul.tree li::before, ul.tree li::after{
-    content:'';position:absolute;top:0;height:36px;width:50%;
-    border-top:2px solid var(--line);
-  }
-  ul.tree li::before{left:0;border-right:2px solid var(--line);}
-  ul.tree li::after{left:50%;}
-  ul.tree li:only-child::before, ul.tree li:only-child::after{display:none;}
-  ul.tree li:only-child{padding-top:36px;}
-  ul.tree li:only-child > .branch::before{
-    content:'';position:absolute;top:-36px;left:50%;width:2px;height:36px;
-    background:var(--line);
-  }
-  ul.tree li:first-child::before, ul.tree li:last-child::after{border:0 none;}
-  ul.tree li:last-child::before{border-right:2px solid var(--line);border-radius:0 8px 0 0;}
-  ul.tree li:first-child::after{border-radius:8px 0 0 0;}
-  ul.tree li > .branch{display:flex;justify-content:center;position:relative;width:max-content !important;min-width:max-content !important;max-width:none !important;overflow:visible !important;}
-  ul.tree > li::before, ul.tree > li::after{display:none;}
-  .children-row{display:flex;width:max-content;min-width:max-content;}
-  .children-row > li{position:relative;}
+    /* === TREE (cabang) === */
+    ul.tree, ul.tree ul { list-style: none; margin: 0; padding: 0; position: relative; }
+    ul.tree { display: flex; justify-content: center; }
+    ul.tree li {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 36px 14px 0; position: relative;
+    }
+    ul.tree li::before, ul.tree li::after {
+      content: ''; position: absolute; top: 0; height: 36px; width: 50%;
+      border-top: 2px solid var(--line);
+    }
+    ul.tree li::before { left: 0; border-right: 2px solid var(--line); }
+    ul.tree li::after { left: 50%; }
+    ul.tree li:only-child::before, ul.tree li:only-child::after { display: none; }
+    ul.tree li:only-child { padding-top: 36px; }
+    ul.tree li:only-child > .branch::before {
+      content: ''; position: absolute; top: -36px; left: 50%; width: 2px; height: 36px;
+      background: var(--line);
+    }
+    ul.tree li:first-child::before, ul.tree li:last-child::after { border: 0 none; }
+    ul.tree li:last-child::before { border-right: 2px solid var(--line); border-radius: 0 8px 0 0; }
+    ul.tree li:first-child::after { border-radius: 8px 0 0 0; }
+    ul.tree li > .branch { display: flex; justify-content: center; position: relative; }
+    ul.tree > li::before, ul.tree > li::after { display: none; }
+    .children-row { display: flex; }
+    .children-row > li { position: relative; }
 
-  /* === MODAL & UI === */
-  .modal-bg{background:rgba(28,22,12,.56);}
-  .btn{padding:8px 14px;border-radius:10px;font-weight:500;font-size:13px;transition:.15s;}
-  .btn-primary{background:var(--gold-dark);color:#fff8e3;}
-  .btn-primary:hover{background:var(--gold);}
-  .btn-ghost{background:rgba(176,138,77,.15);color:var(--ink);border:1px solid rgba(176,138,77,.3);}
-  .btn-ghost:hover{background:rgba(176,138,77,.25);}
-  .input{
-    width:100%;padding:9px 12px;border-radius:10px;
-    background:#fffdf8;border:1px solid color-mix(in oklab, var(--line-soft) 70%, #aab4c0 30%);
-    color:#1f2937;font-size:13px;font-weight:600;
-  }
-  .input:focus{outline:none;border-color:var(--gold-dark);box-shadow:0 0 0 3px rgba(168,128,31,.18);}
-  .ctx{
-    position:fixed;z-index:60;background:#fffaf0;
-    border:1px solid var(--line-soft);border-radius:10px;padding:6px;
-    min-width:200px;box-shadow:0 14px 32px rgba(60,40,10,.25);
-  }
-  .ctx button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:6px;font-size:13px;color:var(--ink);}
-  .ctx button:hover{background:rgba(176,138,77,.18);}
-  #stage{cursor:grab;}
-  #stage:active{cursor:grabbing;}
-  .tab.active{background:var(--gold-dark);color:#fff8e3;}
+    /* === MODAL & UI === */
+    .modal-bg { background: rgba(28,22,12,.56); }
+    .btn { padding: 8px 14px; border-radius: 10px; font-weight: 500; font-size: 13px; transition: .15s; }
+    .btn-primary { background: var(--gold-dark); color: #fff8e3; }
+    .btn-primary:hover { background: var(--gold); }
+    .btn-ghost { background: rgba(176,138,77,.15); color: var(--ink); border: 1px solid rgba(176,138,77,.3); }
+    .btn-ghost:hover { background: rgba(176,138,77,.25); }
+    .input {
+      width: 100%; padding: 9px 12px; border-radius: 10px;
+      background: #fffdf8; border: 1px solid color-mix(in oklab, var(--line-soft) 70%, #aab4c0 30%);
+      color: #1f2937; font-size: 13px; font-weight: 600;
+    }
+    .input:focus { outline: none; border-color: var(--gold-dark); box-shadow: 0 0 0 3px rgba(168,128,31,.18); }
+    .ctx {
+      position: fixed; z-index: 60; background: #fffaf0;
+      border: 1px solid var(--line-soft); border-radius: 10px; padding: 6px;
+      min-width: 200px; box-shadow: 0 14px 32px rgba(60,40,10,.25);
+    }
+    .ctx button { display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--ink); }
+    .ctx button:hover { background: rgba(176,138,77,.18); }
+    #stage { cursor: grab; }
+    #stage:active { cursor: grabbing; }
+    .tab.active { background: var(--gold-dark); color: #fff8e3; }
 
-  #canvas{padding:400px 800px;min-width:6000px;}
-  @media(max-width:640px){.node{min-width:120px;padding:10px;}.node img{width:54px;height:54px;}#canvas{padding:200px 400px;min-width:3000px;}}
+    /* Ruang besar untuk salasilah ribuan tahun */
+    #canvas { padding: 400px 800px; min-width: 6000px; }
+    @media(max-width: 640px) {
+      .node { min-width: 120px; padding: 10px; }
+      .node img { width: 54px; height: 54px; }
+      #canvas { padding: 200px 400px; min-width: 3000px; }
+    }
 
-  header h1{font-family:'Cormorant Garamond',serif;letter-spacing:.05em;}
+    header h1 { font-family: 'Cormorant Garamond', serif; letter-spacing: .05em; }
 
+    /* === ERROR NOTIFIER === */
+    #err-stack { position: fixed; top: 64px; right: 12px; left: 12px; z-index: 200; display: flex; flex-direction: column; gap: 8px; pointer-events: none; max-width: 520px; margin-left: auto; }
+    .err-card {
+      pointer-events: auto;
+      background: linear-gradient(160deg,#fff5f5,#fde2e2);
+      border: 1.5px solid #c0392b;
+      border-radius: 14px;
+      box-shadow: 0 12px 30px -10px rgba(150,30,20,.45);
+      padding: 12px 14px;
+      color: #3b1010;
+      font-size: 13px;
+      animation: errIn .25s ease-out;
+    }
+    .err-card.warn { background: linear-gradient(160deg,#fffaf0,#fce8c5); border-color: #a8801f; color: #4a3210; }
+    .err-card.info { background: linear-gradient(160deg,#eef5ff,#d8e7fb); border-color: #3b6fa0; color: #102640; }
+    @keyframes errIn { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+    .err-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .err-title { font-family: 'Cormorant Garamond', serif; font-weight: 700; font-size: 15px; }
+    .err-actions { display: flex; gap: 4px; }
+    .err-btn { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.06); color: inherit; border: 1px solid rgba(0,0,0,.12); }
+    .err-btn:hover { background: rgba(0,0,0,.12); }
+    .err-msg { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; max-height: 180px; overflow: auto; background: rgba(255,255,255,.55); padding: 6px 8px; border-radius: 6px; border: 1px dashed rgba(0,0,0,.15); user-select: text; -webkit-user-select: text; }
 
-  /* === Kad pasangan dalam profil: satu baris mendatar + scroll === */
-  .spouse-cards-row{
-    display:flex !important;
-    flex-direction:row !important;
-    flex-wrap:nowrap !important;
-    gap:12px;
-    overflow-x:auto !important;
-    overflow-y:hidden;
-    padding-bottom:6px;
-    align-items:flex-start;
-    width:100%;
-    max-width:100%;
-    white-space:nowrap;
-    /* scrollbar styling */
-    scrollbar-width:thin;
-    scrollbar-color:var(--line-soft) transparent;
-  }
-  .spouse-cards-row::-webkit-scrollbar{height:4px;}
-  .spouse-cards-row::-webkit-scrollbar-thumb{background:var(--line-soft);border-radius:2px;}
-  .spouse-profile-card{
-    border-radius:14px;
-    border:1.5px solid color-mix(in oklab, var(--rose) 45%, #ffffff 55%);
-    background:linear-gradient(180deg, #fdf2f4, #f9e4ea);
-    padding:12px;
-    /* fixed width so cards sit side by side */
-    min-width:200px;
-    max-width:220px;
-    flex:0 0 220px !important;
-    display:inline-block;
-    white-space:normal;
-  }
+    #loading-screen {
+      position: fixed; inset: 0; z-index: 300;
+      display: flex; align-items: center; justify-content: center;
+      background:
+        radial-gradient(1000px 600px at 20% 10%, var(--bg-radial-a) 0%, transparent 60%),
+        radial-gradient(900px 550px at 80% 90%, var(--bg-radial-b) 0%, transparent 60%),
+        var(--bg);
+      transition: opacity .28s ease, visibility .28s ease;
+    }
+    #loading-screen.hidden-screen { opacity: 0; visibility: hidden; pointer-events: none; }
+    .loading-card {
+      position: relative;
+      min-width: 320px; max-width: 420px;
+      text-align: center; padding: 30px 26px; border-radius: 28px;
+      overflow: hidden;
+      border: 1px solid color-mix(in oklab, var(--gold) 45%, #ffffff 55%);
+      box-shadow:
+        0 34px 80px -36px rgba(0,0,0,.5),
+        0 18px 40px -30px color-mix(in oklab, var(--gold) 55%, transparent),
+        inset 0 1px 0 rgba(255,255,255,.72);
+    }
+    .loading-card::before {
+      content: "";
+      position: absolute; inset: -35% -10% auto;
+      height: 160px;
+      background: radial-gradient(circle at center, rgba(255,255,255,.55), transparent 62%);
+      animation: auroraFloat 4.6s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .loading-orbit {
+      position: relative;
+      width: 120px; height: 120px;
+      margin: 0 auto 18px;
+      display: grid; place-items: center;
+    }
+    .loading-core {
+      width: 74px; height: 74px; border-radius: 50%;
+      display: grid; place-items: center;
+      background:
+        radial-gradient(circle at 35% 30%, rgba(255,255,255,.88), rgba(255,255,255,.1) 34%, transparent 35%),
+        linear-gradient(145deg, color-mix(in oklab, var(--gold) 72%, white 28%), color-mix(in oklab, var(--gold-dark) 78%, black 22%));
+      color: #fff8e3;
+      font-size: 34px;
+      box-shadow:
+        0 0 0 8px rgba(255,255,255,.12),
+        0 18px 40px -20px rgba(168,128,31,.75);
+      animation: pulseCore 2.3s ease-in-out infinite;
+    }
+    .loading-ring,
+    .loading-ring::before,
+    .loading-ring::after {
+      position: absolute; inset: 0; border-radius: 50%;
+      border: 1.5px solid transparent;
+      content: "";
+    }
+    .loading-ring {
+      border-top-color: rgba(168,128,31,.95);
+      border-right-color: rgba(59,111,160,.55);
+      animation: spin 7s linear infinite;
+    }
+    .loading-ring::before {
+      inset: 12px;
+      border-left-color: rgba(196,69,105,.52);
+      border-bottom-color: rgba(168,128,31,.6);
+      animation: spinReverse 5.5s linear infinite;
+    }
+    .loading-ring::after {
+      inset: 26px;
+      border-top-color: rgba(255,255,255,.6);
+      border-right-color: rgba(168,128,31,.45);
+      animation: spin 4.2s linear infinite;
+    }
+    .loading-spinner {
+      width: 54px; height: 54px; margin: 0 auto 14px; border-radius: 50%;
+      border: 5px solid color-mix(in oklab, var(--line-soft) 55%, #ffffff 45%);
+      border-top-color: var(--gold-dark);
+      animation: spin 1s linear infinite;
+      box-shadow: 0 10px 24px -14px rgba(0,0,0,.35);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes spinReverse { to { transform: rotate(-360deg); } }
+    @keyframes pulseCore { 0%,100% { transform: scale(.96); } 50% { transform: scale(1.04); } }
+    @keyframes auroraFloat { 0%,100% { transform: translateY(-10px) scale(1); } 50% { transform: translateY(8px) scale(1.08); } }
+    #loading-text { color: var(--ink-soft); }
+    #loading-phase { color: var(--ink); opacity: .85; min-height: 38px; }
+    .loading-progress {
+      position: relative;
+      width: 100%; height: 10px; border-radius: 999px; overflow: hidden;
+      background: rgba(255,255,255,.36);
+      border: 1px solid rgba(176,138,77,.22);
+      margin-top: 14px;
+    }
+    .loading-progress::before {
+      content: "";
+      position: absolute; inset: 0 auto 0 -35%;
+      width: 35%;
+      background: linear-gradient(90deg, transparent, rgba(168,128,31,.85), rgba(255,255,255,.85), transparent);
+      animation: loadingBar 1.8s ease-in-out infinite;
+    }
+    @keyframes loadingBar {
+      0% { left: -35%; }
+      100% { left: 100%; }
+    }
+    .loading-dust { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+    .loading-dust span {
+      position: absolute; width: 8px; height: 8px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,.95), rgba(168,128,31,.2));
+      animation: floatDust var(--dur,5s) ease-in-out infinite;
+      opacity: .75;
+    }
+    .loading-dust span:nth-child(1) { left: 12%; top: 20%; --dur: 4.8s; }
+    .loading-dust span:nth-child(2) { left: 78%; top: 22%; --dur: 5.6s; }
+    .loading-dust span:nth-child(3) { left: 22%; top: 72%; --dur: 5.2s; }
+    .loading-dust span:nth-child(4) { left: 68%; top: 78%; --dur: 6s; }
+    .loading-dust span:nth-child(5) { left: 50%; top: 14%; --dur: 4.4s; }
+    @keyframes floatDust {
+      0%,100% { transform: translateY(0) scale(.8); opacity: .35; }
+      50% { transform: translateY(-14px) scale(1.15); opacity: .95; }
+    }
 
-  .spouse-profile-card.divorced{
-    border-style:dashed;
-    background:linear-gradient(180deg, #f8f8f8, #eee);
-    opacity:.9;
-  }
-  .spouse-profile-card.deceased{
-    filter:grayscale(.25);
-    opacity:.88;
-  }
-  .spouse-card-header{
-    display:flex;align-items:center;gap:10px;margin-bottom:8px;
-  }
-  .spouse-card-photo{
-    width:54px;height:54px;border-radius:50%;object-fit:cover;
-    border:2px solid var(--rose);flex-shrink:0;background:#fff8e3;
-  }
-  .spouse-card-info{flex:1;min-width:0;}
-  .spouse-card-name{
-    font-family:'Cormorant Garamond',serif;font-weight:700;font-size:15px;
-    color:var(--ink);line-height:1.1;
-  }
-  .spouse-card-ordinal{
-    font-size:10px;font-weight:700;color:var(--rose);letter-spacing:.04em;
-    text-transform:uppercase;
-  }
-  .spouse-card-status{font-size:11px;color:var(--ink-soft);margin-top:2px;}
-  .spouse-card-children{
-    margin-top:8px;padding-top:8px;
-    border-top:1px dashed color-mix(in oklab, var(--line-soft) 55%, transparent 45%);
-  }
-  .spouse-card-children-label{
-    font-size:10px;font-weight:700;color:var(--ink-soft);
-    text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;
-  }
-  .spouse-card-child-item{
-    font-size:12px;color:var(--ink);
-    padding:2px 0;
-    display:flex;align-items:center;gap:5px;
-  }
-  .spouse-card-actions{
-    display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;
-  }
-
-  /* === ERROR NOTIFIER === */
-  #err-stack{position:fixed;top:64px;right:12px;left:12px;z-index:200;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:520px;margin-left:auto;}
-  .err-card{
-    pointer-events:auto;
-    background:linear-gradient(160deg,#fff5f5,#fde2e2);
-    border:1.5px solid #c0392b;
-    border-radius:14px;
-    box-shadow:0 12px 30px -10px rgba(150,30,20,.45);
-    padding:12px 14px;
-    color:#3b1010;
-    font-size:13px;
-    animation:errIn .25s ease-out;
-  }
-  .err-card.warn{background:linear-gradient(160deg,#fffaf0,#fce8c5);border-color:#a8801f;color:#4a3210;}
-  .err-card.info{background:linear-gradient(160deg,#eef5ff,#d8e7fb);border-color:#3b6fa0;color:#102640;}
-  @keyframes errIn{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
-  .err-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;}
-  .err-title{font-family:'Cormorant Garamond',serif;font-weight:700;font-size:15px;}
-  .err-actions{display:flex;gap:4px;}
-  .err-btn{font-size:11px;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.06);color:inherit;border:1px solid rgba(0,0,0,.12);}
-  .err-btn:hover{background:rgba(0,0,0,.12);}
-  .err-msg{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;max-height:180px;overflow:auto;background:rgba(255,255,255,.55);padding:6px 8px;border-radius:6px;border:1px dashed rgba(0,0,0,.15);user-select:text;-webkit-user-select:text;}
-
-  #loading-screen{
-    position:fixed; inset:0; z-index:300;
-    display:flex; align-items:center; justify-content:center;
-    background:
-      radial-gradient(1000px 600px at 20% 10%, var(--bg-radial-a) 0%, transparent 60%),
-      radial-gradient(900px 550px at 80% 90%, var(--bg-radial-b) 0%, transparent 60%),
-      var(--bg);
-    transition:opacity .28s ease, visibility .28s ease;
-  }
-  #loading-screen.hidden-screen{
-    opacity:0; visibility:hidden; pointer-events:none;
-  }
-  .loading-card{
-    position:relative;
-    min-width:320px; max-width:420px;
-    text-align:center; padding:30px 26px; border-radius:28px;
-    overflow:hidden;
-    border:1px solid color-mix(in oklab, var(--gold) 45%, #ffffff 55%);
-    box-shadow:
-      0 34px 80px -36px rgba(0,0,0,.5),
-      0 18px 40px -30px color-mix(in oklab, var(--gold) 55%, transparent),
-      inset 0 1px 0 rgba(255,255,255,.72);
-  }
-  .loading-card::before{
-    content:"";
-    position:absolute; inset:-35% -10% auto;
-    height:160px;
-    background:radial-gradient(circle at center, rgba(255,255,255,.55), transparent 62%);
-    animation:auroraFloat 4.6s ease-in-out infinite;
-    pointer-events:none;
-  }
-  .loading-orbit{
-    position:relative;
-    width:120px; height:120px;
-    margin:0 auto 18px;
-    display:grid; place-items:center;
-  }
-  .loading-core{
-    width:74px; height:74px; border-radius:50%;
-    display:grid; place-items:center;
-    background:
-      radial-gradient(circle at 35% 30%, rgba(255,255,255,.88), rgba(255,255,255,.1) 34%, transparent 35%),
-      linear-gradient(145deg, color-mix(in oklab, var(--gold) 72%, white 28%), color-mix(in oklab, var(--gold-dark) 78%, black 22%));
-    color:#fff8e3;
-    font-size:34px;
-    box-shadow:
-      0 0 0 8px rgba(255,255,255,.12),
-      0 18px 40px -20px rgba(168,128,31,.75);
-    animation:pulseCore 2.3s ease-in-out infinite;
-  }
-  .loading-ring,
-  .loading-ring::before,
-  .loading-ring::after{
-    position:absolute; inset:0; border-radius:50%;
-    border:1.5px solid transparent;
-    content:"";
-  }
-  .loading-ring{
-    border-top-color:rgba(168,128,31,.95);
-    border-right-color:rgba(59,111,160,.55);
-    animation:spin 7s linear infinite;
-  }
-  .loading-ring::before{
-    inset:12px;
-    border-left-color:rgba(196,69,105,.52);
-    border-bottom-color:rgba(168,128,31,.6);
-    animation:spinReverse 5.5s linear infinite;
-  }
-  .loading-ring::after{
-    inset:26px;
-    border-top-color:rgba(255,255,255,.6);
-    border-right-color:rgba(168,128,31,.45);
-    animation:spin 4.2s linear infinite;
-  }
-  .loading-spinner{
-    width:54px; height:54px; margin:0 auto 14px; border-radius:50%;
-    border:5px solid color-mix(in oklab, var(--line-soft) 55%, #ffffff 45%);
-    border-top-color:var(--gold-dark);
-    animation:spin 1s linear infinite;
-    box-shadow:0 10px 24px -14px rgba(0,0,0,.35);
-  }
-  @keyframes spin{to{transform:rotate(360deg)}}
-  @keyframes spinReverse{to{transform:rotate(-360deg)}}
-  @keyframes pulseCore{0%,100%{transform:scale(.96)}50%{transform:scale(1.04)}}
-  @keyframes auroraFloat{0%,100%{transform:translateY(-10px) scale(1)}50%{transform:translateY(8px) scale(1.08)}}
-  #loading-text{color:var(--ink-soft);}
-  #loading-phase{color:var(--ink); opacity:.85; min-height:38px;}
-  .loading-progress{
-    position:relative;
-    width:100%; height:10px; border-radius:999px; overflow:hidden;
-    background:rgba(255,255,255,.36);
-    border:1px solid rgba(176,138,77,.22);
-    margin-top:14px;
-  }
-  .loading-progress::before{
-    content:"";
-    position:absolute; inset:0 auto 0 -35%;
-    width:35%;
-    background:linear-gradient(90deg, transparent, rgba(168,128,31,.85), rgba(255,255,255,.85), transparent);
-    animation:loadingBar 1.8s ease-in-out infinite;
-  }
-  @keyframes loadingBar{
-    0%{left:-35%}
-    100%{left:100%}
-  }
-  .loading-dust{
-    position:absolute; inset:0; pointer-events:none; overflow:hidden;
-  }
-  .loading-dust span{
-    position:absolute; width:8px; height:8px; border-radius:50%;
-    background:radial-gradient(circle, rgba(255,255,255,.95), rgba(168,128,31,.2));
-    animation:floatDust var(--dur,5s) ease-in-out infinite;
-    opacity:.75;
-  }
-  .loading-dust span:nth-child(1){left:12%; top:20%; --dur:4.8s;}
-  .loading-dust span:nth-child(2){left:78%; top:22%; --dur:5.6s;}
-  .loading-dust span:nth-child(3){left:22%; top:72%; --dur:5.2s;}
-  .loading-dust span:nth-child(4){left:68%; top:78%; --dur:6s;}
-  .loading-dust span:nth-child(5){left:50%; top:14%; --dur:4.4s;}
-  @keyframes floatDust{
-    0%,100%{transform:translateY(0) scale(.8); opacity:.35}
-    50%{transform:translateY(-14px) scale(1.15); opacity:.95}
-  }
-
-  .hanging-block ul.tree li::before,
-  .hanging-block ul.tree li::after{
-    border-top:2px dashed #e85d3a;
-  }
-  .hanging-block ul.tree li:last-child::before{border-right:2px dashed #e85d3a;}
-  .hanging-block ul.tree li:first-child::after{border-top:2px dashed #e85d3a;}
-  .hanging-block ul.tree li:only-child > .branch::before{
-    background:repeating-linear-gradient(180deg, #e85d3a 0 8px, transparent 8px 14px);
-  }
-
-</style>
+    .hanging-block ul.tree li::before,
+    .hanging-block ul.tree li::after {
+      border-top: 2px dashed #e85d3a;
+    }
+    .hanging-block ul.tree li:last-child::before { border-right: 2px dashed #e85d3a; }
+    .hanging-block ul.tree li:first-child::after { border-top: 2px dashed #e85d3a; }
+    .hanging-block ul.tree li:only-child > .branch::before {
+      background: repeating-linear-gradient(180deg, #e85d3a 0 8px, transparent 8px 14px);
+    }
+  </style>
 </head>
 <body class="overflow-hidden">
 
-<div id="loading-screen">
-  <div class="loading-card glass">
-    <div class="loading-dust"><span></span><span></span><span></span><span></span><span></span></div>
-    <div class="loading-orbit">
-      <div class="loading-ring"></div>
-      <div class="loading-core">🌳</div>
-    </div>
-    <h2 class="serif text-2xl font-bold mb-2">Memuatkan salasilah</h2>
-    <p id="loading-text" class="text-sm">Sila tunggu sementara maklumat keluarga dipaparkan<span id="loading-dots"></span></p>
-    <p id="loading-phase" class="text-xs mt-2">Menyusun cabang keluarga dan hubungan setiap generasi…</p>
-    <div class="loading-progress"></div>
-  </div>
-</div>
-
-<header class="fixed top-0 inset-x-0 z-40 glass px-4 py-2 flex items-center justify-between gap-2">
-  <div class="flex items-center gap-2 min-w-0">
-    <span class="text-2xl">🌳</span>
-    <div class="min-w-0">
-      <h1 class="text-base font-bold tracking-wide truncate">SALASILAH ELIT</h1>
-      <p id="user-info" class="text-[10px] truncate" style="color:var(--ink-soft)">Tidak log masuk</p>
-    </div>
-  </div>
-  <div class="flex items-center gap-1 flex-wrap justify-end">
-    <button id="btn-search" class="btn btn-ghost px-2" title="Cari">🔍</button>
-    <button id="btn-zoom-in" class="btn btn-ghost px-2">＋</button>
-    <button id="btn-zoom-out" class="btn btn-ghost px-2">−</button>
-    <button id="btn-reset" class="btn btn-ghost px-2">⟳</button>
-    <button id="btn-add-note" class="btn btn-ghost hidden" title="Tambah Nota">📝</button>
-    <button id="btn-my-profile" class="btn btn-ghost hidden">Profil Saya</button>
-    <button id="btn-admin" class="btn btn-ghost hidden">Admin</button>
-    <button id="btn-settings" class="btn btn-ghost px-2">⚙</button>
-    <button id="btn-auth" class="btn btn-primary">Log Masuk</button>
-  </div>
-</header>
-
-<main id="stage" class="absolute inset-0 pt-16">
-  <div id="canvas" class="origin-center flex justify-center items-start">
-    <div id="tree-root" class="mt-32 text-center" style="color:var(--ink-soft)">
-      <p class="text-lg serif">Memuatkan salasilah…</p>
-    </div>
-  </div>
-</main>
-
-<div id="ctx-menu" class="ctx hidden"></div>
-
-<!-- SEARCH BAR -->
-<div id="search-bar" class="hidden fixed top-16 inset-x-0 z-40 px-3 pt-2 flex justify-center">
-  <div class="glass rounded-xl px-3 py-2 flex items-center gap-2 w-full max-w-xl">
-    <span>🔍</span>
-    <input id="search-input" class="input flex-1" placeholder="Cari nama, tempat, tahun, catatan…" />
-    <span id="search-count" class="text-xs min-w-[60px] text-center" style="color:var(--ink-soft)">0/0</span>
-    <button id="search-prev" class="btn btn-ghost px-2">↑</button>
-    <button id="search-next" class="btn btn-ghost px-2">↓</button>
-    <button id="search-close" class="btn btn-ghost px-2">✕</button>
-  </div>
-</div>
-
-<!-- AUTH MODAL -->
-<div id="modal-auth" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
-  <div class="glass rounded-2xl w-full max-w-md p-6">
-    <div class="flex gap-2 mb-4">
-      <button data-tab="login" class="tab btn btn-ghost flex-1 active">Log Masuk</button>
-      <button data-tab="register" class="tab btn btn-ghost flex-1">Daftar</button>
-    </div>
-    <form id="form-login" class="space-y-3">
-      <input class="input" name="username" placeholder="Nama Samaran" required />
-      <input class="input" name="password" type="password" placeholder="Password" required />
-      <button class="btn btn-primary w-full">Masuk</button>
-      <p class="text-[11px] text-center" style="color:var(--ink-soft)">Lupa password? Hubungi Master Admin.</p>
-    </form>
-    <form id="form-register" class="space-y-3 hidden">
-      <input class="input" dir="auto" name="fullname" placeholder="Nama Penuh Anda" required />
-      <input class="input" name="username" placeholder="Nama Samaran (unik)" required />
-      <input class="input" name="email" type="email" placeholder="Email" required />
-      <input class="input" name="phone" placeholder="No. WhatsApp (cth: 0123456789)" pattern="[0-9+\-\s]{8,}" required />
-      <p class="text-[10px] -mt-1" style="color:var(--ink-soft)">No. WhatsApp wajib supaya admin boleh hubungi untuk pengesahan data.</p>
-      <input class="input" dir="auto" name="fatherName" placeholder="Nama Penuh BAPA anda" required />
-      <input class="input" dir="auto" name="motherName" placeholder="Nama Penuh IBU anda" required />
-      <p class="text-[10px] -mt-1" style="color:var(--ink-soft)">Nama ibu & bapa wajib supaya admin tahu anda anak siapa dalam salasilah ini.</p>
-      <input class="input" name="password" type="password" placeholder="Password" required minlength="4" />
-      <label class="text-xs block" style="color:var(--ink-soft)">Gambar Wajah</label>
-      <input class="input" name="photo" type="file" accept="image/*" required />
-      <button class="btn btn-primary w-full">Daftar</button>
-      <p class="text-[11px]" style="color:var(--ink-soft)">Selepas daftar, akaun anda akan menunggu pengesahan admin. Admin akan hubungi anda, dan nombor keahlian sah hanya diberikan selepas diluluskan.</p>
-    </form>
-    <button onclick="closeModal('modal-auth')" class="mt-3 text-xs w-full" style="color:var(--ink-soft)">Tutup</button>
-  </div>
-</div>
-
-<!-- PROFILE VIEWER -->
-<div id="modal-profile" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
-  <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-    <div id="profile-body"></div>
-    <button onclick="closeModal('modal-profile')" class="btn btn-ghost w-full mt-4">Tutup</button>
-  </div>
-</div>
-
-<!-- MY PROFILE -->
-<div id="modal-my-profile" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
-  <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-    <div id="my-profile-body"></div>
-    <button onclick="closeModal('modal-my-profile')" class="btn btn-ghost w-full mt-4">Tutup</button>
-  </div>
-</div>
-
-<!-- NODE EDITOR -->
-<div id="modal-node" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
-  <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-    <h2 id="node-title" class="text-lg font-bold mb-3 serif">Ahli</h2>
-    <form id="form-node" class="space-y-3">
-      <input type="hidden" name="id" />
-      <input type="hidden" name="parentId" />
-      <input type="hidden" name="relation" value="child" />
-      <input class="input" dir="auto" name="name" placeholder="Nama Penuh (Rumi / Jawi / Arab)" required />
-      <input class="input" dir="auto" name="nickname" placeholder="Nama Singkatan / Gelaran" />
-      <div class="grid grid-cols-2 gap-2">
-        <select class="input" name="gender">
-          <option value="L">Lelaki</option>
-          <option value="P">Perempuan</option>
-        </select>
-        <select class="input" name="status">
-          <option value="hidup">Hidup</option>
-          <option value="mati">Almarhum</option>
-        </select>
+  <div id="loading-screen">
+    <div class="loading-card glass">
+      <div class="loading-dust"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="loading-orbit">
+        <div class="loading-ring"></div>
+        <div class="loading-core">🌳</div>
       </div>
-      <div class="grid grid-cols-2 gap-2">
-        <input class="input" name="birth" placeholder="Tahun Lahir" />
-        <input class="input" name="death" placeholder="Tahun Mati" />
-      </div>
-      <input class="input" name="birthplace" placeholder="Tempat Lahir" />
-      <input class="input" name="deathplace" placeholder="Tempat Wafat" />
-      <textarea class="input" dir="auto" name="notes" placeholder="Catatan / Sejarah" rows="3"></textarea>
-      <div id="spouse-pick-wrap"></div>
-      <label class="text-xs block" style="color:var(--ink-soft)">Gambar Profil</label>
-      <input class="input" name="photo" type="file" accept="image/*" />
-      <div class="flex gap-2 pt-2">
-        <button type="button" onclick="closeModal('modal-node')" class="btn btn-ghost flex-1">Batal</button>
-        <button class="btn btn-primary flex-1">Simpan</button>
-      </div>
-    </form>
+      <h2 class="serif text-2xl font-bold mb-2">Memuatkan salasilah</h2>
+      <p id="loading-text" class="text-sm">Sila tunggu sementara maklumat keluarga dipaparkan<span id="loading-dots"></span></p>
+      <p id="loading-phase" class="text-xs mt-2">Menyusun cabang keluarga dan hubungan setiap generasi…</p>
+      <div class="loading-progress"></div>
+    </div>
   </div>
-</div>
 
-<!-- SPOUSE EDITOR -->
-<div id="modal-spouse" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
-  <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-    <h2 id="spouse-title" class="text-lg font-bold mb-3 serif">Tambah Pasangan</h2>
-    <form id="form-spouse" class="space-y-3">
-      <input type="hidden" name="parentId" />
-      <input type="hidden" name="editOrder" value="" />
-      <input class="input" dir="auto" name="name" placeholder="Nama Pasangan" required />
-      <input class="input" dir="auto" name="nickname" placeholder="Nama Singkatan / Gelaran" />
-      <div class="grid grid-cols-2 gap-2">
-        <label class="text-xs block" style="color:var(--ink-soft)">Jantina
-          <select class="input mt-1" name="gender">
-            <option value="">— Pilih —</option>
+  <header class="fixed top-0 inset-x-0 z-40 glass px-4 py-2 flex items-center justify-between gap-2">
+    <div class="flex items-center gap-2 min-w-0">
+      <span class="text-2xl">🌳</span>
+      <div class="min-w-0">
+        <h1 class="text-base font-bold tracking-wide truncate">SALASILAH ELIT</h1>
+        <p id="user-info" class="text-[10px] truncate" style="color:var(--ink-soft)">Tidak log masuk</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-1 flex-wrap justify-end">
+      <button id="btn-search" class="btn btn-ghost px-2" title="Cari">🔍</button>
+      <button id="btn-zoom-in" class="btn btn-ghost px-2">＋</button>
+      <button id="btn-zoom-out" class="btn btn-ghost px-2">−</button>
+      <button id="btn-reset" class="btn btn-ghost px-2">⟳</button>
+      <button id="btn-add-note" class="btn btn-ghost hidden" title="Tambah Nota">📝</button>
+      <button id="btn-my-profile" class="btn btn-ghost hidden">Profil Saya</button>
+      <button id="btn-admin" class="btn btn-ghost hidden">Admin</button>
+      <button id="btn-settings" class="btn btn-ghost px-2">⚙</button>
+      <button id="btn-auth" class="btn btn-primary">Log Masuk</button>
+    </div>
+  </header>
+
+  <main id="stage" class="absolute inset-0 pt-16">
+    <div id="canvas" class="origin-center flex justify-center items-start">
+      <div id="tree-root" class="mt-32 text-center" style="color:var(--ink-soft)">
+        <p class="text-lg serif">Memuatkan salasilah…</p>
+      </div>
+    </div>
+  </main>
+
+  <div id="ctx-menu" class="ctx hidden"></div>
+
+  <!-- SEARCH BAR -->
+  <div id="search-bar" class="hidden fixed top-16 inset-x-0 z-40 px-3 pt-2 flex justify-center">
+    <div class="glass rounded-xl px-3 py-2 flex items-center gap-2 w-full max-w-xl">
+      <span>🔍</span>
+      <input id="search-input" class="input flex-1" placeholder="Cari nama, tempat, tahun, catatan…" />
+      <span id="search-count" class="text-xs min-w-[60px] text-center" style="color:var(--ink-soft)">0/0</span>
+      <button id="search-prev" class="btn btn-ghost px-2">↑</button>
+      <button id="search-next" class="btn btn-ghost px-2">↓</button>
+      <button id="search-close" class="btn btn-ghost px-2">✕</button>
+    </div>
+  </div>
+
+  <!-- AUTH MODAL -->
+  <div id="modal-auth" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+    <div class="glass rounded-2xl w-full max-w-md p-6">
+      <div class="flex gap-2 mb-4">
+        <button data-tab="login" class="tab btn btn-ghost flex-1 active">Log Masuk</button>
+        <button data-tab="register" class="tab btn btn-ghost flex-1">Daftar</button>
+      </div>
+      <form id="form-login" class="space-y-3">
+        <input class="input" name="username" placeholder="Nama Samaran" required />
+        <input class="input" name="password" type="password" placeholder="Password" required />
+        <button class="btn btn-primary w-full">Masuk</button>
+        <p class="text-[11px] text-center" style="color:var(--ink-soft)">Lupa password? Hubungi Master Admin.</p>
+      </form>
+      <form id="form-register" class="space-y-3 hidden">
+        <input class="input" dir="auto" name="fullname" placeholder="Nama Penuh Anda" required />
+        <input class="input" name="username" placeholder="Nama Samaran (unik)" required />
+        <input class="input" name="email" type="email" placeholder="Email" required />
+        <input class="input" name="phone" placeholder="No. WhatsApp (cth: 0123456789)" pattern="[0-9+\-\s]{8,}" required />
+        <p class="text-[10px] -mt-1" style="color:var(--ink-soft)">No. WhatsApp wajib supaya admin boleh hubungi untuk pengesahan data.</p>
+        <input class="input" dir="auto" name="fatherName" placeholder="Nama Penuh BAPA anda" required />
+        <input class="input" dir="auto" name="motherName" placeholder="Nama Penuh IBU anda" required />
+        <p class="text-[10px] -mt-1" style="color:var(--ink-soft)">Nama ibu & bapa wajib supaya admin tahu anda anak siapa dalam salasilah ini.</p>
+        <input class="input" name="password" type="password" placeholder="Password" required minlength="4" />
+        <label class="text-xs block" style="color:var(--ink-soft)">Gambar Wajah</label>
+        <input class="input" name="photo" type="file" accept="image/*" required />
+        <button class="btn btn-primary w-full">Daftar</button>
+        <p class="text-[11px]" style="color:var(--ink-soft)">Selepas daftar, akaun anda akan menunggu pengesahan admin. Admin akan hubungi anda, dan nombor keahlian sah hanya diberikan selepas diluluskan.</p>
+      </form>
+      <button onclick="closeModal('modal-auth')" class="mt-3 text-xs w-full" style="color:var(--ink-soft)">Tutup</button>
+    </div>
+  </div>
+
+  <!-- PROFILE VIEWER -->
+  <div id="modal-profile" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+    <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+      <div id="profile-body"></div>
+      <button onclick="closeModal('modal-profile')" class="btn btn-ghost w-full mt-4">Tutup</button>
+    </div>
+  </div>
+
+  <!-- MY PROFILE -->
+  <div id="modal-my-profile" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+    <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+      <div id="my-profile-body"></div>
+      <button onclick="closeModal('modal-my-profile')" class="btn btn-ghost w-full mt-4">Tutup</button>
+    </div>
+  </div>
+
+  <!-- NODE EDITOR -->
+  <div id="modal-node" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+    <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+      <h2 id="node-title" class="text-lg font-bold mb-3 serif">Ahli</h2>
+      <form id="form-node" class="space-y-3">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="parentId" />
+        <input type="hidden" name="relation" value="child" />
+        <input class="input" dir="auto" name="name" placeholder="Nama Penuh (Rumi / Jawi / Arab)" required />
+        <input class="input" dir="auto" name="nickname" placeholder="Nama Singkatan / Gelaran" />
+        <div class="grid grid-cols-2 gap-2">
+          <select class="input" name="gender">
             <option value="L">Lelaki</option>
             <option value="P">Perempuan</option>
           </select>
-        </label>
-        <label class="text-xs block" style="color:var(--ink-soft)">Pasangan ke-
-          <input type="number" min="1" max="99" class="input mt-1" name="spouseOrder" value="1" required />
-        </label>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <label class="text-xs block" style="color:var(--ink-soft)">Status Perkahwinan
-          <select class="input mt-1" name="status">
-            <option value="hidup">Berkahwin (Hidup)</option>
-            <option value="cerai">Bercerai</option>
-            <option value="mati">Almarhum/ah</option>
+          <select class="input" name="status">
+            <option value="hidup">Hidup</option>
+            <option value="mati">Almarhum</option>
           </select>
-        </label>
-        <label class="text-xs block" style="color:var(--ink-soft)">Tahun Lahir
-          <input class="input mt-1" name="birth" placeholder="Contoh: 1975" />
-        </label>
-      </div>
-      <input class="input" name="birthplace" placeholder="Tempat Lahir" />
-      <input class="input" name="death" placeholder="Tahun Mati (jika Almarhum)" />
-      <input class="input" name="deathplace" placeholder="Tempat Wafat" />
-      <textarea class="input" dir="auto" name="notes" placeholder="Catatan / Biodata pasangan" rows="3"></textarea>
-      <label class="text-xs block" style="color:var(--ink-soft)">Gambar Pasangan</label>
-      <input class="input" name="photo" type="file" accept="image/*" />
-      <p class="text-[11px]" style="color:var(--ink-soft)">Setiap pasangan akan disimpan sebagai baris berasingan dalam Google Sheet. Tiada had bilangan pasangan.</p>
-      <div class="flex gap-2 pt-2">
-        <button type="button" onclick="closeModal('modal-spouse')" class="btn btn-ghost flex-1">Batal</button>
-        <button class="btn btn-primary flex-1">Simpan</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- SETTINGS -->
-<div id="modal-settings" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
-  <div class="glass rounded-2xl w-full max-w-md p-6 space-y-3 max-h-[90vh] overflow-y-auto">
-    <h2 class="text-lg font-bold serif">Tetapan</h2>
-    <div>
-      <h3 class="serif font-semibold mb-2" style="color:var(--gold-dark)">🎨 Tema Aplikasi</h3>
-      <div id="theme-list" class="space-y-2"></div>
-      <p id="theme-note" class="text-[11px] mt-2" style="color:var(--ink-soft)"></p>
-    </div>
-    <hr style="border-color:var(--line-soft)"/>
-    <div class="text-[11px] space-y-1" style="color:var(--ink-soft)">
-      <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid #64748b;background:#dbe3ee"></span> Belum disahkan admin</div>
-      <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid var(--gold-dark);background:#fff4cd"></span> Node induk (Root)</div>
-    </div>
-    <hr style="border-color:var(--line-soft)"/>
-    <p class="text-xs" style="color:var(--ink-soft)">Versi 4.1 — Pasangan dipaksa satu baris melintang sepenuhnya walaupun ramai isteri/pasangan; leret kiri kanan untuk lihat semua. Anak dari setiap perkahwinan dipaparkan dalam kad pasangan masing-masing.</p>
-    <div class="flex gap-2">
-      <button onclick="closeModal('modal-settings')" class="btn btn-primary flex-1">Tutup</button>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <input class="input" name="birth" placeholder="Tahun Lahir" />
+          <input class="input" name="death" placeholder="Tahun Mati" />
+        </div>
+        <input class="input" name="birthplace" placeholder="Tempat Lahir" />
+        <input class="input" name="deathplace" placeholder="Tempat Wafat" />
+        <textarea class="input" dir="auto" name="notes" placeholder="Catatan / Sejarah" rows="3"></textarea>
+        <div id="spouse-pick-wrap"></div>
+        <label class="text-xs block" style="color:var(--ink-soft)">Gambar Profil</label>
+        <input class="input" name="photo" type="file" accept="image/*" />
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="closeModal('modal-node')" class="btn btn-ghost flex-1">Batal</button>
+          <button class="btn btn-primary flex-1">Simpan</button>
+        </div>
+      </form>
     </div>
   </div>
-</div>
 
-<!-- ADMIN PANEL -->
-<div id="modal-admin" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
-  <div class="glass rounded-2xl w-full max-w-2xl p-6 max-h-[85vh] overflow-y-auto">
-    <div class="flex justify-between items-center mb-3">
-      <h2 class="text-lg font-bold serif">Panel Admin</h2>
-      <button onclick="closeModal('modal-admin')" class="btn btn-ghost">✕</button>
-    </div>
-    <div class="flex gap-2 mb-4 flex-wrap">
-      <button data-atab="pending" class="tab btn btn-ghost active">Pending</button>
-      <button data-atab="users" class="tab btn btn-ghost">Pengguna</button>
-      <button data-atab="init" class="tab btn btn-ghost">Init Root</button>
-    </div>
-    <div id="admin-pending"></div>
-    <div id="admin-users" class="hidden"></div>
-    <div id="admin-init" class="hidden space-y-3">
-      <p class="text-sm">Tetapkan node induk. Root utama hanya satu; root tambahan boleh ditandakan sebagai <b>tergantung</b> (untuk maklumat samar-samar yang belum disambungkan).</p>
-      <input id="root-name" class="input" placeholder="Nama Root" value="RAJA DEWA BASNU" />
-      <label class="text-xs flex items-center gap-2" style="color:var(--ink-soft)">
-        <input type="checkbox" id="root-hanging" /> 🔗 Root Tergantung (belum disambung kepada salasilah utama)
-      </label>
-      <button id="btn-init-root" class="btn btn-primary w-full">Cipta Root</button>
+  <!-- SPOUSE EDITOR -->
+  <div id="modal-spouse" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+    <div class="glass rounded-2xl w-full max-w-md p-6">
+      <h2 id="spouse-title" class="text-lg font-bold mb-3 serif">Tambah Pasangan</h2>
+      <form id="form-spouse" class="space-y-3">
+        <input type="hidden" name="parentId" />
+        <input type="hidden" name="editOrder" value="" />
+        <input class="input" dir="auto" name="name" placeholder="Nama Pasangan" required />
+        <input class="input" dir="auto" name="nickname" placeholder="Nama Singkatan / Gelaran" />
+        <div class="grid grid-cols-2 gap-2">
+          <label class="text-xs block" style="color:var(--ink-soft)">Jantina
+            <select class="input mt-1" name="gender">
+              <option value="">— Pilih —</option>
+              <option value="L">Lelaki</option>
+              <option value="P">Perempuan</option>
+            </select>
+          </label>
+          <label class="text-xs block" style="color:var(--ink-soft)">Pasangan ke-
+            <input type="number" min="1" max="20" class="input mt-1" name="spouseOrder" value="1" required />
+          </label>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="text-xs block" style="color:var(--ink-soft)">Status
+            <select class="input mt-1" name="status">
+              <option value="hidup">Hidup</option>
+              <option value="cerai">Bercerai</option>
+              <option value="mati">Almarhum</option>
+            </select>
+          </label>
+          <label class="text-xs block" style="color:var(--ink-soft)">Tahun Lahir
+            <input class="input mt-1" name="birth" placeholder="Contoh: 1975" />
+          </label>
+        </div>
+        <input class="input" name="birthplace" placeholder="Tempat Lahir" />
+        <input class="input" name="death" placeholder="Tahun Mati (jika Almarhum)" />
+        <input class="input" name="deathplace" placeholder="Tempat Wafat" />
+        <textarea class="input" dir="auto" name="notes" placeholder="Catatan / Biodata pasangan" rows="3"></textarea>
+        <label class="text-xs block" style="color:var(--ink-soft)">Gambar Pasangan</label>
+        <input class="input" name="photo" type="file" accept="image/*" />
+        <p class="text-[11px]" style="color:var(--ink-soft)">Setiap profil boleh ada bilangan pasangan yang tidak terhad (poligami / kahwin semula).</p>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="closeModal('modal-spouse')" class="btn btn-ghost flex-1">Batal</button>
+          <button class="btn btn-primary flex-1">Simpan</button>
+        </div>
+      </form>
     </div>
   </div>
-</div>
 
-<!-- NOTE EDITOR -->
-<div id="modal-note" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
-  <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-    <h2 id="note-title" class="text-lg font-bold mb-3 serif">Nota</h2>
-    <form id="form-note" class="space-y-3">
-      <input type="hidden" name="id" />
-      <input type="hidden" name="x" />
-      <input type="hidden" name="y" />
-      <textarea class="input" dir="auto" name="text" placeholder="Teks nota / panduan untuk pengguna lain…" rows="3" required maxlength="500"></textarea>
-      <div class="grid grid-cols-2 gap-2">
-        <label class="text-xs block" style="color:var(--ink-soft)">Font
-          <select class="input mt-1" name="font">
-            <option value="Cormorant Garamond">Cormorant (Klasik)</option>
-            <option value="Inter">Inter (Moden)</option>
-            <option value="Amiri">Amiri (Arab/Jawi)</option>
-            <option value="Scheherazade New">Scheherazade (Jawi)</option>
-            <option value="Noto Naskh Arabic">Noto Naskh (Arab)</option>
-            <option value="serif">Serif</option>
-            <option value="monospace">Monospace</option>
-          </select>
-        </label>
-        <label class="text-xs block" style="color:var(--ink-soft)">Saiz
-          <input type="number" min="8" max="72" class="input mt-1" name="size" value="18" required />
-        </label>
+  <!-- SETTINGS -->
+  <div id="modal-settings" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+    <div class="glass rounded-2xl w-full max-w-md p-6 space-y-3 max-h-[90vh] overflow-y-auto">
+      <h2 class="text-lg font-bold serif">Tetapan</h2>
+      <div>
+        <h3 class="serif font-semibold mb-2" style="color:var(--gold-dark)">🎨 Tema Aplikasi</h3>
+        <div id="theme-list" class="space-y-2"></div>
+        <p id="theme-note" class="text-[11px] mt-2" style="color:var(--ink-soft)"></p>
       </div>
-      <label class="text-xs block" style="color:var(--ink-soft)">Warna teks
-        <input type="color" class="input mt-1 h-10" name="color" value="#3b2a14" />
-      </label>
-      <label id="note-pin-admin" class="text-xs flex items-center gap-2" style="color:var(--ink-soft)">
-        <input type="checkbox" name="pinned" /> 📌 Pin nota ini (admin sahaja boleh ubah selepas dipin)
-      </label>
-      <p class="text-[11px]" style="color:var(--ink-soft)">Nota daripada pengguna biasa memerlukan kelulusan admin sebelum dipaparkan rasmi.</p>
-      <div class="flex gap-2 pt-2">
-        <button type="button" onclick="closeModal('modal-note')" class="btn btn-ghost flex-1">Batal</button>
-        <button class="btn btn-primary flex-1">Simpan</button>
+      <hr style="border-color:var(--line-soft)"/>
+      <div class="text-[11px] space-y-1" style="color:var(--ink-soft)">
+        <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid #64748b;background:#dbe3ee"></span> Belum disahkan admin</div>
+        <div class="flex items-center gap-2"><span class="inline-block w-4 h-4 rounded" style="border:2px solid var(--gold-dark);background:#fff4cd"></span> Node induk (Root)</div>
       </div>
-    </form>
+      <hr style="border-color:var(--line-soft)"/>
+      <p class="text-xs" style="color:var(--ink-soft)">Versi 2.9 — loading skrin animasi baharu, sesi log masuk lebih stabil, pembaikan ralat pasangan, kelulusan akaun ahli, dan cetakan kad ahli dari profil pengguna.</p>
+      <div class="flex gap-2">
+        <button onclick="closeModal('modal-settings')" class="btn btn-primary flex-1">Tutup</button>
+      </div>
+    </div>
   </div>
-</div>
 
-<div id="err-stack"></div>
-<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] hidden glass px-4 py-2 rounded-full text-sm"></div>
+  <!-- ADMIN PANEL -->
+  <div id="modal-admin" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+    <div class="glass rounded-2xl w-full max-w-2xl p-6 max-h-[85vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-lg font-bold serif">Panel Admin</h2>
+        <button onclick="closeModal('modal-admin')" class="btn btn-ghost">✕</button>
+      </div>
+      <div class="flex gap-2 mb-4 flex-wrap">
+        <button data-atab="pending" class="tab btn btn-ghost active">Pending</button>
+        <button data-atab="users" class="tab btn btn-ghost">Pengguna</button>
+        <button data-atab="init" class="tab btn btn-ghost">Init Root</button>
+      </div>
+      <div id="admin-pending"></div>
+      <div id="admin-users" class="hidden"></div>
+      <div id="admin-init" class="hidden space-y-3">
+        <p class="text-sm">Tetapkan node induk. Root utama hanya satu; root tambahan boleh ditandakan sebagai <b>tergantung</b> (untuk maklumat samar-samar yang belum disambungkan).</p>
+        <input id="root-name" class="input" placeholder="Nama Root" value="RAJA DEWA BASNU" />
+        <label class="text-xs flex items-center gap-2" style="color:var(--ink-soft)">
+          <input type="checkbox" id="root-hanging" /> 🔗 Root Tergantung (belum disambung kepada salasilah utama)
+        </label>
+        <button id="btn-init-root" class="btn btn-primary w-full">Cipta Root</button>
+      </div>
+    </div>
+  </div>
 
-<script src="app.js?v=41-force-horizontal-spouses"></script>
-<script>
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=41-force-horizontal-spouses').then(reg=>reg.update()).catch(()=>{});
-}
-</script>
+  <!-- NOTE EDITOR -->
+  <div id="modal-note" class="fixed inset-0 z-50 modal-bg hidden items-center justify-center p-4">
+    <div class="glass rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+      <h2 id="note-title" class="text-lg font-bold mb-3 serif">Nota</h2>
+      <form id="form-note" class="space-y-3">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="x" />
+        <input type="hidden" name="y" />
+        <textarea class="input" dir="auto" name="text" placeholder="Teks nota / panduan untuk pengguna lain…" rows="3" required maxlength="500"></textarea>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="text-xs block" style="color:var(--ink-soft)">Font
+            <select class="input mt-1" name="font">
+              <option value="Cormorant Garamond">Cormorant (Klasik)</option>
+              <option value="Inter">Inter (Moden)</option>
+              <option value="Amiri">Amiri (Arab/Jawi)</option>
+              <option value="Scheherazade New">Scheherazade (Jawi)</option>
+              <option value="Noto Naskh Arabic">Noto Naskh (Arab)</option>
+              <option value="serif">Serif</option>
+              <option value="monospace">Monospace</option>
+            </select>
+          </label>
+          <label class="text-xs block" style="color:var(--ink-soft)">Saiz
+            <input type="number" min="8" max="72" class="input mt-1" name="size" value="18" required />
+          </label>
+        </div>
+        <label class="text-xs block" style="color:var(--ink-soft)">Warna teks
+          <input type="color" class="input mt-1 h-10" name="color" value="#3b2a14" />
+        </label>
+        <label id="note-pin-admin" class="text-xs flex items-center gap-2" style="color:var(--ink-soft)">
+          <input type="checkbox" name="pinned" /> 📌 Pin nota ini (admin sahaja boleh ubah selepas dipin)
+        </label>
+        <p class="text-[11px]" style="color:var(--ink-soft)">Nota daripada pengguna biasa memerlukan kelulusan admin sebelum dipaparkan rasmi.</p>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="closeModal('modal-note')" class="btn btn-ghost flex-1">Batal</button>
+          <button class="btn btn-primary flex-1">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="err-stack"></div>
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] hidden glass px-4 py-2 rounded-full text-sm"></div>
+
+  <script src="app.js?v=29-login-lock-cachefix"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js?v=29-login-lock-cachefix').then(reg => reg.update()).catch(() => {});
+    }
+  </script>
 </body>
 </html>

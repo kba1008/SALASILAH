@@ -1,12 +1,6 @@
-/* Salasilah Keluarga Elit — app.js v3.0 multi-spouse-cards
-   PERUBAHAN v3.0:
-   - Setiap pasangan dipaparkan dalam KAD PROFIL BERASINGAN dalam viewProfile()
-   - Anak dari setiap perkahwinan disenaraikan dalam kad pasangan masing-masing
-   - Setiap pasangan = satu baris berasingan dalam Google Sheet (spouseOf/spouseOrder)
-   - Fungsi lain tidak diubah
-*/
+/* Salasilah Keluarga Elit — app.js v2.9 login-lock-cachefix */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxay2VcbTKwOmMwo1NXCKHpt5kwwSjfsg-Q3yvy4ygXGm1q7p6SpaCbDVUyJmes211U/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
 /* TURBO: pre-warm Apps Script supaya cold-start berlaku awal */
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
@@ -26,7 +20,7 @@ const State = {
   searchResults: [],
   searchIndex: 0,
   noteAddMode: false,
-  reparentMode: null,
+  reparentMode: null, // {nodeId} bila admin sedang pilih parent baharu
   loadingTimer: null,
   loadingTipIndex: 0,
 };
@@ -34,7 +28,10 @@ const State = {
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 
-function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2800);}
+function toast(msg){
+  const t=$("#toast"); t.textContent=msg; t.classList.remove("hidden");
+  setTimeout(()=>t.classList.add("hidden"), 2800);
+}
 function setLoading(show, text="Memuatkan salasilah…"){
   const screen = $("#loading-screen");
   const label = $("#loading-text");
@@ -52,15 +49,15 @@ function setLoading(show, text="Memuatkan salasilah…"){
       if(phase) phase.textContent = LOADING_TIPS[State.loadingTipIndex];
       if(dots) dots.textContent = ".".repeat((dots.textContent.length % 3) + 1);
     }, 1200);
-  }else if(State.loadingTimer){
+  } else if(State.loadingTimer){
     clearInterval(State.loadingTimer);
     State.loadingTimer = null;
   }
 }
 
 function getStoredUser(){
-  try{ return JSON.parse(localStorage.getItem("user") || "null"); }
-  catch(_){ return null; }
+  try { return JSON.parse(localStorage.getItem("user") || "null"); }
+  catch(_) { return null; }
 }
 function persistUser(user){
   State.user = user || null;
@@ -71,7 +68,7 @@ function clearSession(silent=false){
   State.user = null;
   State.myProfile = null;
   localStorage.removeItem("user");
-  try{ updateUserUI(); }catch(_){}
+  try { updateUserUI(); } catch(_){}
   if(!silent) toast("Sesi tamat. Sila log masuk semula.");
 }
 function syncUserFromStorage(){
@@ -122,8 +119,12 @@ const ErrUI = {
     card.querySelector(".err-msg").textContent = message || "(tiada butiran)";
     card.querySelector('[data-act="close"]').onclick = ()=>card.remove();
     card.querySelector('[data-act="copy"]').onclick = async ()=>{
-      try{ await navigator.clipboard.writeText(fullText); }
-      catch{ const r=document.createRange();r.selectNodeContents(card.querySelector(".err-msg"));const s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand("copy");s.removeAllRanges(); }
+      try { await navigator.clipboard.writeText(fullText); }
+      catch { 
+        const r=document.createRange(); r.selectNodeContents(card.querySelector(".err-msg")); 
+        const s=getSelection(); s.removeAllRanges(); s.addRange(r); 
+        document.execCommand("copy"); s.removeAllRanges(); 
+      }
       const b = card.querySelector('[data-act="copy"]'); const old=b.textContent; b.textContent="✓ Disalin"; setTimeout(()=>b.textContent=old,1500);
     };
     host.appendChild(card);
@@ -132,7 +133,7 @@ const ErrUI = {
   },
   clearAll(){ const h=this.ensure(); if(h) h.innerHTML=""; }
 };
-function escapeHtmlSafe(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function escapeHtmlSafe(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));}
 function showError(message, opts={}){
   let msg = message;
   if(message instanceof Error) msg = (message.message||"") + (message.stack?"\n\n"+message.stack:"");
@@ -157,16 +158,16 @@ async function api(action, payload={}){
   const auth = getAuthPayload();
   const body = JSON.stringify({action, payload, auth});
   let res, raw="";
-  try{
+  try {
     res = await fetch(GAS_URL, {method:"POST", body, headers:{"Content-Type":"text/plain;charset=utf-8"}, cache:"no-store"});
     raw = await res.text();
-  }catch(netErr){
+  } catch(netErr) {
     const e = new Error("Gangguan rangkaian: "+(netErr.message||netErr));
     e.action = action; throw e;
   }
   let json;
-  try{ json = JSON.parse(raw); }
-  catch{ const e=new Error("Respons bukan JSON dari pelayan:\n"+raw.slice(0,400)); e.action=action; throw e; }
+  try { json = JSON.parse(raw); }
+  catch { const e=new Error("Respons bukan JSON dari pelayan:\n"+raw.slice(0,400)); e.action=action; throw e; }
   if(!json.ok){
     const e=new Error(json.error||"API error"); e.action=action;
     if(/disekat|Sesi tamat/i.test(json.error||"")){
@@ -185,7 +186,10 @@ let __refreshQueued = false;
 function scheduleRefresh(){
   if(__refreshQueued) return;
   __refreshQueued = true;
-  setTimeout(async ()=>{ __refreshQueued = false; try{ await refresh(); }catch(_){} }, 250);
+  setTimeout(async ()=>{
+    __refreshQueued = false;
+    try{ await refresh(); }catch(_){}
+  }, 250);
 }
 function runInBackground(promise, opts={}){
   const {title="Gagal simpan", context="api", onError} = opts;
@@ -241,12 +245,12 @@ const Pending = {
     this.items = failed;
     this.renderBar();
     toast(failed.length ? `${failed.length} perubahan gagal disimpan` : "Semua perubahan disimpan");
-    try{ await refresh(); }catch(_){}
+    try { await refresh(); } catch(_){}
   },
   async discard(){
     if(!confirm("Buang semua perubahan yang belum disimpan?")) return;
     this.clear();
-    try{ await refresh(); }catch(_){}
+    try { await refresh(); } catch(_){}
   }
 };
 window.addEventListener("beforeunload", e=>{
@@ -256,7 +260,12 @@ function queueChange(op){ Pending.add(op); }
 
 async function fileToBase64(f){
   if(!f || !f.name) return null;
-  return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({name:f.name,type:f.type,data:r.result.split(",")[1]});r.onerror=rej;r.readAsDataURL(f);});
+  return new Promise((res,rej)=>{
+    const r = new FileReader();
+    r.onload = () => res({name:f.name, type:f.type, data:r.result.split(",")[1]});
+    r.onerror = rej;
+    r.readAsDataURL(f);
+  });
 }
 
 /* ---------- Foto Drive ---------- */
@@ -275,16 +284,17 @@ function getSpouses(n){
     try{ const x = JSON.parse(n.spousesJson); if(Array.isArray(x)) a=x; }catch(e){}
   }
   else if(n.spouseName) a=[{name:n.spouseName, photo:n.spousePhoto||"", status:n.spouseStatus||"hidup", order:1, death:""}];
+  
   const rowSpouses = (State.nodes || []).filter(x=>String(x.spouseOf||"")===String(n.id||""));
   if(rowSpouses.length){
     const seen = new Set();
     a = rowSpouses.map((s,i)=>{
       if(s.id) seen.add(String(s.id));
       return {
-        id:s.id, name:s.name||"", nickname:s.nickname||"", gender:s.gender||oppositeGender(n.gender),
-        birth:s.birth||"", birthplace:s.birthplace||"", photo:s.photo||s.spousePhoto||"",
-        status:s.status||"hidup", death:s.death||"", deathplace:s.deathplace||"", notes:s.notes||"",
-        order:Number(s.spouseOrder)>0 ? Number(s.spouseOrder) : (Number(s.order)>0 ? Number(s.order) : i+1),
+        id: s.id, name: s.name||"", nickname: s.nickname||"", gender: s.gender||oppositeGender(n.gender),
+        birth: s.birth||"", birthplace: s.birthplace||"", photo: s.photo||s.spousePhoto||"",
+        status: s.status||"hidup", death: s.death||"", deathplace: s.deathplace||"", notes: s.notes||"",
+        order: Number(s.spouseOrder)>0 ? Number(s.spouseOrder) : (Number(s.order)>0 ? Number(s.order) : i+1),
       };
     }).concat(a.filter(s=>!seen.has(String(s.id||""))));
   }
@@ -331,10 +341,8 @@ function spouseGenderLabel(s){
   if(s.gender==="L") return "Lelaki";
   return "Tidak dinyatakan";
 }
-
-const ROMAN = ['I','II','III','IV','V','VI','VII','VIII','IX','X'];
 function spouseOrdinal(n){
-  const map={1:"Pertama",2:"Kedua",3:"Ketiga",4:"Keempat",5:"Kelima",6:"Keenam",7:"Ketujuh",8:"Kelapan",9:"Kesembilan",10:"Kesepuluh"};
+  const map={1:"Pertama",2:"Kedua",3:"Ketiga",4:"Keempat",5:"Kelima",6:"Keenam"};
   return map[n]||("Ke-"+n);
 }
 
@@ -357,7 +365,7 @@ function memberStatusText(u = State.user){
 }
 async function loadMyProfile(silent=true){
   if(!hasActiveSession()){ State.myProfile = null; return null; }
-  try{
+  try {
     const me = await api("myProfile",{});
     State.myProfile = me;
     const prev = syncUserFromStorage() || State.user || {};
@@ -365,7 +373,7 @@ async function loadMyProfile(silent=true){
     persistUser(State.user);
     updateUserUI();
     return me;
-  }catch(err){
+  } catch(err) {
     if(!silent) showError(err,{title:"Gagal memuat profil anda",context:"myProfile"});
     return null;
   }
@@ -426,33 +434,12 @@ function renderNode(n){
 
   const couple = document.createElement("div");
   couple.className = "couple"+(n.pending?" pending-family":"");
-  couple.style.cssText = "display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center;justify-content:center;width:max-content!important;min-width:max-content!important;max-width:none!important;white-space:nowrap!important;overflow:visible!important;";
   const sps = getSpouses(n);
-  /* v3.0: setiap pasangan = kad berasingan dalam pokok */
   const spouseOnLeft = n.gender === "P";
   const buildSpouseBox = (sp, idx) => {
-    const spStatus = sp.status === "cerai" ? " divorced" : sp.status === "mati" ? " deceased" : "";
     const link = document.createElement("div");
-    link.className = "couple-link" + spStatus;
-    const ordNum = sp.order || idx + 1;
-    const romanLabel = ROMAN[(ordNum - 1)] || ("ke-" + ordNum);
-    link.title = "Perkahwinan " + romanLabel;
-    // Nombor perkahwinan Roman (I, II, III…)
-    const ordEl = document.createElement("div");
-    ordEl.className = "marriage-ordinal";
-    ordEl.textContent = romanLabel;
-    link.appendChild(ordEl);
-    // Garis penghubung
-    const lineEl = document.createElement("div");
-    lineEl.className = "marriage-line";
-    link.appendChild(lineEl);
-    // Label status (cerai / almarhum)
-    if (sp.status === "cerai" || sp.status === "mati") {
-      const stEl = document.createElement("div");
-      stEl.className = "marriage-status-tag";
-      stEl.textContent = sp.status === "cerai" ? "cerai" : "almarhum";
-      link.appendChild(stEl);
-    }
+    link.className = "couple-link";
+    link.title = "Pasangan "+spouseOrdinal(sp.order||idx+1);
 
     const el = document.createElement("div");
     el.className = "node spouse"+(sp.status==="cerai"?" divorced":"")+(sp.status==="mati"?" deceased":"");
@@ -464,6 +451,7 @@ function renderNode(n){
     el.addEventListener("click",e=>{e.stopPropagation();showSpouseProfile(n, sp);});
     return { link, el };
   };
+
   if(spouseOnLeft){
     [...sps].slice().reverse().forEach((sp)=>{
       const idx = sps.indexOf(sp);
@@ -481,8 +469,8 @@ function renderNode(n){
     });
   }
   branch.appendChild(couple);
-
   li.appendChild(branch);
+
   const kids = State.nodes.filter(x=>x.parentId===n.id && !x.spouseOf);
   if(kids.length){
     const cu = document.createElement("ul");
@@ -525,7 +513,8 @@ function card(n, parents = getChildParents(n)){
   const isApprovedUser = !!(linked && linked.approved);
   const isAdminUser = linked && linked.role === "admin" && linked.approved;
   const d = document.createElement("div");
-  d.className = "node"+(n.pending?" pending":"")+(!n.parentId && !n.hanging ?" root":"")+(n.hanging?" hanging":"")+(isApprovedUser?" is-user":"")+(isAdminUser?" is-admin":"");
+  d.className = "node"+(n.pending?" pending":"")+(n.parentId===false||n.parentId==="" && !n.hanging?" root":"")+(n.hanging?" hanging":"")+(isApprovedUser?" is-user":"")+(isAdminUser?" is-admin":"");
+  if(!n.parentId && !n.hanging) d.classList.add("root");
   d.dataset.nodeId = n.id;
   const badges = `${isApprovedUser?`<span class="badge-user" title="Ahli berdaftar: @${escape(linked.username)}">👤</span>`:""}${isAdminUser?`<span class="badge-admin" title="Admin">★</span>`:""}`;
   const parentMeta = n.parentId
@@ -551,7 +540,7 @@ function card(n, parents = getChildParents(n)){
       viewProfile(n);
       return;
     }
-    showCtx(e.clientX,e.clientY,n);
+    showCtx(e.clientX, e.clientY, n);
   });
   return d;
 }
@@ -560,7 +549,7 @@ function placeholder(g){
   const sym = g==="P" ? "%E2%99%80" : "%E2%99%82";
   return "data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2064%2064%27%3E%3Crect%20width=%2764%27%20height=%2764%27%20fill=%27"+c+"%27/%3E%3Ctext%20x=%2732%27%20y=%2742%27%20font-size=%2730%27%20text-anchor=%27middle%27%20fill=%27white%27%20font-family=%27serif%27%3E"+sym+"%3C/text%3E%3C/svg%3E";
 }
-function escape(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function escape(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));}
 
 /* ---------- Context Menu ---------- */
 function showCtx(x,y,n){
@@ -604,12 +593,12 @@ async function doReparent(nodeId, newParentId, makeHanging){
     ? `Pindah "${me?.name}" jadi anak kepada "${parent?.name}"?`
     : `Putuskan "${me?.name}" jadi root tergantung (tiada parent)?`;
   if(!confirm(msg)){ cancelReparent(); return; }
-  try{
+  try {
     await api("reparent",{id:nodeId, newParentId:newParentId||"", hanging: !!makeHanging});
     showInfo("Salasilah dikemaskini");
     cancelReparent();
     await refresh();
-  }catch(err){ showError(err,{title:"Gagal pindah",context:"reparent"}); cancelReparent(); }
+  } catch(err) { showError(err,{title:"Gagal pindah",context:"reparent"}); cancelReparent(); }
 }
 
 /* ---------- Profile Viewer ---------- */
@@ -631,8 +620,6 @@ function pendingActionLabel(action){
   };
   return map[action] || action || "Perubahan";
 }
-
-/* ===== v3.0: viewProfile — setiap pasangan dalam KAD BERASINGAN ===== */
 function viewProfile(n){
   const sp = getSpouses(n);
   const parents = getChildParents(n);
@@ -643,80 +630,6 @@ function viewProfile(n){
   const approvedAt = fmtDateTime(n.approvedAt);
   const pendingItems = Array.isArray(n.pendingItems) ? n.pendingItems : [];
   const canApprove = State.user?.role === "admin" && pendingItems.length;
-  const canEdit = canManageContent();
-  const isAdmin = State.user?.role === "admin";
-
-  /* Kira anak bagi setiap pasangan */
-  const allKids = State.nodes.filter(k=>String(k.parentId||"")===String(n.id||"") && !k.spouseOf);
-
-  /* Bina HTML kad untuk setiap pasangan SECARA BERASINGAN */
-  let spouseCardsHtml = "";
-  if(sp.length){
-    spouseCardsHtml = `
-      <div class="mt-3">
-        <div class="text-xs font-bold mb-2" style="color:var(--gold-dark);letter-spacing:.06em;text-transform:uppercase;">
-          💍 Sejarah Perkahwinan (${sp.length} pasangan)
-        </div>
-        <div class="spouse-cards-row" style="display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:12px;overflow-x:auto!important;overflow-y:hidden;width:100%;max-width:100%;align-items:flex-start;white-space:nowrap;padding-bottom:8px;">
-        ${sp.map((s,i)=>{
-          const spGender = s.gender || oppositeGender(n.gender);
-          const spPhoto = fixPhoto(s.photo) || placeholder(spGender);
-          const cardClass = s.status==="cerai"?" divorced":s.status==="mati"?" deceased":"";
-          /* Anak dari perkahwinan ini */
-          const spouseKids = allKids.filter(k=>{
-            if(!k.spouseIndex) return false;
-            return String(k.spouseIndex)===String(s.id) || String(k.spouseIndex)===String(s.order);
-          });
-          const unknownKids = (i===0 && sp.length===1) ? allKids.filter(k=>!k.spouseIndex) : [];
-          const marriageKids = [...spouseKids, ...unknownKids];
-          const kidsHtml = marriageKids.length
-            ? `<div class="spouse-card-children">
-                <div class="spouse-card-children-label">👶 Anak perkahwinan ini (${marriageKids.length})</div>
-                ${marriageKids.map(k=>`<div class="spouse-card-child-item">
-                  <span style="color:var(--gold-dark)">•</span>
-                  <span dir="auto">${escape(k.name)}</span>
-                  <span style="font-size:10px;color:var(--ink-soft)">${k.gender==='P'?'♀':'♂'} ${k.birth||""}</span>
-                </div>`).join("")}
-              </div>`
-            : `<div class="spouse-card-children">
-                <div class="spouse-card-children-label" style="color:var(--ink-soft);font-style:italic;">Tiada anak direkodkan dari perkahwinan ini</div>
-              </div>`;
-          return `<div class="spouse-profile-card${cardClass}" data-spouse-id="${escape(s.id||"")}" style="flex:0 0 220px!important;min-width:220px!important;max-width:220px!important;display:inline-block;white-space:normal;">
-            <div class="spouse-card-header">
-              <img class="spouse-card-photo" src="${spPhoto}" onerror="this.src='${placeholder(spGender)}'" />
-              <div class="spouse-card-info">
-                <div class="spouse-card-ordinal">Pasangan ${spouseOrdinal(s.order||i+1)}</div>
-                <div class="spouse-card-name" dir="auto">${escape(s.name)}${s.status==="mati"?" †":s.status==="cerai"?" ⚊":""}</div>
-                ${s.nickname?`<div style="font-size:11px;color:var(--gold-dark);font-style:italic;" dir="auto">"${escape(s.nickname)}"</div>`:""}
-                <div class="spouse-card-status">${spouseGenderLabel(s)} • ${spouseStatusLabel(s)}</div>
-                ${s.birth?`<div class="spouse-card-status">Lahir: ${escape(s.birth)}${s.birthplace?" di "+escape(s.birthplace):""}</div>`:""}
-              </div>
-            </div>
-            ${s.notes?`<div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;padding:4px 6px;background:rgba(0,0,0,.04);border-radius:6px;" dir="auto">${escape(s.notes)}</div>`:""}
-            ${kidsHtml}
-            ${canEdit?`<div class="spouse-card-actions">
-              <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;" data-act="edit-spouse" data-idx="${i}">✎ Edit</button>
-              ${canEdit?`<button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;" data-act="add-child-spouse" data-spouse-id="${escape(s.id||"")}">➕ Tambah Anak</button>`:""}
-              ${isAdmin?`<button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;color:var(--rose);" data-act="del-spouse" data-idx="${i}">🗑 Padam</button>`:""}
-            </div>`:""}
-          </div>`;
-        }).join("")}
-        </div>
-      </div>`;
-  }
-
-  /* Anak yang tidak dikaitkan dengan mana-mana pasangan (spouseIndex kosong) */
-  const unlinkedKids = sp.length > 1
-    ? allKids.filter(k=>!k.spouseIndex)
-    : (sp.length===0 ? allKids : []);
-  const unlinkedKidsHtml = unlinkedKids.length
-    ? `<div class="mt-3 p-3 rounded-xl" style="background:rgba(245,158,11,.08);border:1px dashed rgba(245,158,11,.4);">
-        <div class="text-xs font-bold mb-1" style="color:#92400e;">⚠ Anak tidak dikaitkan pasangan (${unlinkedKids.length})</div>
-        ${unlinkedKids.map(k=>`<div class="spouse-card-child-item"><span style="color:#d97706">•</span><span dir="auto">${escape(k.name)}</span> <span style="font-size:10px;color:var(--ink-soft)">${k.gender==='P'?'♀':'♂'} ${k.birth||""}</span></div>`).join("")}
-        <div class="text-[10px] mt-1" style="color:#92400e;">Sila edit anak tersebut dan pilih pasangan yang betul.</div>
-      </div>`
-    : "";
-
   $("#profile-body").innerHTML = `
     <div class="flex flex-col items-center mb-4">
       <img src="${photo}" onerror="this.src='${placeholder(n.gender)}'" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--gold)"/>
@@ -732,10 +645,10 @@ function viewProfile(n){
       ${rowField("Tempat Wafat", n.deathplace)}
       ${n.parentId ? rowField("Nama Bapa", parents.fatherShort) : ""}
       ${n.parentId ? rowField("Nama Ibu", parents.motherShort) : ""}
+      ${sp.length?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Pasangan (${sp.length})</div>
+        <ul class="space-y-1" dir="auto">${sp.map((s,i)=>`<li>• <b>${spouseOrdinal(s.order||i+1)}:</b> ${escape(s.name)} <span style="color:var(--ink-soft)">(${spouseStatusLabel(s)})</span></li>`).join("")}</ul></div>`:""}
       ${n.notes?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Catatan</div><p class="whitespace-pre-wrap" dir="auto">${escape(n.notes)}</p></div>`:""}
     </div>
-    ${spouseCardsHtml}
-    ${unlinkedKidsHtml}
     <div class="mt-4 pt-3 border-t text-[11px] flex flex-col gap-1" style="border-color:var(--line-soft);color:var(--ink-soft)">
       <div class="font-semibold serif" style="color:var(--gold-dark);font-size:12px">📜 Log Pengesahan</div>
       <div>📝 Terakhir dikemaskini oleh: <b style="color:var(--ink)">${escape(editedBy||"—")}</b></div>
@@ -753,8 +666,8 @@ function viewProfile(n){
         ${n.pendingDelete?'<div style="color:#8b1e1e;font-weight:700">⚠ Profil ini mempunyai permintaan padam yang masih menunggu keputusan admin.</div>':''}
       </div>`:""}
     ${!State.user?'<p class="text-[11px] mt-3 text-center" style="color:var(--ink-soft)">Mod pelawat — lihat sahaja.</p>':`
-      <div class="flex gap-2 mt-4 flex-wrap">
-        ${canEdit?'<button class="btn btn-primary flex-1" id="profile-edit-btn">✎ Edit Maklumat</button><button class="btn btn-ghost flex-1" id="profile-addchild-btn">➕ Tambah Anak</button><button class="btn btn-ghost flex-1" id="profile-addspouse-btn">💍 Tambah Pasangan</button>':'<div class="text-[11px] w-full text-center px-3 py-2 rounded-lg" style="background:rgba(148,163,184,.12);color:var(--ink-soft)">Akaun anda perlu disahkan admin dahulu sebelum boleh menambah atau mengubah data.</div>'}
+      <div class="flex gap-2 mt-4">
+        ${canManageContent()?'<button class="btn btn-primary flex-1" id="profile-edit-btn">✎ Edit Maklumat</button><button class="btn btn-ghost flex-1" id="profile-addchild-btn">➕ Tambah Anak</button><button class="btn btn-ghost flex-1" id="profile-addspouse-btn">💍 Tambah Pasangan</button>':'<div class="text-[11px] w-full text-center px-3 py-2 rounded-lg" style="background:rgba(148,163,184,.12);color:var(--ink-soft)">Akaun anda perlu disahkan admin dahulu sebelum boleh menambah atau mengubah data.</div>'}
       </div>
       ${canApprove?`<div class="flex gap-2 mt-3">
         <button class="btn btn-primary flex-1" id="profile-approve-btn">✓ Sahkan Data Ini</button>
@@ -763,9 +676,7 @@ function viewProfile(n){
     `}
   `;
   openModal("modal-profile");
-
-  /* Pasang event listener untuk butang dalam modal */
-  if(State.user && canEdit){
+  if(State.user && canManageContent()){
     const eb = document.getElementById("profile-edit-btn");
     if(eb) eb.onclick = ()=>{ closeModal("modal-profile"); openNodeEditor(n); };
     const ab = document.getElementById("profile-addchild-btn");
@@ -777,57 +688,17 @@ function viewProfile(n){
     const rp = document.getElementById("profile-reject-btn");
     if(rp) rp.onclick = ()=>moderateTarget(n.id, "node", "reject");
   }
-
-  /* Pasang event listener untuk butang dalam kad pasangan */
-  const profileBody = $("#profile-body");
-  profileBody.querySelectorAll('[data-act="edit-spouse"]').forEach(btn=>{
-    btn.addEventListener("click",()=>{
-      const idx = parseInt(btn.dataset.idx);
-      closeModal("modal-profile");
-      openSpouseEditor(n, sp[idx]);
-    });
-  });
-  profileBody.querySelectorAll('[data-act="del-spouse"]').forEach(btn=>{
-    btn.addEventListener("click",()=>{
-      const idx = parseInt(btn.dataset.idx);
-      deleteSpouseEntry(n, sp[idx]);
-    });
-  });
-  profileBody.querySelectorAll('[data-act="add-child-spouse"]').forEach(btn=>{
-    btn.addEventListener("click",()=>{
-      const spouseId = btn.dataset.spouseId;
-      closeModal("modal-profile");
-      openNodeEditor(null, n.id, "child", n, spouseId);
-    });
-  });
 }
-
 function rowField(label,val){
   if(!val && val!==0) return "";
   return `<div class="flex justify-between gap-3"><span style="color:var(--ink-soft)">${label}</span><span class="text-right">${escape(val)}</span></div>`;
 }
-
-/* showSpouseProfile — klik pada kad pasangan dalam pokok */
 function showSpouseProfile(parent, sp){
-  const canEdit = canManageContent();
+  const canEdit = !!State.user;
   const isAdmin = State.user?.role === "admin";
-  const spGender = sp.gender || oppositeGender(parent.gender);
-  /* Anak dari perkahwinan ini */
-  const allKids = State.nodes.filter(k=>String(k.parentId||"")===String(parent.id||"") && !k.spouseOf);
-  const marriageKids = allKids.filter(k=>{
-    if(!k.spouseIndex) return false;
-    return String(k.spouseIndex)===String(sp.id) || String(k.spouseIndex)===String(sp.order);
-  });
-  const kidsSection = marriageKids.length
-    ? `<div class="mt-3 pt-3" style="border-top:1px dashed var(--line-soft)">
-        <div class="text-xs font-bold mb-2" style="color:var(--gold-dark);">👶 Anak perkahwinan ini (${marriageKids.length})</div>
-        ${marriageKids.map(k=>`<div class="spouse-card-child-item"><span style="color:var(--gold-dark)">•</span><span dir="auto">${escape(k.name)}</span><span style="font-size:10px;color:var(--ink-soft)">${k.gender==='P'?'♀':'♂'} ${k.birth||""}</span></div>`).join("")}
-      </div>`
-    : `<div class="mt-3 pt-3 text-[11px]" style="border-top:1px dashed var(--line-soft);color:var(--ink-soft);font-style:italic;">Tiada anak direkodkan dari perkahwinan ini.</div>`;
-
   $("#profile-body").innerHTML = `
     <div class="flex flex-col items-center mb-4">
-      <img src="${fixPhoto(sp.photo)||placeholder(spGender)}" onerror="this.src='${placeholder(spGender)}'" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--rose)"/>
+      <img src="${fixPhoto(sp.photo)||placeholder(parent.gender==='L'?'P':'L')}" class="w-28 h-28 rounded-full object-cover mb-2" style="border:3px solid var(--rose)"/>
       <h2 class="text-2xl font-bold text-center serif" dir="auto">${escape(sp.name)}</h2>
       ${sp.nickname?`<p class="text-sm serif italic" dir="auto" style="color:var(--gold-dark)">"${escape(sp.nickname)}"</p>`:""}
       <p class="text-xs" style="color:var(--ink-soft)">Pasangan ${spouseOrdinal(sp.order||1)} kepada ${escape(parent.name)}</p>
@@ -840,10 +711,8 @@ function showSpouseProfile(parent, sp){
       ${rowField("Tempat Wafat", sp.deathplace)}
       ${sp.notes?`<div><div class="text-xs mb-1" style="color:var(--ink-soft)">Catatan</div><p class="whitespace-pre-wrap" dir="auto">${escape(sp.notes)}</p></div>`:""}
     </div>
-    ${kidsSection}
-    ${canEdit?`<div class="flex gap-2 pt-3 flex-wrap">
+    ${canEdit?`<div class="flex gap-2 pt-2">
       <button id="btn-edit-spouse" class="btn btn-ghost flex-1">✎ Edit Pasangan</button>
-      <button id="btn-add-child-this-spouse" class="btn btn-ghost flex-1">➕ Tambah Anak</button>
       ${isAdmin?`<button id="btn-del-spouse" class="btn btn-ghost flex-1" style="color:var(--rose)">🗑 Padam</button>`:""}
     </div>`:""}
   `;
@@ -851,21 +720,18 @@ function showSpouseProfile(parent, sp){
   if(canEdit){
     const e = document.getElementById("btn-edit-spouse");
     if(e) e.onclick = ()=>{ closeModal("modal-profile"); openSpouseEditor(parent, sp); };
-    const ac = document.getElementById("btn-add-child-this-spouse");
-    if(ac) ac.onclick = ()=>{ closeModal("modal-profile"); openNodeEditor(null, parent.id, "child", parent, sp.id||String(sp.order)); };
     const d = document.getElementById("btn-del-spouse");
     if(d) d.onclick = ()=>deleteSpouseEntry(parent, sp);
   }
 }
-
 async function deleteSpouseEntry(parent, sp){
-  if(!confirm(`Padam pasangan "${sp.name}" daripada ${parent.name}?\nAmaran: Rekod Google Sheet bagi pasangan ini akan dipadam.`)) return;
-  try{
+  if(!confirm(`Padam pasangan "${sp.name}" daripada ${parent.name}?`)) return;
+  try {
     await api("deleteSpouse",{ parentId: parent.id, order: sp.order||1 });
     toast("Pasangan dipadam");
     closeModal("modal-profile");
     await refresh();
-  }catch(e){ showError(e,{title:"Gagal padam pasangan",context:"deleteSpouse"}); }
+  } catch(e) { showError(e,{title:"Gagal padam pasangan",context:"deleteSpouse"}); }
 }
 
 async function moderateTarget(targetId, targetType, decision="approve"){
@@ -881,31 +747,29 @@ async function moderateTarget(targetId, targetType, decision="approve"){
     return;
   }
   if(isReject && !confirm("Tolak semua perubahan belum disahkan untuk profil ini?")) return;
-  try{
+  try {
     const res = await api("moderateTarget", { targetId, targetType, decision });
     if(res?.empty || !res?.count){
       showInfo("Tiada perubahan pending lagi untuk item ini. Paparan telah disegarkan.",{title:"Sudah Terkini"});
-    }else{
+    } else {
       showInfo(isReject ? "Perubahan ditolak" : "Data berjaya disahkan");
     }
     closeModal("modal-profile");
     if(State.user?.role === "admin") loadAdmin();
     await refresh();
-  }catch(err){
+  } catch(err) {
     showError(err,{title:isReject?"Gagal tolak perubahan":"Gagal sahkan data",context:"moderateTarget"});
   }
 }
 
 /* ---------- Node Editor ---------- */
-/* v3.0: tambah parameter presetSpouseId untuk pra-pilih pasangan */
-function openNodeEditor(node, parentId=null, relation="child", parentNode=null, presetSpouseId=null){
+function openNodeEditor(node, parentId=null, relation="child", parentNode=null){
   if(!canManageContent()){toast("Akaun anda perlu disahkan admin dahulu");return;}
   const f = $("#form-node");
   f.reset();
   f.id.value = node?.id || "";
   f.parentId.value = parentId || node?.parentId || "";
   f.relation.value = node ? "edit" : relation;
-  /* Dropdown ibu (jika parent ada >=1 pasangan) */
   const wrap = $("#spouse-pick-wrap");
   wrap.innerHTML = "";
   const pid = f.parentId.value;
@@ -920,10 +784,7 @@ function openNodeEditor(node, parentId=null, relation="child", parentNode=null, 
       sel.className = "input"; sel.name = "spouseIndex";
       sel.innerHTML = `<option value="">— Tidak ditandakan —</option>` +
         sps.map((s,i)=>`<option value="${escape(s.id||String(s.order||i+1))}">${spouseOrdinal(s.order||i+1)}: ${escape(s.name)}</option>`).join("");
-      /* Pra-pilih pasangan jika ada presetSpouseId */
-      if(presetSpouseId){
-        sel.value = String(presetSpouseId);
-      } else if(node?.spouseIndex){
+      if(node?.spouseIndex){
         const linkedSpouse = sps.find(s=>String(s.id)===String(node.spouseIndex)) || sps.find(s=>String(s.order)===String(node.spouseIndex));
         sel.value = String(linkedSpouse?.id || node.spouseIndex);
       }
@@ -1022,7 +883,7 @@ $("#form-spouse").addEventListener("submit", async e=>{
   }
   toast("Dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
   closeModal("modal-spouse");
-  queueChange({label:"Simpan pasangan "+(fd.get("name")||""), run: runCall});
+  queueChange({label:"Simpan pasangan", run: runCall});
 });
 
 async function delNode(n){
@@ -1103,28 +964,23 @@ function openNoteCtx(x,y,n){
   ].filter(Boolean);
   if(!items.length) return;
   items.forEach(i=>{const b=document.createElement("button");b.textContent=i.l;b.onclick=()=>{m.classList.add("hidden");i.fn();};m.appendChild(b);});
-  m.style.left = Math.min(x, innerWidth-260)+"px";
+  m.style.left = Math.min(x, innerWidth-220)+"px";
   m.style.top = Math.min(y, innerHeight-items.length*40)+"px";
   m.classList.remove("hidden");
 }
-function openNoteEditor(note){
+function openNoteEditor(n){
+  if(!canManageContent()){toast("Akaun anda perlu disahkan admin dahulu");return;}
   const f = $("#form-note"); f.reset();
-  if(note.id){
-    f.id.value = note.id;
-    f.text.value = note.text||"";
-    f.x.value = note.x||0; f.y.value = note.y||0;
-    f.font.value = note.font||"Cormorant Garamond";
-    f.size.value = note.size||18;
-    f.color.value = note.color||"#3b2a14";
-    f.pinned.checked = !!note.pinned;
-    $("#note-title").textContent = "Edit Nota";
-  } else {
-    f.id.value = "";
-    f.x.value = note.x||0; f.y.value = note.y||0;
-    $("#note-title").textContent = "Tambah Nota";
-  }
-  const pinRow = document.getElementById("note-pin-admin");
-  if(pinRow) pinRow.style.display = State.user?.role==="admin" ? "" : "none";
+  f.id.value = n?.id || "";
+  f.x.value = n?.x ?? 100;
+  f.y.value = n?.y ?? 100;
+  f.text.value = n?.text || "";
+  f.font.value = n?.font || "Cormorant Garamond";
+  f.size.value = n?.size || 18;
+  f.color.value = n?.color || "#3b2a14";
+  f.pinned.checked = !!n?.pinned;
+  $("#note-pin-admin").style.display = State.user.role==="admin" ? "" : "none";
+  $("#note-title").textContent = n ? "Edit Nota" : "Tambah Nota pada Peta";
   openModal("modal-note");
 }
 $("#form-note").addEventListener("submit", async e=>{
@@ -1133,13 +989,18 @@ $("#form-note").addEventListener("submit", async e=>{
   const fd = new FormData(e.target);
   const payload = {
     id: fd.get("id")||"",
-    text: fd.get("text"), x: Number(fd.get("x"))||0, y: Number(fd.get("y"))||0,
-    font: fd.get("font"), size: Number(fd.get("size"))||18, color: fd.get("color")||"#3b2a14",
-    pinned: !!fd.get("pinned"),
+    text: fd.get("text"),
+    x: Number(fd.get("x"))||0,
+    y: Number(fd.get("y"))||0,
+    font: fd.get("font")||"Cormorant Garamond",
+    size: Number(fd.get("size"))||16,
+    color: fd.get("color")||"#3b2a14",
+    pinned: State.user.role==="admin" ? !!fd.get("pinned") : false,
   };
+  if(!payload.id) delete payload.id;
   toast("Dimasukkan ke draf — tekan 'Simpan Semua' bila selesai");
   closeModal("modal-note");
-  queueChange({key:"note:"+(payload.id||"new-"+Date.now()), label:"Simpan nota", run:()=>api("saveNote",payload)});
+  queueChange({key: payload.id ? "note:"+payload.id : undefined, label:"Simpan nota", run:()=>api("saveNote", payload)});
 });
 async function togglePin(n){
   const newPinned = !n.pinned;
@@ -1276,13 +1137,13 @@ $$("#modal-auth .tab").forEach(b=>b.addEventListener("click",()=>{
 $("#form-login").addEventListener("submit",async e=>{
   e.preventDefault();
   const fd = Object.fromEntries(new FormData(e.target));
-  try{
+  try {
     const u = await api("login",fd);
     persistUser(u);
     updateUserUI(); closeModal("modal-auth");
     toast(u.approved ? "Selamat datang, "+u.username : "Log masuk berjaya. Akaun anda masih menunggu pengesahan admin.");
     Promise.allSettled([loadMyProfile(true), refresh()]).then(()=>updateUserUI());
-  }catch(err){showError(err,{title:"Gagal log masuk",context:"login"});}
+  } catch(err) {showError(err,{title:"Gagal log masuk",context:"login"});}
 });
 $("#form-register").addEventListener("submit",async e=>{
   e.preventDefault();
@@ -1291,9 +1152,11 @@ $("#form-register").addEventListener("submit",async e=>{
   const data = Object.fromEntries(fd.entries()); delete data.photo;
   if(!photo){ toast("Gambar profil yang sah adalah wajib untuk pendaftaran"); return; }
   if(photo) data.photo = photo;
-  try{await api("register",data);toast("Pendaftaran diterima. Admin akan hubungi anda untuk pengesahan.");
+  try {
+    await api("register",data);
+    toast("Pendaftaran diterima. Admin akan hubungi anda untuk pengesahan.");
     $$("#modal-auth .tab")[0].click();
-  }catch(err){showError(err,{title:"Gagal daftar",context:"register"});}
+  } catch(err) {showError(err,{title:"Gagal daftar",context:"register"});}
 });
 
 function updateUserUI(){
@@ -1310,12 +1173,12 @@ function updateUserUI(){
   if(u?.role==="admin") refreshPendingBadge();
 }
 async function refreshPendingBadge(){
-  try{
+  try {
     const d = await api("adminData",{});
     const btn = $("#btn-admin");
     const n = (d.pending||[]).length;
     btn.innerHTML = n>0 ? `Admin <span style="background:#c0392b;color:#fff;border-radius:999px;padding:1px 6px;font-size:10px;margin-left:2px">${n}</span>` : "Admin";
-  }catch(e){}
+  } catch(e) {}
 }
 
 /* ---------- Admin ---------- */
@@ -1325,7 +1188,7 @@ $$("#modal-admin [data-atab]").forEach(b=>b.addEventListener("click",()=>{
   ["pending","users","init"].forEach(t=>$("#admin-"+t).classList.toggle("hidden",t!==b.dataset.atab));
 }));
 async function loadAdmin(){
-  try{
+  try {
     const d = await api("adminData",{});
     const p = $("#admin-pending");
     p.innerHTML = d.pending.length?'<p class="text-[11px] mb-2" style="color:var(--ink-soft)">Sahkan dengan penghantar melalui telefon/WhatsApp sebelum LULUS.</p>':'<p class="text-sm" style="color:var(--ink-soft)">✓ Tiada item menunggu kelulusan.</p>';
@@ -1334,7 +1197,7 @@ async function loadAdmin(){
       div.className="glass rounded-lg p-3 mb-2 space-y-2";
       const phoneClean = String(it.byPhone||"").replace(/[^0-9+]/g,"");
       const waNum = phoneClean.replace(/^\+/,"").replace(/^0/,"60");
-      const actLabel = {add:"➕ TAMBAH",edit:"✎ EDIT",delete:"🗑 PADAM",spouse:"💍 PASANGAN","spouse-edit":"✎ EDIT PASANGAN","spouse-delete":"🗑 PADAM PASANGAN","note-add":"📝 NOTA BARU","note-edit":"✎ EDIT NOTA","note-delete":"🗑 PADAM NOTA"}[it.action]||it.action;
+      const actLabel = {add:"➕ TAMBAH",edit:"✎ EDIT",delete:"🗑 PADAM",spouse:"💍 PASANGAN","note-add":"📝 NOTA BARU","note-edit":"✎ EDIT NOTA","note-delete":"🗑 PADAM NOTA"}[it.action]||it.action;
       div.innerHTML = `
         <div class="flex justify-between items-start gap-2">
           <div class="text-sm flex-1 min-w-0">
@@ -1372,9 +1235,9 @@ async function loadAdmin(){
       const phoneClean = String(x.phone||"").replace(/[^0-9+]/g,"");
       const waNum = phoneClean.replace(/^\+/,"").replace(/^0/,"60");
       const canApproveUser = !isMasterRow && x.role !== "admin" && !x.approved;
-      const cardEl = document.createElement("div");
-      cardEl.className = "glass rounded-lg p-3 text-xs space-y-1";
-      cardEl.innerHTML = `
+      const card = document.createElement("div");
+      card.className = "glass rounded-lg p-3 text-xs space-y-1";
+      card.innerHTML = `
         <div class="flex justify-between items-start gap-2">
           <img src="${fixPhoto(x.photo)||placeholder('L')}" onerror="this.src='${placeholder('L')}'" style="width:58px;height:58px;border-radius:14px;object-fit:cover;border:2px solid var(--line-soft);flex-shrink:0"/>
           <div class="min-w-0 flex-1">
@@ -1395,43 +1258,43 @@ async function loadAdmin(){
           ${(!isMasterRow && isMaster)?`<button data-act="role" class="btn btn-ghost text-[11px]">${x.role==='admin'?'⬇ Turun Ahli':'⬆ Lantik Admin'}</button>`:''}
           ${(!isMasterRow && (isMaster || x.role!=='admin'))?`<button data-act="ban" class="btn btn-ghost text-[11px]" style="color:${x.banned?'#1e7a3b':'#c0392b'}">${x.banned?'🔓 Buka Sekatan':'🚫 Sekat'}</button>`:''}
         </div>`;
-      const ab = cardEl.querySelector('[data-act="approve"]');
+      const ab = card.querySelector('[data-act="approve"]');
       if (ab) ab.onclick = async()=>{
         if(!x.photo){ showWarn("Pengguna ini belum ada gambar profil yang sah."); return; }
         if(!confirm(`Sahkan akaun @${x.username}? Nombor keahlian sah akan dijana.`)) return;
-        try{ await api("setUserApproval",{username:x.username, approved:true}); showInfo("Akaun pengguna disahkan"); loadAdmin(); refresh(); }
-        catch(e){ showError(e,{title:"Gagal sahkan pengguna",context:"setUserApproval"}); }
+        try { await api("setUserApproval",{username:x.username, approved:true}); showInfo("Akaun pengguna disahkan"); loadAdmin(); refresh(); }
+        catch(e) { showError(e,{title:"Gagal sahkan pengguna",context:"setUserApproval"}); }
       };
-      const rb = cardEl.querySelector('[data-act="role"]');
+      const rb = card.querySelector('[data-act="role"]');
       if (rb) rb.onclick = async()=>{
         const newRole = x.role==='admin'?'ahli':'admin';
         if(!confirm(`Tukar peranan @${x.username} kepada ${newRole.toUpperCase()}?`)) return;
-        try{ await api("setRole",{username:x.username, role:newRole}); showInfo("Peranan dikemaskini"); loadAdmin(); }
-        catch(e){ showError(e,{title:"Gagal tukar peranan",context:"setRole"}); }
+        try { await api("setRole",{username:x.username, role:newRole}); showInfo("Peranan dikemaskini"); loadAdmin(); }
+        catch(e) { showError(e,{title:"Gagal tukar peranan",context:"setRole"}); }
       };
-      const bb = cardEl.querySelector('[data-act="ban"]');
+      const bb = card.querySelector('[data-act="ban"]');
       if (bb) bb.onclick = async()=>{
         const next = !x.banned;
         if(!confirm(`${next?'SEKAT':'BUKA SEKATAN'} @${x.username}?`)) return;
-        try{ await api("setBan",{username:x.username, banned:next}); showInfo(next?"Disekat":"Sekatan dibuka"); loadAdmin(); }
-        catch(e){ showError(e,{title:"Gagal kemaskini sekatan",context:"setBan"}); }
+        try { await api("setBan",{username:x.username, banned:next}); showInfo(next?"Disekat":"Sekatan dibuka"); loadAdmin(); }
+        catch(e) { showError(e,{title:"Gagal kemaskini sekatan",context:"setBan"}); }
       };
-      list.appendChild(cardEl);
+      list.appendChild(card);
     });
     u.appendChild(list);
-  }catch(e){showError(e,{title:"Gagal muat panel admin",context:"adminData"});}
+  } catch(e) {showError(e,{title:"Gagal muat panel admin",context:"adminData"});}
 }
 
 $("#btn-init-root").addEventListener("click",async()=>{
   const name = $("#root-name").value.trim();
   if(!name) return;
   const hanging = $("#root-hanging")?.checked || false;
-  try{
+  try {
     await api("initRoot",{name, hanging});
     showInfo(hanging ? "Root tergantung dicipta — boleh disambung kemudian" : "Root utama berjaya dicipta");
     closeModal("modal-admin");
     refresh();
-  }catch(e){
+  } catch(e) {
     if(String(e.message).includes("Root utama sudah wujud")){
       showWarn("Root utama sudah wujud. Tandakan 'Root Tergantung' untuk cipta cabang sampingan.");
     } else { showError(e,{title:"Gagal cipta root",context:"initRoot"}); }
@@ -1506,7 +1369,7 @@ $("#btn-search").addEventListener("click",()=>{
   bar.classList.toggle("hidden");
   if(!bar.classList.contains("hidden")) $("#search-input").focus();
 });
-$("#search-close").addEventListener("click",()=>{$("#search-bar").classList.add("hidden");clearHighlights();});
+$("#search-close").addEventListener("click",()=>{ $("#search-bar").classList.add("hidden");clearHighlights();});
 $("#search-input").addEventListener("input",e=>runSearch(e.target.value));
 $("#search-next").addEventListener("click",()=>stepSearch(1));
 $("#search-prev").addEventListener("click",()=>stepSearch(-1));
@@ -1564,7 +1427,7 @@ function focusNode(n){
 /* ---------- Refresh ---------- */
 async function refresh(){
   setLoading(true, "Sila tunggu sementara maklumat keluarga dipaparkan.");
-  try{
+  try {
     const d = await api("getTree",{});
     State.nodes = d.nodes||[];
     State.notes = d.notes||[];
@@ -1573,8 +1436,13 @@ async function refresh(){
     buildTree();
     setTimeout(centerOnTree, 60);
     if(State.user?.role==="admin") refreshPendingBadge();
-  }catch(e){ showError(e,{title:"Gagal memuat salasilah",context:"getTree"}); const host=$("#tree-root"); if(host) host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Gagal memuat data. Sila lihat notifikasi ralat di atas.</p>'; }
-  finally{ setLoading(false); }
+  } catch(e) { 
+    showError(e,{title:"Gagal memuat salasilah",context:"getTree"}); 
+    const host=$("#tree-root"); 
+    if(host) host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Gagal memuat data. Sila lihat notifikasi ralat di atas.</p>'; 
+  } finally { 
+    setLoading(false); 
+  }
 }
 
 /* ---------- Boot ---------- */
