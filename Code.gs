@@ -15,7 +15,7 @@ const DRIVE_FOLDER  = "SalasilahImages";
 const MASTER_USER = "admin";
 const MASTER_PASS = "101010";
 
-const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","spouseOf","spouseOrder","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt"];
+const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","spouseOf","spouseOrder","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt","posX","posY"];
 const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned","approved","approvedBy","approvedAt"];
 const NOTE_HEADERS = ["id","text","x","y","font","size","color","pinned","pending","createdBy","createdAt","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 
@@ -82,7 +82,7 @@ function doPost(e) {
 function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.11 draft-mode"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.11-draft-mode";
+const _INIT_VERSION = "v2.12-drag-pos";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -483,6 +483,21 @@ const ACTIONS = {
     rows.forEach(r=>resolvePendingById_(r.id, p.decision || "approve", auth));
     return { ok:true, count: rows.length };
   },
+  savePosition(p, auth) {
+    requireVerifiedUser_(auth);
+    if (!p || !p.id) throw new Error("Node id diperlukan");
+    const sh = sheet_(SHEET_TREE);
+    const rows = readSheet_(SHEET_TREE);
+    const n = rows.find(r=>r.id===p.id);
+    if (!n) throw new Error("Node tidak dijumpai");
+    const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+    const cx = h.indexOf("posX")+1, cy = h.indexOf("posY")+1;
+    if (cx>0) sh.getRange(n._row, cx).setValue(p.posX===""||p.posX==null?"":Number(p.posX));
+    if (cy>0) sh.getRange(n._row, cy).setValue(p.posY===""||p.posY==null?"":Number(p.posY));
+    stampEdit_(p.id, auth);
+    if (auth.role === "admin") stampApprove_(p.id, auth);
+    return { ok:true };
+  },
   setRole(p, auth) {
     requireMaster_(auth);
     if (!p.username) throw new Error("Username diperlukan");
@@ -553,6 +568,8 @@ function normalizeNodeClient_(r){
     spouses,
     pending: toBool_(r.pending),
     hanging: toBool_(r.hanging),
+    posX: (r.posX===""||r.posX==null) ? null : Number(r.posX),
+    posY: (r.posY===""||r.posY==null) ? null : Number(r.posY),
     pendingDelete: false,
     pendingItems: [],
   };

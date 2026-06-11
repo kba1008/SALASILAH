@@ -1,6 +1,6 @@
-/* Salasilah Keluarga Elit — app.js v2.11 draft-mode */
+/* Salasilah Keluarga Elit — app.js v2.12 drag-pos */
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbx0ppeIU26Y_6xKpS-zrGLOxUh1SQH_V_jrOuMRddzi_HOj2G65wm62dJyMuC5Hcc8I/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbw0muXWFvg8nSi9g8HXDyPixQF0SPNv2PH6-96AqmAOiNIjJyZuWVZOgOAKQi3cdN7v/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
@@ -353,6 +353,94 @@ async function loadMyProfile(silent=true){
   }
 }
 
+
+/* ---------- Free-drag positions (admin & owner draf) ---------- */
+function canDragNode(n){
+  if(!State.user) return false;
+  if(State.user.role === "admin") return true;
+  if(n && n.isDraft) return true;
+  return false;
+}
+function applyNodePositions(){
+  const apply = (el, n) => {
+    if(!el) return;
+    const hasPos = (n.posX!=null && n.posY!=null && !isNaN(n.posX) && !isNaN(n.posY));
+    if(hasPos){
+      el.style.transform = `translate(${n.posX}px, ${n.posY}px)`;
+      el.classList.add("has-manual-pos");
+    } else {
+      el.style.transform = "";
+      el.classList.remove("has-manual-pos");
+    }
+    if(canDragNode(n)){
+      el.classList.add("draggable-node");
+      enableNodeDrag(el, n);
+    }
+  };
+  State.nodes.forEach(n=>{
+    const sel = `.node[data-node-id="${CSS.escape(String(n.id))}"]`;
+    document.querySelectorAll(sel).forEach(el=>apply(el, n));
+  });
+}
+function enableNodeDrag(el, n){
+  if(el.__dragBound) return;
+  el.__dragBound = true;
+  let drag = null;
+  el.addEventListener("pointerdown", ev=>{
+    if(ev.button !== 0) return;
+    if(State.reparentMode) return;
+    if(!canDragNode(n)) return;
+    // ignore drag from interactive children (buttons/links/img click)
+    if(ev.target.closest("button,a,input,select,textarea")) return;
+    const scale = (State.panzoom && State.panzoom.getScale) ? State.panzoom.getScale() : 1;
+    drag = {
+      sx: ev.clientX, sy: ev.clientY,
+      ox: Number(n.posX)||0, oy: Number(n.posY)||0,
+      scale: scale||1, moved:false, pid: ev.pointerId
+    };
+    el.setPointerCapture(ev.pointerId);
+    el.classList.add("dragging");
+    if(State.panzoom && State.panzoom.setOptions) State.panzoom.setOptions({disablePan:true});
+    ev.stopPropagation();
+  });
+  el.addEventListener("pointermove", ev=>{
+    if(!drag) return;
+    const dx = (ev.clientX - drag.sx)/drag.scale;
+    const dy = (ev.clientY - drag.sy)/drag.scale;
+    if(Math.abs(dx)>3 || Math.abs(dy)>3) drag.moved = true;
+    const nx = drag.ox + dx, ny = drag.oy + dy;
+    el.style.transform = `translate(${nx}px, ${ny}px)`;
+    n.posX = nx; n.posY = ny;
+  });
+  const finish = ev => {
+    if(!drag) return;
+    const moved = drag.moved;
+    try{ el.releasePointerCapture(drag.pid); }catch(_){}
+    drag = null;
+    el.classList.remove("dragging");
+    if(State.panzoom && State.panzoom.setOptions) State.panzoom.setOptions({disablePan:false});
+    if(moved){
+      n.isDraft = true;
+      el.classList.add("is-draft");
+      // suppress imminent click
+      el.__suppressClick = true;
+      setTimeout(()=>{ el.__suppressClick = false; }, 50);
+      const px = Math.round(n.posX), py = Math.round(n.posY);
+      queueChange({
+        key: "pos:"+n.id,
+        label: "Pindah kedudukan "+(n.name||""),
+        run: ()=> api("savePosition",{id:n.id, posX:px, posY:py})
+      });
+      toast("Kedudukan dikemaskini sebagai draf");
+    }
+  };
+  el.addEventListener("pointerup", finish);
+  el.addEventListener("pointercancel", finish);
+  el.addEventListener("click", ev=>{
+    if(el.__suppressClick){ ev.stopImmediatePropagation(); ev.preventDefault(); }
+  }, true);
+}
+
 /* ---------- Render Tree ---------- */
 function buildTree(){
   const host = $("#tree-root");
@@ -399,6 +487,7 @@ function buildTree(){
 
   host.appendChild(wrap);
   renderNotes();
+  applyNodePositions();
 }
 function renderNode(n){
   const li = document.createElement("li");
@@ -416,6 +505,7 @@ function renderNode(n){
     link.title = "Pasangan "+spouseOrdinal(sp.order||idx+1);
 
     const el = document.createElement("div");
+    el.dataset.nodeId = sp.id || "";
     el.className = "node spouse"+(sp.status==="cerai"?" divorced":"")+(sp.status==="mati"?" deceased":"")+(sp.isDraft?" is-draft":"");
     const stLabel = sp.status==="mati"?"†":(sp.status==="cerai"?"⚊":"");
     const spGender = sp.gender || oppositeGender(n.gender);
