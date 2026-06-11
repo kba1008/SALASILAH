@@ -1031,6 +1031,8 @@ function insertNode_(p, photoUrl, auth, pending) {
     spouseOrder: isSpouseRow ? (Number(p.spouseOrder)||1) : "",
     spouseIndex: p.spouseIndex||"",
     photo: photoUrl||"", notes: p.notes||"",
+    posX: (p.posX != null && p.posX !== "") ? Number(p.posX) : "",
+    posY: (p.posY != null && p.posY !== "") ? Number(p.posY) : "",
     createdBy: auth.username,
     pending: !!pending,
     lastEditBy: auth.username,

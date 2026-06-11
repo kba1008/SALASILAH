@@ -1,46 +1,9 @@
-// ===== SALASILAH app.js — VERSI v2.16 — dijana 11 Jun 2026 17:15 =====
-/* Salasilah Keluarga Elit — app.js v2.15 url-fix */
+// ===== SALASILAH app.js — VERSI v2.17 — dijana 11 Jun 2026 =====
+/* Salasilah Keluarga Elit — app.js v2.17 url-hardcoded + pos-fix */
 
 const EXPECTED_API_VERSION = "v2.16-sync-guard";
-const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwFEcKuBFcicuI9nXY1IxjIYhrMvkb5H0fjePcKUotqBHBIHDRMQRwIl8RNp3aR-1hr/exec";
-let GAS_URL = (function(){
-  try {
-    const saved = localStorage.getItem("gasUrl");
-    if(saved && /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(saved)) return saved;
-  } catch(_) {}
-  return DEFAULT_GAS_URL;
-})();
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwFEcKuBFcicuI9nXY1IxjIYhrMvkb5H0fjePcKUotqBHBIHDRMQRwIl8RNp3aR-1hr/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
-
-/* Admin boleh tampal URL deployment /exec BARU tanpa edit kod */
-async function setGasUrl(){
-  const input = prompt(
-    "Tampal URL Web App BARU dari Apps Script (Deploy > New deployment > Web app).\n" +
-    "Mesti berakhir dengan /exec.\n\nURL semasa:\n" + GAS_URL,
-    GAS_URL
-  );
-  if(input === null) return;
-  const url = input.trim();
-  if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)){
-    alert("URL tidak sah. Pastikan ia bermula https://script.google.com/macros/s/... dan berakhir /exec");
-    return;
-  }
-  try{
-    const res = await fetch(url, {method:"POST", body: JSON.stringify({action:"ping"}), headers:{"Content-Type":"text/plain;charset=utf-8"}, cache:"no-store"});
-    const json = await res.json();
-    const ver = (json && json.data && json.data.version) || "";
-    if(ver !== EXPECTED_API_VERSION){
-      if(!confirm("Pelayan di URL ini melapor versi: '" + (ver || "LAMA/tiada") + "' (dijangka " + EXPECTED_API_VERSION + ").\nSimpan juga URL ini?")) return;
-    } else {
-      alert("✅ Pelayan disahkan: " + ver);
-    }
-  } catch(e){
-    if(!confirm("Tidak dapat uji URL ini (" + (e.message||e) + "). Simpan juga?")) return;
-  }
-  localStorage.setItem("gasUrl", url);
-  GAS_URL = url;
-  location.reload();
-}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
   "Menjejak pasangan, anak dan sambungan salasilah…",
@@ -229,14 +192,10 @@ function checkApiVersion(serverVersion){
     bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fef2f2;padding:10px 14px;font-size:13px;font-weight:600;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.4)";
     document.body.appendChild(bar);
   }
-  const shortUrl = GAS_URL.replace(/^https:\/\/script\.google\.com\/macros\/s\//, "…/").replace(/\/exec$/, "");
   bar.innerHTML = "⚠ Pelayan versi <b>" + (serverVersion || "LAMA / tidak diketahui") +
-    "</b> (dijangka <b>" + EXPECTED_API_VERSION + "</b>).<br>" +
-    "URL semasa: <code style='font-size:11px'>" + shortUrl + "</code> — kemungkinan besar 'New deployment' di Apps Script telah cipta <b>URL /exec baru</b>, tetapi app masih guna URL lama.<br>" +
-    "Langkah: Apps Script &gt; <b>Deploy &gt; Manage deployments</b> &gt; salin URL Web App yang aktif, kemudian tekan butang di bawah dan tampal URL itu.<br>" +
-    "<button id='btn-set-gas-url' style='margin-top:6px;background:#fef2f2;color:#7f1d1d;border:0;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer'>📋 Tampal URL Deploy Baru</button>";
-  const btn = bar.querySelector("#btn-set-gas-url");
-  if(btn) btn.onclick = setGasUrl;
+    "</b> (dijangka <b>" + EXPECTED_API_VERSION + "</b>). " +
+    "Sila buka Apps Script &gt; <b>Deploy &gt; New deployment</b> untuk deploy semula versi terbaru Code.gs, " +
+    "kemudian kemaskini pembolehubah <code>GAS_URL</code> dalam app.js dengan URL /exec baru jika berubah.";
 }
 
 /* ---------- Optimistic save helper ---------- */
@@ -257,6 +216,45 @@ function runInBackground(promise, opts={}){
       if(onError) try{ onError(err); }catch(_){}
       showError(err,{title, context: err?.action||context});
     });
+}
+
+/* ---------- Refresh dengan pemulihan kedudukan & viewport ---------- */
+async function refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot){
+  setLoading(true, "Sila tunggu sementara maklumat keluarga dipaparkan.");
+  try {
+    const d = await api("getTree",{});
+    State.nodes = d.nodes||[];
+    State.notes = d.notes||[];
+    State.users = d.users||[];
+    checkApiVersion(d.apiVersion || "");
+    if(State.user) await loadMyProfile(true);
+
+    if(posSnapshot && Object.keys(posSnapshot).length){
+      State.nodes.forEach(n=>{
+        const snap = posSnapshot[String(n.id)];
+        if(snap && (n.posX == null || isNaN(Number(n.posX)))){
+          n.posX = snap.posX;
+          n.posY = snap.posY;
+        }
+      });
+    }
+
+    buildTree();
+
+    if(State.panzoom && panSnapshot && scaleSnapshot != null){
+      State.panzoom.zoom(scaleSnapshot, {animate:false});
+      setTimeout(()=>{ State.panzoom.pan(panSnapshot.x, panSnapshot.y, {animate:false}); }, 30);
+    } else {
+      setTimeout(centerOnTree, 60);
+    }
+    if(State.user?.role==="admin") refreshPendingBadge();
+  } catch(e) {
+    showError(e,{title:"Gagal memuat salasilah",context:"getTree"});
+    const host=$("#tree-root");
+    if(host) host.innerHTML='<p class="text-center mt-32 serif text-lg" style="color:var(--ink-soft)">Gagal memuat data. Sila lihat notifikasi ralat di atas.</p>';
+  } finally {
+    setLoading(false);
+  }
 }
 
 /* ---------- Pending changes (batch save) ---------- */
@@ -290,6 +288,16 @@ const Pending = {
     if(!this.items.length) return;
     const saveBtn = document.getElementById("pending-save");
     if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "Menyimpan…"; }
+
+    const posSnapshot = {};
+    (State.nodes||[]).forEach(n=>{
+      if(n.posX != null && n.posY != null && !isNaN(Number(n.posX)) && !isNaN(Number(n.posY))){
+        posSnapshot[String(n.id)] = {posX: Number(n.posX), posY: Number(n.posY)};
+      }
+    });
+    const panSnapshot = (State.panzoom && State.panzoom.getPan) ? State.panzoom.getPan() : null;
+    const scaleSnapshot = (State.panzoom && State.panzoom.getScale) ? State.panzoom.getScale() : null;
+
     const queue = this.items.slice();
     this.items = [];
     const failed = [];
@@ -303,7 +311,7 @@ const Pending = {
     this.items = failed;
     this.renderBar();
     toast(failed.length ? `${failed.length} draf gagal dihantar` : "Semua perubahan berjaya dihantar");
-    try { await refresh(); } catch(_){}
+    try { await refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot); } catch(_){}
   },
   async discard(){
     if(!confirm("Buang semua draf yang belum dihantar? Paparan akan kembali kepada asal.")) return;
@@ -1008,7 +1016,16 @@ $("#form-node").addEventListener("submit", async e=>{
   buildTree();
   toast("Paparan draf dikemaskini. Sila tekan 'Hantar Perubahan'.");
   closeModal("modal-node");
-  queueChange({label:"Simpan ahli "+(payload.name||""), run:()=>api("saveNode", payload)});
+  const _nodePayloadId = payload.id;
+  queueChange({label:"Simpan ahli "+(payload.name||""), run:()=>{
+    const _liveNode = State.nodes.find(x=>String(x.id)===String(mapId(_nodePayloadId)));
+    const _send = {...payload};
+    if(_liveNode && _liveNode.posX != null && !isNaN(Number(_liveNode.posX))){
+      _send.posX = Number(_liveNode.posX);
+      _send.posY = Number(_liveNode.posY);
+    }
+    return api("saveNode", _send);
+  }});
 });
 
 /* ---------- Spouse Editor (Optimistik Draf) ---------- */
