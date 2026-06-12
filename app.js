@@ -1,8 +1,8 @@
-// ===== SALASILAH app.js — VERSI v2.20 — dijana 12 Jun 2026 =====
-/* Salasilah Keluarga Elit — app.js v2.20 couple-BIND + layout-FREEZE + orphan-safe */
+// ===== SALASILAH app.js — VERSI v2.21 — dijana 12 Jun 2026 =====
+/* Salasilah Keluarga Elit — app.js v2.21 spouse-ROW-FIX + couple-BIND + layout-FREEZE + orphan-safe */
 
 const EXPECTED_API_VERSION = "v2.18-layout-lock";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzwo3C2N_LMMaBz6vQnOufD7QxCD0ncxBCV_uHDg1UYKpL8TRpipIpqhwF3CLCuAlq8/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyqr2OBS3y84gdsaIVnI6en6MIRzXxffJJfFh4sFz2uKChY06TQ3ANSo0iWlxjFJjOI/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
@@ -253,6 +253,7 @@ async function refreshAndRestoreLayout(layoutSnapshot, panSnapshot, scaleSnapsho
       });
     }
 
+    normalizeSpouseNodes(State.nodes); /* v2.21: pulihkan pasangan sebelum kira parent */
     normalizeMissingParentsForStableLayout(State.nodes);
     buildTree();
 
@@ -684,6 +685,29 @@ function enableNodeDrag(el, n){
 }
 
 /* ---------- Render Tree ---------- */
+/* v2.21 spouse-row-fix:
+   Pasangan (isteri/suami) sering disimpan sebagai BARIS BERASINGAN dalam Google Sheet.
+   Apabila data dimuat semula, baris itu kadangkala kembali dengan parentId = suami tetapi
+   TANPA spouseOf, lalu dipaparkan sebagai ANAK di BAWAH suami. Fungsi ini memastikan
+   setiap baris pasangan dikenal pasti dan dipulihkan spouseOf-nya supaya sentiasa
+   duduk MELINTANG di sisi pasangannya, bukan menegak di bawah. */
+function normalizeSpouseNodes(nodes){
+  (nodes||[]).forEach(n=>{
+    if(!n) return;
+    const marker = String(n.relation || n.role || n.type || n.kind || n.hubungan || "").toLowerCase();
+    const isSpouse = !!n.spouseOf || marker === "spouse" || marker === "pasangan" || marker === "isteri" || marker === "suami";
+    if(!isSpouse) return;
+    // Pulihkan rujukan pasangan jika hilang selepas round-trip pelayan.
+    if(!n.spouseOf && n.parentId) n.spouseOf = n.parentId;
+    if(!n.spouseOf) return; // tiada rujukan sah — jangan ubah
+    // Pasangan TIDAK boleh menjadi anak atau akar — buang parentId & status tergantung
+    n.parentId = "";
+    n.hanging = false;
+    // Selaraskan turutan pasangan supaya susunan kekal konsisten
+    if((n.spouseOrder==null || n.spouseOrder==="") && n.order!=null) n.spouseOrder = n.order;
+  });
+}
+
 function normalizeMissingParentsForStableLayout(nodes){
   const ids = new Set((nodes||[]).filter(n=>!n.spouseOf).map(n=>String(n.id)));
   const roots = (nodes||[]).filter(n=>!n.spouseOf && !n.parentId);
@@ -706,6 +730,7 @@ function normalizeMissingParentsForStableLayout(nodes){
 function buildTree(){
   const host = $("#tree-root");
   host.className=""; host.innerHTML="";
+  normalizeSpouseNodes(State.nodes);
   normalizeMissingParentsForStableLayout(State.nodes);
 
   const roots = State.nodes.filter(n=>!n.parentId && !n.spouseOf);
