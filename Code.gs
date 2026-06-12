@@ -1,4 +1,4 @@
-// ===== SALASILAH Code.gs — VERSI v2.16 — dijana 11 Jun 2026 17:15 =====
+// ===== SALASILAH Code.gs — VERSI v2.18 — dijana 12 Jun 2026 =====
 /**
  * SALASILAH KELUARGA ELIT — Apps Script Backend v2.13 spouse-repair
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
@@ -80,10 +80,10 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.16 sync-guard"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.18 layout-lock"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.16-sync-guard";
+const _INIT_VERSION = "v2.18-layout-lock";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -256,6 +256,7 @@ const ACTIONS = {
         .filter(n=>!pendingNoteAdds.has(String(n.id)))
         .map(n=>({ ...n, pending:false, pendingDelete:false, pendingItems:[] }));
     }
+    nodes = normalizeMissingParentNodes_(nodes);
 
     const users = readSheet_(SHEET_USERS).map(u=>({
       username: u.username, fullname: u.fullname||"", role: u.role||"ahli",
@@ -466,6 +467,7 @@ const ACTIONS = {
     updateUserField_(u.row, "approvedAt", approved ? new Date() : "");
     if (approved && !u.no) updateUserField_(u.row, "no", nextMemberNo_());
     if (!approved) updateUserField_(u.row, "no", "");
+    invalidateTreeCache_();
     return { ok:true };
   },
   moderate(p, auth) {
@@ -575,6 +577,22 @@ function normalizeNodeClient_(r){
     pendingDelete: false,
     pendingItems: [],
   };
+}
+function normalizeMissingParentNodes_(nodes){
+  const ids = {};
+  (nodes || []).forEach(function(n){ if (!n.spouseOf && n.id) ids[String(n.id)] = true; });
+  const roots = (nodes || []).filter(function(n){ return !n.spouseOf && !n.parentId; });
+  const mainRoot = roots.filter(function(r){ return !toBool_(r.hanging); })[0] || roots[0] || null;
+  return (nodes || []).map(function(n){
+    if (n.spouseOf) return n;
+    if (n.parentId && !ids[String(n.parentId)]) {
+      return { ...n, parentId:"", hanging:true, missingParentResolved:true };
+    }
+    if (!n.parentId && mainRoot && String(n.id) !== String(mainRoot.id) && !toBool_(n.hanging)) {
+      return { ...n, hanging:true, extraRootResolved:true };
+    }
+    return n;
+  });
 }
 function normalizeNoteClient_(n){
   return {
@@ -1031,6 +1049,7 @@ function insertNode_(p, photoUrl, auth, pending) {
     spouseOrder: isSpouseRow ? (Number(p.spouseOrder)||1) : "",
     spouseIndex: p.spouseIndex||"",
     photo: photoUrl||"", notes: p.notes||"",
+    hanging: !isSpouseRow && !p.parentId ? !!p.hanging : false,
     posX: (p.posX != null && p.posX !== "") ? Number(p.posX) : "",
     posY: (p.posY != null && p.posY !== "") ? Number(p.posY) : "",
     createdBy: auth.username,

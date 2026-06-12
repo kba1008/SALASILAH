@@ -1,7 +1,7 @@
-// ===== SALASILAH app.js — VERSI v2.17 — dijana 11 Jun 2026 =====
-/* Salasilah Keluarga Elit — app.js v2.17 url-hardcoded + pos-fix */
+// ===== SALASILAH app.js — VERSI v2.18 — dijana 12 Jun 2026 =====
+/* Salasilah Keluarga Elit — app.js v2.18 layout-lock + orphan-safe */
 
-const EXPECTED_API_VERSION = "v2.16-sync-guard";
+const EXPECTED_API_VERSION = "v2.18-layout-lock";
 const GAS_URL = "https://script.google.com/macros/s/AKfycbyqr2OBS3y84gdsaIVnI6en6MIRzXxffJJfFh4sFz2uKChY06TQ3ANSo0iWlxjFJjOI/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
@@ -24,6 +24,7 @@ const State = {
   reparentMode: null,
   loadingTimer: null,
   loadingTipIndex: 0,
+  lastLayoutSnapshot: null,
 };
 
 const $ = (s, r=document) => r.querySelector(s);
@@ -150,6 +151,14 @@ function registerIdMap(oldId, newId){
     if(String(n.spouseOf||"")===String(oldId)) n.spouseOf = newId;
     if(String(n.spouseIndex||"")===String(oldId)) n.spouseIndex = newId;
   });
+  if(State.lastLayoutSnapshot){
+    if(State.lastLayoutSnapshot.positions?.[oldId] && !State.lastLayoutSnapshot.positions[newId]){
+      State.lastLayoutSnapshot.positions[newId] = State.lastLayoutSnapshot.positions[oldId];
+    }
+    if(State.lastLayoutSnapshot.absolute?.[oldId] && !State.lastLayoutSnapshot.absolute[newId]){
+      State.lastLayoutSnapshot.absolute[newId] = State.lastLayoutSnapshot.absolute[oldId];
+    }
+  }
 }
 
 async function api(action, payload={}){
@@ -219,9 +228,10 @@ function runInBackground(promise, opts={}){
 }
 
 /* ---------- Refresh dengan pemulihan kedudukan & viewport ---------- */
-async function refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot){
-  // Tangkap koordinat visual mutlak SEBELUM rebuild supaya paparan kekal sama
-  const absSnapshot = _captureAbsolutePositions(posSnapshot);
+async function refreshAndRestoreLayout(layoutSnapshot, panSnapshot, scaleSnapshot){
+  const posSnapshot = layoutSnapshot?.positions || layoutSnapshot || {};
+  const absSnapshot = layoutSnapshot?.absolute || _captureAbsolutePositions(posSnapshot);
+  State.lastLayoutSnapshot = { positions: {...posSnapshot}, absolute: {...absSnapshot} };
 
   setLoading(true, "Sila tunggu sementara maklumat keluarga dipaparkan.");
   try {
@@ -243,6 +253,7 @@ async function refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot){
       });
     }
 
+    normalizeMissingParentsForStableLayout(State.nodes);
     buildTree();
 
     // Betulkan hanyutan susun atur: kira semula translate supaya posisi visual kekal
@@ -265,6 +276,21 @@ async function refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot){
   } finally {
     setLoading(false);
   }
+}
+
+function captureLayoutSnapshot(){
+  const positions = {};
+  (State.nodes||[]).forEach(n=>{
+    if(n.spouseOf || !n.id) return;
+    const hasPos = n.posX != null && n.posY != null && !isNaN(Number(n.posX)) && !isNaN(Number(n.posY));
+    positions[String(n.id)] = {
+      posX: hasPos ? Number(n.posX) : 0,
+      posY: hasPos ? Number(n.posY) : 0,
+      persist: hasPos || !!n.isDraft || !!n.pending,
+    };
+  });
+  State.lastLayoutSnapshot = { positions, absolute: _captureAbsolutePositions(positions) };
+  return State.lastLayoutSnapshot;
 }
 
 // Tangkap posisi visual mutlak (koordinat kanvas) bagi semua node berposisi
@@ -299,6 +325,7 @@ function _captureAbsolutePositions(posSnapshot){
     result[id] = {
       absX: natX + posSnapshot[id].posX,
       absY: natY + posSnapshot[id].posY,
+      persist: posSnapshot[id].persist !== false,
     };
   });
 
@@ -352,10 +379,17 @@ function _compensateLayoutDrift(absSnapshot){
     if(!n) { el.style.transform = ""; return; }
     const newPosX = Math.round(target.absX - nat.x);
     const newPosY = Math.round(target.absY - nat.y);
-    n.posX = newPosX;
-    n.posY = newPosY;
+    if(target.persist !== false){
+      n.posX = newPosX;
+      n.posY = newPosY;
+      delete n._layoutLockX;
+      delete n._layoutLockY;
+    } else {
+      n._layoutLockX = newPosX;
+      n._layoutLockY = newPosY;
+    }
     el.style.transform = `translate(${newPosX}px,${newPosY}px)`;
-    toSave.push({id, posX: newPosX, posY: newPosY});
+    if(target.persist !== false) toSave.push({id, posX: newPosX, posY: newPosY});
   });
 
   // Simpan posisi yang dibetulkan ke pelayan (senyap, latar belakang)
@@ -398,12 +432,7 @@ const Pending = {
     const saveBtn = document.getElementById("pending-save");
     if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = "Menyimpan…"; }
 
-    const posSnapshot = {};
-    (State.nodes||[]).forEach(n=>{
-      if(n.posX != null && n.posY != null && !isNaN(Number(n.posX)) && !isNaN(Number(n.posY))){
-        posSnapshot[String(n.id)] = {posX: Number(n.posX), posY: Number(n.posY)};
-      }
-    });
+    const layoutSnapshot = captureLayoutSnapshot();
     const panSnapshot = (State.panzoom && State.panzoom.getPan) ? State.panzoom.getPan() : null;
     const scaleSnapshot = (State.panzoom && State.panzoom.getScale) ? State.panzoom.getScale() : null;
 
@@ -420,7 +449,7 @@ const Pending = {
     this.items = failed;
     this.renderBar();
     toast(failed.length ? `${failed.length} draf gagal dihantar` : "Semua perubahan berjaya dihantar");
-    try { await refreshAndRestoreLayout(posSnapshot, panSnapshot, scaleSnapshot); } catch(_){}
+    try { await refreshAndRestoreLayout(layoutSnapshot, panSnapshot, scaleSnapshot); } catch(_){}
   },
   async discard(){
     if(!confirm("Buang semua draf yang belum dihantar? Paparan akan kembali kepada asal.")) return;
@@ -568,9 +597,12 @@ function applyNodePositions(){
   const apply = (el, n) => {
     if(!el) return;
     const hasPos = (n.posX!=null && n.posY!=null && !isNaN(n.posX) && !isNaN(n.posY));
-    if(hasPos){
-      el.style.transform = `translate(${n.posX}px, ${n.posY}px)`;
-      el.classList.add("has-manual-pos");
+    const hasLayoutLock = !hasPos && n._layoutLockX!=null && n._layoutLockY!=null && !isNaN(Number(n._layoutLockX)) && !isNaN(Number(n._layoutLockY));
+    if(hasPos || hasLayoutLock){
+      const x = hasPos ? n.posX : n._layoutLockX;
+      const y = hasPos ? n.posY : n._layoutLockY;
+      el.style.transform = `translate(${x}px, ${y}px)`;
+      el.classList.toggle("has-manual-pos", hasPos);
     } else {
       el.style.transform = "";
       el.classList.remove("has-manual-pos");
@@ -645,9 +677,29 @@ function enableNodeDrag(el, n){
 }
 
 /* ---------- Render Tree ---------- */
+function normalizeMissingParentsForStableLayout(nodes){
+  const ids = new Set((nodes||[]).filter(n=>!n.spouseOf).map(n=>String(n.id)));
+  const roots = (nodes||[]).filter(n=>!n.spouseOf && !n.parentId);
+  const mainRoot = roots.find(r=>!r.hanging) || roots[0];
+  roots.forEach(n=>{
+    if(mainRoot && String(n.id) !== String(mainRoot.id) && !n.hanging){
+      n.hanging = true;
+      n.extraRootResolved = true;
+    }
+  });
+  (nodes||[]).forEach(n=>{
+    if(n.spouseOf || !n.parentId) return;
+    if(ids.has(String(n.parentId))) return;
+    n.parentId = "";
+    n.hanging = true;
+    n.missingParentResolved = true;
+  });
+}
+
 function buildTree(){
   const host = $("#tree-root");
   host.className=""; host.innerHTML="";
+  normalizeMissingParentsForStableLayout(State.nodes);
 
   const roots = State.nodes.filter(n=>!n.parentId && !n.spouseOf);
   const mainRoot = roots.find(r=>!r.hanging) || roots[0];
@@ -1129,6 +1181,10 @@ $("#form-node").addEventListener("submit", async e=>{
   queueChange({label:"Simpan ahli "+(payload.name||""), run:()=>{
     const _liveNode = State.nodes.find(x=>String(x.id)===String(mapId(_nodePayloadId)));
     const _send = {...payload};
+    if(_liveNode){
+      _send.parentId = _liveNode.parentId || "";
+      _send.hanging = !!_liveNode.hanging;
+    }
     if(_liveNode && _liveNode.posX != null && !isNaN(Number(_liveNode.posX))){
       _send.posX = Number(_liveNode.posX);
       _send.posY = Number(_liveNode.posY);
