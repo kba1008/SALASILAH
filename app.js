@@ -2,7 +2,7 @@
 /* Salasilah Keluarga Elit — app.js v2.22 id-PASANGAN + spouse-ROW-FIX + couple-BIND + layout-FREEZE + orphan-safe */
 
 const EXPECTED_API_VERSION = "v2.18-layout-lock";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxTehpo8EXsd70MuPcoopYX20D-v1spZ02LKN5XQKSNhBXR1tAs_9Gt_d69VDK8vWj8/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwKZquMZCCD6_PWJ3sFMFJIsRo_HoqYnOLYBHK2OK7PMz3-2aMxYRp1z8x05B9DkmeH/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
