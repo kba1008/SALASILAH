@@ -1457,11 +1457,11 @@ function _findSpouseRowForChild_(parentNode, spouseIndex, treeRows){
     String(r.spouseOf || "") === String(parentNode.id) &&
     Number(r.spouseOrder || 0) === order) || null;
 }
-function upsertAnak_(childId, auth){
-  try { return _upsertAnakCore_(childId, auth); }
+function upsertAnak_(childId, auth, spouseIdHint){
+  try { return _upsertAnakCore_(childId, auth, spouseIdHint); }
   catch (e) { Logger.log("upsertAnak_ ERROR: " + (e && e.stack || e)); }
 }
-function _upsertAnakCore_(childId, auth){
+function _upsertAnakCore_(childId, auth, spouseIdHint){
   ensureSheet_(ss_(), SHEET_ANAK, ANAK_HEADERS);
   migrateHeaders_(SHEET_ANAK, ANAK_HEADERS);
   const sh = sheet_(SHEET_ANAK);
@@ -1474,7 +1474,9 @@ function _upsertAnakCore_(childId, auth){
 
   const parent = treeRows.find(r => String(r.id) === String(child.parentId));
   if (!parent) throw new Error("upsertAnak_: parent tidak dijumpai di TREE (parentId=" + child.parentId + ")");
-  const spouseRow = _findSpouseRowForChild_(parent, child.spouseIndex, treeRows);
+  // v2.23.5: gunakan flexible lookup (sama spt upsertPasangan_) + hint id ibu/bapa
+  let spouseRow = _findSpouseRowFlexible_(treeRows, parent.id, child.spouseIndex, spouseIdHint);
+  if (!spouseRow) spouseRow = _findSpouseRowForChild_(parent, child.spouseIndex, treeRows);
 
   const parentG = String(parent.gender || "").toUpperCase();
   let bapa = null, ibu = null;
@@ -1658,7 +1660,7 @@ function TEST_PASANGAN_ANAK() {
     // 4) Panggil upsert versi 'core' supaya error sebenar dilemparkan (dgn hint id ibu)
     const idPsgWritten = _upsertPasanganCore_(bapaId, order, auth, ibuId);
     L("[upsertPasangan] id_pasangan yg ditulis: " + idPsgWritten);
-    _upsertAnakCore_(anakId, auth);
+    _upsertAnakCore_(anakId, auth, ibuId);
     SpreadsheetApp.flush();
 
     // 5) Sahkan PASANGAN — guna idPsgWritten (sumber kebenaran sebenar)
@@ -1673,19 +1675,23 @@ function TEST_PASANGAN_ANAK() {
       " | id_isteri=" + pas.id_isteri + " (" + pas.nama_isteri + ")" +
       " | no_pasangan=" + pas.no_pasangan +
       " | status_pasangan=" + pas.status_pasangan);
-    if (String(pas.id_suami) !== bapaId)  throw new Error("GAGAL: id_suami tidak padan");
-    if (String(pas.id_isteri) !== ibuId)  throw new Error("GAGAL: id_isteri tidak padan");
+    if (String(pas.id_suami) !== bapaId)  throw new Error("GAGAL: id_suami tidak padan (dpt=" + pas.id_suami + ", expect=" + bapaId + ")");
+    if (String(pas.id_isteri) !== ibuId)  throw new Error("GAGAL: id_isteri tidak padan (dpt=" + pas.id_isteri + ", expect=" + ibuId + ")");
 
     // 6) Sahkan ANAK
     const anak = _findRowByField_(SHEET_ANAK, "id_anak", anakId);
     if (!anak) throw new Error("GAGAL: Baris ANAK dgn id_anak=" + anakId + " tidak dijumpai");
-    L("[CHECK] ANAK OK -> id_anak=" + anak.id_anak +
-      " | id_pasangan=" + anak.id_pasangan +
-      " | id_bapa=" + anak.id_bapa + " (" + anak.nama_bapa + ")" +
-      " | id_ibu=" + anak.id_ibu + " (" + anak.nama_ibu + ")" +
-      " | nama_anak=" + anak.nama_anak);
-    if (String(anak.id_bapa) !== bapaId)            throw new Error("GAGAL: id_bapa tidak padan");
-    if (String(anak.id_ibu) !== ibuId)              throw new Error("GAGAL: id_ibu tidak padan");
+    L("[DIAG ANAK] " + JSON.stringify({
+      id_anak: anak.id_anak, id_pasangan: anak.id_pasangan,
+      id_bapa: anak.id_bapa, nama_bapa: anak.nama_bapa,
+      id_ibu: anak.id_ibu, nama_ibu: anak.nama_ibu,
+      no_anak: anak.no_anak, nama_anak: anak.nama_anak
+    }));
+    L("[DIAG EXPECT] bapaId=" + bapaId + " | ibuId=" + ibuId + " | id_pasangan=" + pas.id_pasangan);
+    if (String(anak.id_bapa) !== bapaId)
+      throw new Error("GAGAL: id_bapa tidak padan (dpt='" + anak.id_bapa + "', expect='" + bapaId + "')");
+    if (String(anak.id_ibu) !== ibuId)
+      throw new Error("GAGAL: id_ibu tidak padan (dpt='" + anak.id_ibu + "', expect='" + ibuId + "'). Sila semak [DIAG ANAK] dan [DIAG TREE/IBU] di atas.");
     if (String(anak.id_pasangan) !== String(pas.id_pasangan))
       throw new Error("GAGAL: id_pasangan anak (" + anak.id_pasangan + ") tidak menghubung ke unit pasangan (" + pas.id_pasangan + ")");
 
