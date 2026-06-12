@@ -145,10 +145,10 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.23.3 pasangan-anak"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.23.4 pasangan-anak"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.23.3-pasangan-anak";
+const _INIT_VERSION = "v2.23.4-pasangan-anak";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -1080,8 +1080,17 @@ function readSheet_(name) {
   const sh = sheet_(name);
   const v = sh.getDataRange().getValues();
   if (v.length < 2) return [];
-  const h = v[0];
-  return v.slice(1).map((r,i) => { const o={_row:i+2}; h.forEach((k,j)=>o[k]=r[j]); return o; });
+  // v2.23.4: trim nama header & jangan biar koloum pendua (duplicate header) yang kosong
+  // menimpa nilai sebenar — punca "baris pasangan tidak dijumpai" walaupun data wujud.
+  const h = v[0].map(k => String(k == null ? "" : k).trim());
+  return v.slice(1).map((r,i) => {
+    const o = {_row: i+2};
+    h.forEach((k,j) => {
+      if (!k) return;
+      if (!(k in o) || o[k] === "" || o[k] == null) o[k] = r[j];
+    });
+    return o;
+  });
 }
 function findUserBy_(field, val) {
   const rows = readSheet_(SHEET_USERS);
@@ -1182,7 +1191,7 @@ function insertNode_(p, photoUrl, auth, pending) {
   if (!isSpouseRow && p.parentId) {
     upsertAnak_(id, auth);
   } else if (isSpouseRow) {
-    upsertPasangan_(String(p.spouseOf || p.parentId || ""), Number(p.spouseOrder)||1, auth);
+    upsertPasangan_(String(p.spouseOf || p.parentId || ""), Number(p.spouseOrder)||1, auth, id);
   }
   return id;
 }
@@ -1319,12 +1328,39 @@ function _findRowByField_(sheetName, field, value){
 }
 
 /* ---------- PASANGAN ---------- */
-function upsertPasangan_(parentId, spouseOrder, auth){
-  try { return _upsertPasanganCore_(parentId, spouseOrder, auth); }
+function upsertPasangan_(parentId, spouseOrder, auth, spouseIdHint){
+  try { return _upsertPasanganCore_(parentId, spouseOrder, auth, spouseIdHint); }
   catch (e) { Logger.log("upsertPasangan_ ERROR: " + (e && e.stack || e)); }
 }
+// v2.23.4: carian baris pasangan yang fleksibel (id terus > spouseOf+order > id_pasangan > spouseOf sahaja)
+function _findSpouseRowFlexible_(treeRows, parentId, spouseOrder, spouseIdHint){
+  const pid = String(parentId == null ? "" : parentId).trim();
+  const ord = Number(spouseOrder) > 0 ? Number(spouseOrder) : 1;
+  if (spouseIdHint) {
+    const byId = treeRows.find(r => String(r.id == null ? "" : r.id).trim() === String(spouseIdHint).trim());
+    if (byId) return byId;
+  }
+  let m = treeRows.find(r =>
+    String(r.spouseOf == null ? "" : r.spouseOf).trim() === pid &&
+    Number(r.spouseOrder || 0) === ord);
+  if (m) return m;
+  const expect = makeIdPasangan_(pid, ord);
+  m = treeRows.find(r => String(r.id_pasangan == null ? "" : r.id_pasangan).replace(/^'+/, "").trim() === expect);
+  if (m) return m;
+  const all = treeRows.filter(r => String(r.spouseOf == null ? "" : r.spouseOf).trim() === pid);
+  if (all.length === 1) return all[0];
+  return null;
+}
+// v2.23.4: kesan header pendua / kosong di baris 1 (punca biasa data 'hilang')
+function _dupHeaders_(name){
+  const sh = sheet_(name);
+  const h = sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getValues()[0].map(x=>String(x==null?"":x).trim());
+  const seen = {}, dups = [];
+  h.forEach(c => { if (c) { if (seen[c]) dups.push(c); seen[c] = 1; } });
+  return dups;
+}
 // v2.23.3: versi 'core' — bocorkan error supaya TEST dapat lihat sebab sebenar
-function _upsertPasanganCore_(parentId, spouseOrder, auth){
+function _upsertPasanganCore_(parentId, spouseOrder, auth, spouseIdHint){
   ensureSheet_(ss_(), SHEET_PASANGAN, PASANGAN_HEADERS);
   migrateHeaders_(SHEET_PASANGAN, PASANGAN_HEADERS);
   const sh = sheet_(SHEET_PASANGAN);
@@ -1332,10 +1368,16 @@ function _upsertPasanganCore_(parentId, spouseOrder, auth){
   const treeRows = readSheet_(SHEET_TREE);
   const parent = treeRows.find(r => String(r.id) === String(parentId));
   if (!parent) throw new Error("upsertPasangan_: parent tidak dijumpai di TREE (id=" + parentId + ")");
-  const spouseRow = treeRows.find(r =>
-    String(r.spouseOf || "").trim() === String(parentId).trim() &&
-    Number(r.spouseOrder || 0) === Number(spouseOrder));
-  if (!spouseRow) throw new Error("upsertPasangan_: baris pasangan tidak dijumpai di TREE (spouseOf=" + parentId + ", spouseOrder=" + spouseOrder + ")");
+  const spouseRow = _findSpouseRowFlexible_(treeRows, parentId, spouseOrder, spouseIdHint);
+  if (!spouseRow) {
+    const calon = treeRows
+      .filter(r => String(r.spouseOf||"").trim() === String(parentId).trim())
+      .map(r => ({ id:r.id, spouseOrder:r.spouseOrder, id_pasangan:r.id_pasangan }));
+    const dups = _dupHeaders_(SHEET_TREE);
+    throw new Error("upsertPasangan_: baris pasangan tidak dijumpai di TREE (spouseOf=" + parentId +
+      ", spouseOrder=" + spouseOrder + "). Calon spouseOf sama: " + JSON.stringify(calon) +
+      ". Header TREE pendua: " + JSON.stringify(dups));
+  }
 
   // v2.23.3: tolerate whitespace / leading apostrophe pada id_pasangan
   const rawIdPsg = String(spouseRow.id_pasangan == null ? "" : spouseRow.id_pasangan).replace(/^'+/, "").trim();
@@ -1610,9 +1652,11 @@ function TEST_PASANGAN_ANAK() {
       spouseOrder: ibuRow && ibuRow.spouseOrder, id_pasangan: ibuRow && ibuRow.id_pasangan,
       gender: ibuRow && ibuRow.gender, status: ibuRow && ibuRow.status
     }));
+    const dupT = _dupHeaders_(SHEET_TREE);
+    if (dupT.length) L("[DIAG] AMARAN: header pendua di TREE: " + JSON.stringify(dupT) + " — sila padam koloum pendua tersebut.");
 
-    // 4) Panggil upsert versi 'core' supaya error sebenar dilemparkan
-    const idPsgWritten = _upsertPasanganCore_(bapaId, order, auth);
+    // 4) Panggil upsert versi 'core' supaya error sebenar dilemparkan (dgn hint id ibu)
+    const idPsgWritten = _upsertPasanganCore_(bapaId, order, auth, ibuId);
     L("[upsertPasangan] id_pasangan yg ditulis: " + idPsgWritten);
     _upsertAnakCore_(anakId, auth);
     SpreadsheetApp.flush();
@@ -1658,9 +1702,6 @@ function TEST_PASANGAN_ANAK() {
       deletePasanganByNodeId_(ibuId);
       deletePasanganByIdPasangan_(idPasangan);
       deleteAnakByChildId_(anakId);
-      createdRows.forEach(id => { try { deleteRowById_(SHEET_TREE, id); } catch(e){} });
-      invalidateTreeCache_();
-      L("[CLEANUP] Data ujian dipadam.");
       createdRows.forEach(id => { try { deleteRowById_(SHEET_TREE, id); } catch(e){} });
       invalidateTreeCache_();
       L("[CLEANUP] Data ujian dipadam.");
