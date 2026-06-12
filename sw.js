@@ -1,9 +1,9 @@
-// ===== SALASILAH sw.js — VERSI v2.19 — dijana 12 Jun 2026 =====
-const V = "salasilah-v219";
+// ===== SALASILAH sw.js — VERSI v2.20 — dijana 12 Jun 2026 =====
+const V = "salasilah-v220";
 const ASSETS = [
   "./",
   "./index.html",
-  "./app.js?v=219-layout-freeze",
+  "./app.js?v=220-couple-bind",
   "./manifest.json"
 ];
 

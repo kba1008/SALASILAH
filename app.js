@@ -1,8 +1,8 @@
-// ===== SALASILAH app.js — VERSI v2.19 — dijana 12 Jun 2026 =====
-/* Salasilah Keluarga Elit — app.js v2.19 layout-FREEZE + orphan-safe */
+// ===== SALASILAH app.js — VERSI v2.20 — dijana 12 Jun 2026 =====
+/* Salasilah Keluarga Elit — app.js v2.20 couple-BIND + layout-FREEZE + orphan-safe */
 
 const EXPECTED_API_VERSION = "v2.18-layout-lock";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyifofo9eHMG7dpsAtqBjE07TkaGVlhY62ASpuQIXM40KqFG5rvgf-h5VcmtOd27tYs/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyqr2OBS3y84gdsaIVnI6en6MIRzXxffJJfFh4sFz2uKChY06TQ3ANSo0iWlxjFJjOI/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
@@ -286,7 +286,7 @@ function captureLayoutSnapshot(){
     positions[String(n.id)] = {
       posX: hasPos ? Number(n.posX) : 0,
       posY: hasPos ? Number(n.posY) : 0,
-      persist: true, /* v2.19 layout-freeze: kunci SEMUA node yang sedang dipaparkan supaya susun atur draf TIDAK berubah selepas simpan */
+      persist: true, /* v2.20 layout-freeze: kunci SEMUA node yang sedang dipaparkan supaya susun atur draf TIDAK berubah selepas simpan */
     };
   });
   State.lastLayoutSnapshot = { positions, absolute: _captureAbsolutePositions(positions) };
@@ -308,7 +308,7 @@ function _captureAbsolutePositions(posSnapshot){
   // Kumpul semua elemen terlebih dahulu
   ids.forEach(id => {
     const el = document.querySelector(`.node[data-node-id="${CSS.escape(id)}"]`);
-    if(el) elMap[id] = el;
+    if(el) elMap[id] = posTargetEl(el); /* v2.20 */
   });
 
   // Tulis: buang semua transform sekaligus (tiada flicker kerana satu microtask)
@@ -351,7 +351,7 @@ function _compensateLayoutDrift(absSnapshot){
   // Kumpul elemen (mungkin ada ID baru dari server)
   ids.forEach(id => {
     const el = document.querySelector(`.node[data-node-id="${CSS.escape(id)}"]`);
-    if(el) elMap[id] = el;
+    if(el) elMap[id] = posTargetEl(el); /* v2.20 */
   });
 
   // Tulis: buang semua transform untuk ukur posisi semula jadi pasca-rebuild
@@ -587,6 +587,12 @@ async function loadMyProfile(silent=true){
 
 
 /* ---------- Free-drag positions (admin & owner draf) ---------- */
+/* v2.20 couple-bind: posisi/seretan digerakkan pada SELURUH kotak pasangan (.couple)
+   supaya kad pasangan kekal melintang di sisi suami/isteri, bukan tertinggal di bawah */
+function posTargetEl(el){
+  if(!el) return el;
+  return el.closest(".couple") || el;
+}
 function canDragNode(n){
   if(!State.user) return false;
   if(State.user.role === "admin") return true;
@@ -596,15 +602,16 @@ function canDragNode(n){
 function applyNodePositions(){
   const apply = (el, n) => {
     if(!el) return;
+    const tEl = posTargetEl(el); /* v2.20: gerakkan kotak pasangan penuh */
     const hasPos = (n.posX!=null && n.posY!=null && !isNaN(n.posX) && !isNaN(n.posY));
     const hasLayoutLock = !hasPos && n._layoutLockX!=null && n._layoutLockY!=null && !isNaN(Number(n._layoutLockX)) && !isNaN(Number(n._layoutLockY));
     if(hasPos || hasLayoutLock){
       const x = hasPos ? n.posX : n._layoutLockX;
       const y = hasPos ? n.posY : n._layoutLockY;
-      el.style.transform = `translate(${x}px, ${y}px)`;
+      tEl.style.transform = `translate(${x}px, ${y}px)`;
       el.classList.toggle("has-manual-pos", hasPos);
     } else {
-      el.style.transform = "";
+      tEl.style.transform = "";
       el.classList.remove("has-manual-pos");
     }
     if(canDragNode(n)){
@@ -644,7 +651,7 @@ function enableNodeDrag(el, n){
     const dy = (ev.clientY - drag.sy)/drag.scale;
     if(Math.abs(dx)>3 || Math.abs(dy)>3) drag.moved = true;
     const nx = drag.ox + dx, ny = drag.oy + dy;
-    el.style.transform = `translate(${nx}px, ${ny}px)`;
+    posTargetEl(el).style.transform = `translate(${nx}px, ${ny}px)`; /* v2.20 */
     n.posX = nx; n.posY = ny;
   });
   const finish = ev => {
