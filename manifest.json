@@ -1,21 +1,23 @@
 {
   "name": "Salasilah Keluarga Elit",
   "short_name": "Salasilah",
-  "description": "Pengurusan salasilah keluarga moden dengan draf optimistik dan pautan keturunan kukuh.",
+  "description": "Aplikasi pokok salasilah keluarga visual dalam bahasa Melayu",
+  "lang": "ms",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#0b1220",
-  "theme_color": "#0f172a",
   "orientation": "any",
+  "background_color": "#f5ecd7",
+  "theme_color": "#8a6d3b",
   "icons": [
     {
-      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgZmlsbD0iIzBmMTcyYSIvPjx0ZXh0IHg9Ijk2IiB5PSIxMzAiIGZvbnQtc2l6ZT0iMTIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7wn4yzPC90ZXh0Pjwvc3ZnPg==",
+      "src": "https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b",
       "sizes": "192x192",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iIzBmMTcyYSIvPjx0ZXh0IHg9IjI1NiIgeT0iMzUwIiBmb250LXNpemU9IjMyMCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+8J+MszwvdGV4dD48L3N2Zz4=",
+      "src": "https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
