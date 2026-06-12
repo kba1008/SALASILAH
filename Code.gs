@@ -145,10 +145,10 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.23 pasangan-anak"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.23.1 pasangan-anak"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.23-pasangan-anak";
+const _INIT_VERSION = "v2.23.1-pasangan-anak";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -1321,15 +1321,17 @@ function _findRowByField_(sheetName, field, value){
 /* ---------- PASANGAN ---------- */
 function upsertPasangan_(parentId, spouseOrder, auth){
   try {
+    ensureSheet_(ss_(), SHEET_PASANGAN, PASANGAN_HEADERS);
     migrateHeaders_(SHEET_PASANGAN, PASANGAN_HEADERS);
     const sh = sheet_(SHEET_PASANGAN);
+    SpreadsheetApp.flush();
     const treeRows = readSheet_(SHEET_TREE);
     const parent = treeRows.find(r => String(r.id) === String(parentId));
-    if (!parent) return;
+    if (!parent) { Logger.log("upsertPasangan_: parent not found " + parentId); return; }
     const spouseRow = treeRows.find(r =>
       String(r.spouseOf || "") === String(parentId) &&
       Number(r.spouseOrder || 0) === Number(spouseOrder));
-    if (!spouseRow) return;
+    if (!spouseRow) { Logger.log("upsertPasangan_: spouseRow not found for parent=" + parentId + " order=" + spouseOrder); return; }
     const idPasangan = String(spouseRow.id_pasangan || "").indexOf("PSG::") === 0
       ? String(spouseRow.id_pasangan)
       : makeIdPasangan_(parentId, spouseOrder);
@@ -1357,44 +1359,48 @@ function upsertPasangan_(parentId, spouseOrder, auth){
       nama_isteri: isteri.name || "",
       nickname_isteri: isteri.nickname || "",
       status_pasangan: statusPasangan,
-      tarikh_kahwin: "",                                  // koloum berasingan — boleh diisi kemudian
+      tarikh_kahwin: "",
       tempat_kahwin: "",
       tarikh_cerai: statusPasangan === "cerai" ? (spouseRow.death || "") : "",
       tarikh_kematian_pasangan: statusPasangan === "kematian-pasangan" ? (spouseRow.death || "") : "",
       catatan: spouseRow.notes || "",
-      lastEditBy: auth && auth.username || "",
+      lastEditBy: (auth && auth.username) || "",
       lastEditAt: new Date()
     };
     if (existing) {
       _writeRowByHeader_(sh, existing._row, { ...existing, ...data });
     } else {
-      data.createdBy = auth && auth.username || "";
+      data.createdBy = (auth && auth.username) || "";
       data.createdAt = new Date();
       _appendRowByHeader_(sh, data);
     }
-  } catch (e) { /* mirror tidak boleh menghalang operasi utama */ }
+    SpreadsheetApp.flush();
+  } catch (e) {
+    Logger.log("upsertPasangan_ ERROR: " + (e && e.stack || e));
+  }
 }
 function deletePasanganByIdPasangan_(idPasangan){
   try {
     if (!idPasangan) return;
+    ensureSheet_(ss_(), SHEET_PASANGAN, PASANGAN_HEADERS);
     const r = _findRowByField_(SHEET_PASANGAN, "id_pasangan", idPasangan);
     if (r) sheet_(SHEET_PASANGAN).deleteRow(r._row);
-  } catch (e) {}
+  } catch (e) { Logger.log("deletePasanganByIdPasangan_ ERROR: " + e); }
 }
 function deletePasanganByNodeId_(nodeId){
   try {
     if (!nodeId) return;
+    ensureSheet_(ss_(), SHEET_PASANGAN, PASANGAN_HEADERS);
     const rows = readSheet_(SHEET_PASANGAN);
     const sh = sheet_(SHEET_PASANGAN);
     rows.filter(r => String(r.id_suami) === String(nodeId) || String(r.id_isteri) === String(nodeId))
         .sort((a,b)=>b._row-a._row)
         .forEach(r => sh.deleteRow(r._row));
-  } catch (e) {}
+  } catch (e) { Logger.log("deletePasanganByNodeId_ ERROR: " + e); }
 }
 
 /* ---------- ANAK ---------- */
 function _findSpouseRowForChild_(parentNode, spouseIndex, treeRows){
-  // spouseIndex = turutan pasangan ibubapa (1, 2, 3, ...). Default 1 jika tiada.
   const order = Number(spouseIndex) > 0 ? Number(spouseIndex) : 1;
   return treeRows.find(r =>
     String(r.spouseOf || "") === String(parentNode.id) &&
@@ -1402,16 +1408,18 @@ function _findSpouseRowForChild_(parentNode, spouseIndex, treeRows){
 }
 function upsertAnak_(childId, auth){
   try {
+    ensureSheet_(ss_(), SHEET_ANAK, ANAK_HEADERS);
     migrateHeaders_(SHEET_ANAK, ANAK_HEADERS);
     const sh = sheet_(SHEET_ANAK);
+    SpreadsheetApp.flush();
     const treeRows = readSheet_(SHEET_TREE);
     const child = treeRows.find(r => String(r.id) === String(childId));
-    if (!child) return;
+    if (!child) { Logger.log("upsertAnak_: child not found " + childId); return; }
     if (child.spouseOf) return;       // baris pasangan, bukan anak
     if (!child.parentId) return;       // root, bukan anak
 
     const parent = treeRows.find(r => String(r.id) === String(child.parentId));
-    if (!parent) return;
+    if (!parent) { Logger.log("upsertAnak_: parent not found " + child.parentId); return; }
     const spouseRow = _findSpouseRowForChild_(parent, child.spouseIndex, treeRows);
 
     const parentG = String(parent.gender || "").toUpperCase();
@@ -1440,34 +1448,83 @@ function upsertAnak_(childId, auth){
       tempat_mati: child.deathplace || "",
       photo: child.photo || "",
       catatan: child.notes || "",
-      lastEditBy: auth && auth.username || "",
+      lastEditBy: (auth && auth.username) || "",
       lastEditAt: new Date()
     };
     if (existing) {
       _writeRowByHeader_(sh, existing._row, { ...existing, ...data });
     } else {
-      data.createdBy = auth && auth.username || "";
+      data.createdBy = (auth && auth.username) || "";
       data.createdAt = new Date();
       _appendRowByHeader_(sh, data);
     }
-  } catch (e) {}
+    SpreadsheetApp.flush();
+  } catch (e) {
+    Logger.log("upsertAnak_ ERROR: " + (e && e.stack || e));
+  }
 }
 function deleteAnakByChildId_(childId){
   try {
     if (!childId) return;
+    ensureSheet_(ss_(), SHEET_ANAK, ANAK_HEADERS);
     const r = _findRowByField_(SHEET_ANAK, "id_anak", childId);
     if (r) sheet_(SHEET_ANAK).deleteRow(r._row);
-  } catch (e) {}
+  } catch (e) { Logger.log("deleteAnakByChildId_ ERROR: " + e); }
 }
 function deleteAnakByParentNodeId_(nodeId){
-  // Bersihkan rujukan apabila bapa/ibu dipadam dari TREE.
   try {
     if (!nodeId) return;
+    ensureSheet_(ss_(), SHEET_ANAK, ANAK_HEADERS);
     const rows = readSheet_(SHEET_ANAK);
     const sh = sheet_(SHEET_ANAK);
     rows.filter(r => String(r.id_bapa) === String(nodeId) || String(r.id_ibu) === String(nodeId))
         .sort((a,b)=>b._row-a._row)
         .forEach(r => sh.deleteRow(r._row));
-  } catch (e) {}
+  } catch (e) { Logger.log("deleteAnakByParentNodeId_ ERROR: " + e); }
 }
+
+/* ============ BACKFILL / REPAIR ============
+ * Jalankan fungsi ini SEKALI dari Apps Script Editor (Run > REBUILD_PASANGAN_ANAK)
+ * selepas deploy v2.23.1 untuk mengisi sheet PASANGAN dan ANAK dengan semua
+ * data sedia ada dalam SALASILAH. Selamat dijalankan berulang kali.
+ */
+function REBUILD_PASANGAN_ANAK(){
+  const ss = ss_();
+  ensureSheet_(ss, SHEET_PASANGAN, PASANGAN_HEADERS);
+  ensureSheet_(ss, SHEET_ANAK, ANAK_HEADERS);
+  migrateHeaders_(SHEET_PASANGAN, PASANGAN_HEADERS);
+  migrateHeaders_(SHEET_ANAK, ANAK_HEADERS);
+
+  // Kosongkan kandungan lama (kekal header)
+  const shP = sheet_(SHEET_PASANGAN);
+  if (shP.getLastRow() > 1) shP.getRange(2,1,shP.getLastRow()-1,shP.getLastColumn()).clearContent();
+  const shA = sheet_(SHEET_ANAK);
+  if (shA.getLastRow() > 1) shA.getRange(2,1,shA.getLastRow()-1,shA.getLastColumn()).clearContent();
+  SpreadsheetApp.flush();
+
+  const auth = { username: "SYSTEM-REBUILD" };
+  const rows = readSheet_(SHEET_TREE);
+  let nPas = 0, nAnak = 0;
+
+  // PASANGAN: setiap baris yang mempunyai spouseOf adalah satu pasangan
+  rows.forEach(r => {
+    if (r.spouseOf) {
+      upsertPasangan_(String(r.spouseOf), Number(r.spouseOrder) || 1, auth);
+      nPas++;
+    }
+  });
+  // ANAK: setiap baris yang mempunyai parentId tetapi BUKAN baris pasangan
+  rows.forEach(r => {
+    if (!r.spouseOf && r.parentId) {
+      upsertAnak_(String(r.id), auth);
+      nAnak++;
+    }
+  });
+  SpreadsheetApp.flush();
+  const msg = "REBUILD selesai. PASANGAN: " + nPas + " baris, ANAK: " + nAnak + " baris.";
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+
 
