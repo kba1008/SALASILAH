@@ -1,8 +1,8 @@
 // ===== SALASILAH app.js — VERSI v2.22 — dijana 12 Jun 2026 =====
 /* Salasilah Keluarga Elit — app.js v2.22 id-PASANGAN + spouse-ROW-FIX + couple-BIND + layout-FREEZE + orphan-safe */
 
-const EXPECTED_API_VERSION = "v2.18-layout-lock";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwKZquMZCCD6_PWJ3sFMFJIsRo_HoqYnOLYBHK2OK7PMz3-2aMxYRp1z8x05B9DkmeH/exec";
+const EXPECTED_API_VERSION = "v2.23-pasangan-anak";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxdZRJuqfvOsENrpmJlsrevEHcYn3EJXINu3KQbOPc3KvYn8SwHX6nc9EInfCXFI7sD/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
