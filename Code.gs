@@ -1528,3 +1528,115 @@ function REBUILD_PASANGAN_ANAK(){
 }
 
 
+
+/* ============================================================
+ * v2.23.2 — FUNGSI TEST KHAS
+ * Jalankan dari Apps Script Editor: Run > TEST_PASANGAN_ANAK
+ * Fungsi ini akan:
+ *   1) Cipta data ujian (1 bapa, 1 ibu pasangan, 1 anak)
+ *   2) Panggil upsertPasangan_ + upsertAnak_
+ *   3) Sahkan sheet PASANGAN ada baris dgn id_pasangan menghubung suami<->isteri
+ *   4) Sahkan sheet ANAK ada baris dgn id_anak menghubung ke id_bapa & id_ibu
+ *   5) Bersihkan data ujian
+ * Lihat hasil di View > Logs (atau Execution log).
+ * ============================================================ */
+function TEST_PASANGAN_ANAK() {
+  const log = [];
+  const L = (m) => { log.push(m); Logger.log(m); };
+  L("===== TEST PASANGAN & ANAK bermula =====");
+
+  ensureInit_();
+  const auth = { username: "TEST-RUNNER" };
+  const shTree = sheet_(SHEET_TREE);
+  const shPas  = sheet_(SHEET_PASANGAN);
+  const shAnak = sheet_(SHEET_ANAK);
+
+  const bapaId  = "TEST-BAPA-"  + Utilities.getUuid().slice(0,8);
+  const ibuId   = "TEST-IBU-"   + Utilities.getUuid().slice(0,8);
+  const anakId  = "TEST-ANAK-"  + Utilities.getUuid().slice(0,8);
+  const order   = 1;
+  const idPasangan = makeIdPasangan_(bapaId, order);
+  const createdRows = [];
+
+  try {
+    // 1) BAPA (root)
+    appendNodeRow_(shTree, {
+      id: bapaId, parentId: "", no: 9001, name: "Ujian Bapa", gender: "L",
+      status: "hidup", createdBy: auth.username, lastEditBy: auth.username,
+      lastEditAt: new Date(), approvedBy: auth.username, approvedAt: new Date()
+    });
+    createdRows.push(bapaId);
+    L("[1] BAPA dicipta: " + bapaId);
+
+    // 2) IBU (baris pasangan — spouseOf = bapa, spouseOrder = 1, id_pasangan terikat)
+    appendNodeRow_(shTree, {
+      id: ibuId, parentId: "", no: 9002, name: "Ujian Ibu", gender: "P",
+      status: "hidup", spouseOf: bapaId, spouseOrder: order,
+      id_pasangan: idPasangan, createdBy: auth.username,
+      lastEditBy: auth.username, lastEditAt: new Date(),
+      approvedBy: auth.username, approvedAt: new Date()
+    });
+    createdRows.push(ibuId);
+    L("[2] IBU (pasangan) dicipta: " + ibuId + " | id_pasangan=" + idPasangan);
+
+    // 3) ANAK (parentId = bapa, spouseIndex = 1 -> ibu)
+    appendNodeRow_(shTree, {
+      id: anakId, parentId: bapaId, no: 1, name: "Ujian Anak",
+      gender: "L", status: "hidup", spouseIndex: order,
+      createdBy: auth.username, lastEditBy: auth.username,
+      lastEditAt: new Date(), approvedBy: auth.username, approvedAt: new Date()
+    });
+    createdRows.push(anakId);
+    L("[3] ANAK dicipta: " + anakId);
+
+    SpreadsheetApp.flush();
+
+    // 4) Panggil upsert
+    upsertPasangan_(bapaId, order, auth);
+    upsertAnak_(anakId, auth);
+    SpreadsheetApp.flush();
+
+    // 5) Sahkan PASANGAN
+    const pas = _findRowByField_(SHEET_PASANGAN, "id_pasangan", idPasangan);
+    if (!pas) throw new Error("GAGAL: Baris PASANGAN dgn id_pasangan=" + idPasangan + " tidak dijumpai");
+    L("[CHECK] PASANGAN OK -> id_pasangan=" + pas.id_pasangan +
+      " | id_suami=" + pas.id_suami + " (" + pas.nama_suami + ")" +
+      " | id_isteri=" + pas.id_isteri + " (" + pas.nama_isteri + ")" +
+      " | no_pasangan=" + pas.no_pasangan +
+      " | status_pasangan=" + pas.status_pasangan);
+    if (String(pas.id_suami) !== bapaId)  throw new Error("GAGAL: id_suami tidak padan");
+    if (String(pas.id_isteri) !== ibuId)  throw new Error("GAGAL: id_isteri tidak padan");
+
+    // 6) Sahkan ANAK
+    const anak = _findRowByField_(SHEET_ANAK, "id_anak", anakId);
+    if (!anak) throw new Error("GAGAL: Baris ANAK dgn id_anak=" + anakId + " tidak dijumpai");
+    L("[CHECK] ANAK OK -> id_anak=" + anak.id_anak +
+      " | id_pasangan=" + anak.id_pasangan +
+      " | id_bapa=" + anak.id_bapa + " (" + anak.nama_bapa + ")" +
+      " | id_ibu=" + anak.id_ibu + " (" + anak.nama_ibu + ")" +
+      " | nama_anak=" + anak.nama_anak);
+    if (String(anak.id_bapa) !== bapaId)            throw new Error("GAGAL: id_bapa tidak padan");
+    if (String(anak.id_ibu) !== ibuId)              throw new Error("GAGAL: id_ibu tidak padan");
+    if (String(anak.id_pasangan) !== idPasangan)    throw new Error("GAGAL: id_pasangan anak tidak menghubung ke unit pasangan");
+
+    L("===== ✅ SEMUA TEST LULUS — PASANGAN & ANAK BERFUNGSI =====");
+    L("Header PASANGAN: " + PASANGAN_HEADERS.join(", "));
+    L("Header ANAK:     " + ANAK_HEADERS.join(", "));
+  } catch (err) {
+    L("❌ RALAT: " + (err && err.message || err));
+    if (err && err.stack) L(err.stack);
+  } finally {
+    // Bersihkan data ujian
+    try {
+      deletePasanganByIdPasangan_(idPasangan);
+      deleteAnakByChildId_(anakId);
+      createdRows.forEach(id => { try { deleteRowById_(SHEET_TREE, id); } catch(e){} });
+      invalidateTreeCache_();
+      L("[CLEANUP] Data ujian dipadam.");
+    } catch (e) { L("[CLEANUP] gagal: " + e); }
+    SpreadsheetApp.flush();
+  }
+  const final = log.join("\n");
+  try { SpreadsheetApp.getUi().alert(final); } catch (e) {}
+  return final;
+}
