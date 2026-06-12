@@ -6,7 +6,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbzftk05moAeUBUG8wJRO2jF1-MtOXapBZDBtF5Vqc4EdEgC8ILvDC1UYDywLVQyBV7u/exec";
+const API_URL = "https://script.google.com/macros/s/PASTE_DEPLOY_ID_DI_SINI/exec";
 
 // ====== UTILITI ======
 const $ = (s, r=document) => r.querySelector(s);
@@ -39,9 +39,124 @@ const STORE = {
 document.body.dataset.theme = STORE.theme;
 
 // ====== API ======
+const LOCAL_MODE = !API_URL || API_URL.includes('PASTE_DEPLOY_ID_DI_SINI');
+
+// ---- Local backend (fallback bila API_URL belum disiapkan) ----
+const LOCAL = {
+  get db(){
+    try{ return JSON.parse(localStorage.getItem('skg_localdb')||'null') || this._seed(); }
+    catch{ return this._seed(); }
+  },
+  set db(v){ localStorage.setItem('skg_localdb', JSON.stringify(v)); },
+  _seed(){
+    const db = {
+      users: [{ username:'admin', fullName:'Pentadbir Utama', email:'', phone:'',
+                password:'101010', role:'master', approved:true, token:'', createdAt: new Date().toISOString() }],
+      members:[], spouses:[], children:[], notes:[], pending:[]
+    };
+    localStorage.setItem('skg_localdb', JSON.stringify(db));
+    return db;
+  }
+};
+function _tok(){ return Math.random().toString(36).slice(2)+Date.now().toString(36)+Math.random().toString(36).slice(2); }
+function _auth(body, opts={}){
+  const db = LOCAL.db;
+  if(!body.username || !body.token){
+    if(opts.optional) return { db, u:null, isAdmin:false, isMaster:false, isGuest:true };
+    throw new Error('Tidak dibenarkan — sila log masuk.');
+  }
+  const u = db.users.find(x => x.username===body.username && x.token && x.token===body.token);
+  if(!u){
+    if(opts.optional) return { db, u:null, isAdmin:false, isMaster:false, isGuest:true };
+    throw new Error('Sesi tamat — sila log masuk semula.');
+  }
+  return { db, u, isAdmin: u.role==='admin'||u.role==='master', isMaster: u.role==='master', isGuest:false };
+}
+
+const LOCAL_HANDLERS = {
+  register(b){
+    const db = LOCAL.db;
+    const username = String(b.username||'').trim();
+    const password = String(b.password||'');
+    if(username.length<3) throw new Error('Nama pengguna minima 3 aksara.');
+    if(password.length<6) throw new Error('Kata laluan minima 6 aksara.');
+    if(db.users.find(u=>u.username===username)) throw new Error('Nama pengguna telah digunakan.');
+    db.users.push({ username, fullName:b.fullName||'', email:b.email||'', phone:b.phone||'',
+                    password, role:'user', approved:false, token:'', createdAt:new Date().toISOString() });
+    LOCAL.db = db; return { ok:true };
+  },
+  login(b){
+    const db = LOCAL.db;
+    const u = db.users.find(x => x.username===b.username);
+    if(!u || u.password !== String(b.password||'')) throw new Error('Nama pengguna atau kata laluan salah.');
+    if(!u.approved && u.role!=='master') throw new Error('Akaun anda masih menunggu kelulusan pentadbir.');
+    u.token = _tok(); LOCAL.db = db;
+    return { ok:true, username:u.username, role:u.role, token:u.token, fullName:u.fullName };
+  },
+  bootstrap(b){
+    const { db, isAdmin, isMaster, isGuest } = _auth(b, {optional:true});
+    return { ok:true, data:{
+      members: db.members, spouses: db.spouses, children: db.children, notes: db.notes,
+      pending: isAdmin ? db.pending.filter(p=>p.status==='pending') : [],
+      pendingUsers: isAdmin ? db.users.filter(x=>!x.approved && x.role!=='master').map(x=>({username:x.username,fullName:x.fullName,email:x.email,phone:x.phone,createdAt:x.createdAt})) : [],
+      users: isMaster ? db.users.filter(x=>x.role!=='master').map(x=>({username:x.username,fullName:x.fullName,role:x.role,approved:x.approved})) : []
+    }};
+  },
+  approveUser(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.');
+    const u = db.users.find(x=>x.username===b.target); if(!u) throw new Error('Pengguna tidak dijumpai.');
+    u.approved = true; LOCAL.db=db; return {ok:true};
+  },
+  rejectUser(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.');
+    db.users = db.users.filter(x=>!(x.username===b.target && !x.approved));
+    LOCAL.db=db; return {ok:true};
+  },
+  setRole(b){ const {db,isMaster}=_auth(b); if(!isMaster) throw new Error('Hanya pentadbir utama boleh tukar peranan.');
+    const u = db.users.find(x=>x.username===b.username); if(!u) throw new Error('Pengguna tidak dijumpai.');
+    if(u.role==='master') throw new Error('Tidak boleh ubah pentadbir utama.');
+    if(!['user','admin'].includes(b.role)) throw new Error('Peranan tidak sah.');
+    u.role = b.role; LOCAL.db=db; return {ok:true};
+  },
+  addMember(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir boleh tambah ahli.');
+    const rec = { id:b.id, name:b.name, gender:b.gender||'M', alive:b.alive!==false,
+      birth:b.birth||'', death:b.death||'', place:b.place||'',
+      photo: b.photoB64 ? 'data:'+(b.photoMime||'image/jpeg')+';base64,'+b.photoB64 : '',
+      notes:b.notes||'', editedBy:u.username, editedAt:new Date().toISOString() };
+    db.members.push(rec); LOCAL.db=db; return {ok:true};
+  },
+  editMember(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir boleh edit.');
+    const i=db.members.findIndex(m=>m.id===b.id);
+    if(i<0) throw new Error('Ahli tidak dijumpai.');
+    db.members[i] = { ...db.members[i], ...b, editedBy:u.username, editedAt:new Date().toISOString() };
+    delete db.members[i].token; delete db.members[i].action;
+    LOCAL.db=db; return {ok:true};
+  },
+  deleteMember(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir boleh padam.');
+    db.members = db.members.filter(m=>m.id!==b.id);
+    db.spouses = db.spouses.filter(s=>s.husbandId!==b.id && s.wifeId!==b.id);
+    db.children = db.children.filter(c=>c.childId!==b.id);
+    LOCAL.db=db; return {ok:true};
+  },
+  addSpouse(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); db.spouses.push({id:b.id||_tok(),husbandId:b.husbandId,wifeId:b.wifeId,status:b.status||'kahwin',marriageDate:b.marriageDate||'',divorceDate:b.divorceDate||'',deathDate:b.deathDate||'',editedBy:u.username,editedAt:new Date().toISOString()}); LOCAL.db=db; return {ok:true}; },
+  addChild(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); db.children.push({spouseId:b.spouseId,childId:b.childId,editedBy:u.username,editedAt:new Date().toISOString()}); LOCAL.db=db; return {ok:true}; },
+  addNote(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); db.notes.push({id:b.id||_tok(),text:b.text||'',x:b.x||0,y:b.y||0,font:b.font||'serif',size:b.size||14,color:b.color||'#000',pinned:!!b.pinned,editedBy:u.username,editedAt:new Date().toISOString()}); LOCAL.db=db; return {ok:true}; },
+  editNote(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); const i=db.notes.findIndex(n=>n.id===b.id); if(i>=0){ db.notes[i]={...db.notes[i],...b}; LOCAL.db=db; } return {ok:true}; },
+  deleteNote(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); db.notes = db.notes.filter(n=>n.id!==b.id); LOCAL.db=db; return {ok:true}; },
+  approve(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); const p=db.pending.find(x=>x.id===b.id); if(p){ p.status='approved'; p.approvedBy=u.username; if(p.action==='addMember') db.members.push(p.payload); LOCAL.db=db; } return {ok:true}; },
+  reject(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); const p=db.pending.find(x=>x.id===b.id); if(p){ p.status='rejected'; p.approvedBy=u.username; LOCAL.db=db; } return {ok:true}; }
+};
+
 async function api(action, payload={}){
   const u = STORE.user;
   const body = { action, ...payload, username: u?.username, token: u?.token };
+
+  // Mod tempatan — jalan tanpa Google Apps Script
+  if(LOCAL_MODE){
+    const h = LOCAL_HANDLERS[action];
+    if(!h) return { ok:true };
+    try{ return h(body); }
+    catch(err){ throw err; }
+  }
+
   try{
     const res = await fetch(API_URL, {
       method:'POST',
@@ -52,7 +167,6 @@ async function api(action, payload={}){
     if(!j.ok && j.error) throw new Error(j.error);
     return j;
   }catch(err){
-    // Offline queue untuk tindakan write
     if(['addMember','editMember','deleteMember','addSpouse','addChild','addNote','editNote','approve','reject'].includes(action)){
       const q = STORE.queue; q.push({action, payload, ts:Date.now()}); STORE.queue = q;
       toast("Tiada internet — perubahan disimpan & akan disegerakkan.");
@@ -112,10 +226,10 @@ function loginForm(){
   `);
   const body = $('#tabBody');
   const renderLogin = ()=> body.innerHTML = `
-    <div class="field"><label>Nama pengguna</label><input id="lu" autocomplete="username" placeholder="cth: admin"/></div>
+    <div class="field"><label>Nama pengguna</label><input id="lu" autocomplete="username"/></div>
     <div class="field"><label>Kata laluan</label><input id="lp" type="password" autocomplete="current-password" placeholder="••••••"/></div>
     <button class="btn gold-edge w-full justify-center" id="doLogin">Log Masuk</button>
-    <p class="text-xs ink-soft mt-3">Pentadbir utama: <b>admin</b> / <b>101010</b></p>
+    <p class="text-xs ink-soft mt-3">Belum ada akaun? Klik tab <b>Daftar Baru</b>. Akaun anda perlu diluluskan pentadbir sebelum boleh digunakan.</p>
   `;
   const renderReg = ()=> body.innerHTML = `
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -166,14 +280,30 @@ async function doRegister(){
   if(o.password.length<6) return toast("Kata laluan minima 6 aksara.");
   try{
     const r = await api('register', o);
-    toast("Akaun didaftar. Sila log masuk.");
-    loginForm();
+    toast("Akaun didaftar. Sila tunggu kelulusan pentadbir sebelum log masuk.");
+    closeModal();
   }catch(e){ toast("Gagal daftar: "+e.message); }
 }
 
-// ====== LOGOUT ======
-$('#btnLogout').onclick = ()=>{
-  STORE.user = null; toast("Log keluar berjaya."); location.reload();
+// ====== AKAUN (ikon 👤) ======
+$('#btnAccount').onclick = ()=>{
+  const u = STORE.user;
+  if(!u){ loginForm(); return; }
+  const isAdmin = ['admin','master'].includes(u.role);
+  openModal(`
+    <div class="font-head text-2xl mb-3">Akaun Saya</div>
+    <div class="bevel-soft rounded-lg p-3 mb-3">
+      <div><b>${escapeHtml(u.fullName||u.username)}</b></div>
+      <div class="text-xs ink-soft">${escapeHtml(u.username)} • ${escapeHtml(u.role)}</div>
+    </div>
+    <div class="grid grid-cols-1 gap-2">
+      ${isAdmin?'<button class="btn btn-ghost justify-start" id="acProfile">👤 Padankan profil dengan kad</button>':''}
+      <button class="btn btn-ghost justify-start" style="color:var(--danger)" id="acLogout">🚪 Log Keluar</button>
+    </div>
+    <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
+  `);
+  const lp = $('#acProfile'); if(lp) lp.onclick = ()=>{ closeModal(); openProfile(); };
+  $('#acLogout').onclick = ()=>{ STORE.user=null; toast("Log keluar berjaya."); location.reload(); };
 };
 
 // ====== TETAPAN ======
@@ -200,16 +330,22 @@ $('#btnSettings').onclick = ()=>{
 window.closeModalGlobal = closeModal;
 
 // ====== BOOT ======
+function applyRoleUI(){
+  const u = STORE.user;
+  const isAdmin = !!u && (u.role==='admin' || u.role==='master');
+  $('#btnAdmin').style.display = isAdmin ? '' : 'none';
+  $('#btnAddNote').style.display = isAdmin ? '' : 'none';
+}
+
 async function boot(){
-  if(!STORE.user){ $('#splash').style.display='none'; loginForm(); return; }
-  $('#btnAdmin').style.display = (STORE.user.role==='admin' || STORE.user.role==='master') ? '' : 'none';
+  if(LOCAL_MODE){ console.warn('[SKG] Mod Tempatan aktif — data disimpan di pelayar sahaja.'); }
+  applyRoleUI();
   try{
     const r = await api('bootstrap');
     DATA = { ...DATA, ...r.data };
     STORE.cache = DATA;
   }catch(e){
     DATA = { ...DATA, ...(STORE.cache||{}) };
-    toast("Memuatkan data luar talian.");
   }
   renderAll();
   updatePendingBadge();
@@ -391,10 +527,10 @@ function openMemberMenu(m){
       </div>
     </div>
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-      <button class="btn gold-edge justify-center" data-act="edit">✏️ Edit</button>
-      <button class="btn gold-edge justify-center" data-act="spouse">💍 Tambah Pasangan</button>
-      <button class="btn gold-edge justify-center" data-act="child">👶 Tambah Anak</button>
-      <button class="btn btn-ghost justify-center" data-act="note">📝 Tambah Nota</button>
+      ${isAdmin?'<button class="btn gold-edge justify-center" data-act="edit">✏️ Edit</button>':''}
+      ${isAdmin?'<button class="btn gold-edge justify-center" data-act="spouse">💍 Tambah Pasangan</button>':''}
+      ${isAdmin?'<button class="btn gold-edge justify-center" data-act="child">👶 Tambah Anak</button>':''}
+      ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="note">📝 Tambah Nota</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="move">🔀 Pindah Cabang</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
     </div>
@@ -650,8 +786,8 @@ function centerOn(id){
 }
 
 // ====== PROFILE ======
-$('#btnProfile').onclick = async ()=>{
-  const u = STORE.user;
+function openProfile(){
+  const u = STORE.user; if(!u) return;
   const matches = DATA.members.filter(m => m.name?.toLowerCase().includes((u.fullName||u.username).toLowerCase()));
   openModal(`
     <div class="font-head text-2xl mb-3">Profil Saya</div>
@@ -668,16 +804,18 @@ $('#btnProfile').onclick = async ()=>{
     try{ await api('linkProfile', { memberId:b.dataset.id }); toast("Dipadankan."); closeModal(); await refresh(); }
     catch(e){ toast(e.message); }
   });
-};
+}
 
 // ====== ADMIN PANEL ======
 $('#btnAdmin').onclick = ()=> adminPanel('pending');
 function adminPanel(tab='pending'){
+  const isMaster = STORE.user?.role==='master';
   openModal(`
     <div class="font-head text-2xl mb-3">Panel Pentadbir</div>
-    <div class="flex gap-2 mb-3">
-      <button class="tab ${tab==='pending'?'active':''}" data-t="pending">Luluskan/Tolak</button>
-      <button class="tab ${tab==='users'?'active':''}" data-t="users">Urus Pengguna</button>
+    <div class="flex gap-2 mb-3 flex-wrap">
+      <button class="tab ${tab==='pending'?'active':''}" data-t="pending">Perubahan Menunggu</button>
+      <button class="tab ${tab==='users'?'active':''}" data-t="users">Akaun Menunggu</button>
+      ${isMaster?`<button class="tab ${tab==='roles'?'active':''}" data-t="roles">Lantik Admin</button>`:''}
       <button class="tab ${tab==='seed'?'active':''}" data-t="seed">Mulakan Pokok</button>
     </div>
     <div id="adminBody"></div>
@@ -701,22 +839,44 @@ function adminPanel(tab='pending'){
       catch(e){ toast(e.message); }
     });
   } else if(tab==='users'){
-    body.innerHTML = (DATA.users||[]).map(u=>`
+    const pu = DATA.pendingUsers || [];
+    body.innerHTML = pu.length ? pu.map(u=>`
       <div class="flex items-center justify-between bevel-soft rounded-lg p-2 mb-2">
-        <div><b>${escapeHtml(u.username)}</b> <span class="text-xs ink-soft">${escapeHtml(u.fullName||'')}</span></div>
-        <div class="flex gap-2 items-center">
-          <select data-u="${u.username}">
-            <option ${u.role==='user'?'selected':''}>user</option>
-            <option ${u.role==='admin'?'selected':''}>admin</option>
-            ${STORE.user.role==='master'?`<option ${u.role==='master'?'selected':''}>master</option>`:''}
-          </select>
-          <button class="btn gold-edge" data-su="${u.username}">Simpan</button>
+        <div>
+          <div><b>${escapeHtml(u.username)}</b> <span class="text-xs ink-soft">${escapeHtml(u.fullName||'')}</span></div>
+          <div class="text-xs ink-soft">${escapeHtml(u.email||'')} ${u.phone?'• '+escapeHtml(u.phone):''}</div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn gold-edge" data-ap="${escapeHtml(u.username)}">Luluskan</button>
+          <button class="btn btn-ghost" style="color:var(--danger)" data-rj="${escapeHtml(u.username)}">Tolak</button>
         </div>
       </div>
-    `).join('') || '<p class="text-sm ink-soft">Tiada pengguna.</p>';
+    `).join('') : '<p class="text-sm ink-soft">Tiada akaun menunggu kelulusan.</p>';
+    $$('button[data-ap]', body).forEach(b=> b.onclick = async ()=>{
+      try{ await api('approveUser', { target:b.dataset.ap }); toast("Akaun diluluskan."); adminPanel('users'); await refresh(); }catch(e){ toast(e.message); }
+    });
+    $$('button[data-rj]', body).forEach(b=> b.onclick = async ()=>{
+      if(!confirm('Tolak permohonan ini?')) return;
+      try{ await api('rejectUser', { target:b.dataset.rj }); toast("Ditolak."); adminPanel('users'); }catch(e){ toast(e.message); }
+    });
+  } else if(tab==='roles'){
+    if(!isMaster){ body.innerHTML='<p class="text-sm ink-soft">Hanya pentadbir utama boleh melantik admin.</p>'; return; }
+    const us = (DATA.users||[]).filter(u=>u.approved);
+    body.innerHTML = us.length ? us.map(u=>`
+      <div class="flex items-center justify-between bevel-soft rounded-lg p-2 mb-2">
+        <div><b>${escapeHtml(u.username)}</b> <span class="text-xs ink-soft">${escapeHtml(u.fullName||'')}</span> <span class="chip" style="background:color-mix(in oklab,var(--gold) 25%,transparent)">${escapeHtml(u.role)}</span></div>
+        <div class="flex gap-2 items-center">
+          <select data-u="${escapeHtml(u.username)}">
+            <option value="user" ${u.role==='user'?'selected':''}>user</option>
+            <option value="admin" ${u.role==='admin'?'selected':''}>admin</option>
+          </select>
+          <button class="btn gold-edge" data-su="${escapeHtml(u.username)}">Simpan</button>
+        </div>
+      </div>
+    `).join('') : '<p class="text-sm ink-soft">Tiada pengguna diluluskan lagi.</p>';
     $$('button[data-su]', body).forEach(b=> b.onclick = async ()=>{
       const sel = body.querySelector(`select[data-u="${b.dataset.su}"]`);
-      try{ await api('setRole', { username:b.dataset.su, role:sel.value }); toast("Peranan dikemaskini."); await refresh(); }
+      try{ await api('setRole', { username:b.dataset.su, role:sel.value }); toast("Peranan dikemaskini."); await refresh(); adminPanel('roles'); }
       catch(e){ toast(e.message); }
     });
   } else if(tab==='seed'){
@@ -729,7 +889,7 @@ function adminPanel(tab='pending'){
 }
 
 function updatePendingBadge(){
-  const n = DATA.pending?.length || 0;
+  const n = (DATA.pending?.length || 0) + (DATA.pendingUsers?.length || 0);
   const b = $('#pendingBadge'); if(!b) return;
   if(n>0){ b.style.display=''; b.textContent = n; } else b.style.display='none';
 }
