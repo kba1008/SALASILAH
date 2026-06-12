@@ -1,14 +1,28 @@
-// ===== SALASILAH Code.gs — VERSI v2.22 — dijana 12 Jun 2026 =====
+// ===== SALASILAH Code.gs — VERSI v2.23 — dijana 12 Jun 2026 =====
 /**
- * SALASILAH KELUARGA ELIT — Apps Script Backend v2.13 spouse-repair
+ * SALASILAH KELUARGA ELIT — Apps Script Backend v2.23 pasangan+anak sheets
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
  * Execute as: Me   |   Access: Anyone
+ *
+ * v2.23: Tambah dua sheet baharu — PASANGAN dan ANAK — sebagai sumber data
+ *        tersusun untuk hubungan suami-isteri dan anak-ibubapa. Setiap
+ *        maklumat duduk dalam KOLOUM BERASINGAN (tiada lagi JSON dicampur).
+ *
+ *        PASANGAN: setiap baris = satu pasangan suami-isteri, dihubung
+ *          dengan "id_pasangan" (unik). Suami & isteri dirujuk melalui
+ *          id_suami / id_isteri (rujuk ke node id SALASILAH).
+ *
+ *        ANAK: setiap baris = satu anak, dihubung kepada ibubapa dengan
+ *          id_pasangan, id_bapa, id_ibu. Walau ibubapa berkahwin lebih
+ *          dari sekali, id_pasangan memastikan anak tidak tertukar.
  */
 
-const SHEET_USERS   = "PENGGUNA";
-const SHEET_TREE    = "SALASILAH";
-const SHEET_PENDING = "PENDING";
-const SHEET_NOTES   = "NOTA";
+const SHEET_USERS    = "PENGGUNA";
+const SHEET_TREE     = "SALASILAH";
+const SHEET_PENDING  = "PENDING";
+const SHEET_NOTES    = "NOTA";
+const SHEET_PASANGAN = "PASANGAN";
+const SHEET_ANAK     = "ANAK";
 const GOOGLE_SHEET_ID = "1wqIc6971U96VXqOJ55pD-wzxQicC4RT4TBNoUrUVtig";
 const DRIVE_FOLDER_ID = "1tb1YIWlxbHkN-HzdAXtFlMWp136JXxN4";
 const DRIVE_FOLDER  = "SalasilahImages";
@@ -20,16 +34,67 @@ const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","
 const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned","approved","approvedBy","approvedAt"];
 const NOTE_HEADERS = ["id","text","x","y","font","size","color","pinned","pending","createdBy","createdAt","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 
+// Setiap maklumat pasangan duduk dalam koloum berasingan — TIADA campuran JSON.
+const PASANGAN_HEADERS = [
+  "id_pasangan",      // ID unik unit pasangan (PSG::...)
+  "no_pasangan",      // turutan pasangan bagi pemilik (1, 2, 3, ...)
+  "id_suami",         // node id SALASILAH bagi suami
+  "nama_suami",
+  "nickname_suami",
+  "id_isteri",        // node id SALASILAH bagi isteri
+  "nama_isteri",
+  "nickname_isteri",
+  "status_pasangan",  // hidup / cerai / kematian-pasangan
+  "tarikh_kahwin",
+  "tempat_kahwin",
+  "tarikh_cerai",
+  "tarikh_kematian_pasangan",
+  "catatan",
+  "createdBy",
+  "createdAt",
+  "lastEditBy",
+  "lastEditAt"
+];
+
+// Setiap maklumat anak duduk dalam koloum berasingan.
+const ANAK_HEADERS = [
+  "id_anak",          // node id SALASILAH bagi anak
+  "id_pasangan",      // hubung ke baris PASANGAN
+  "id_bapa",          // node id SALASILAH bagi bapa
+  "nama_bapa",
+  "id_ibu",           // node id SALASILAH bagi ibu
+  "nama_ibu",
+  "no_anak",          // turutan kelahiran (kalau ada)
+  "nama_anak",
+  "nickname",
+  "jantina",          // L / P
+  "status",           // hidup / mati
+  "tarikh_lahir",
+  "tempat_lahir",
+  "tarikh_mati",
+  "tempat_mati",
+  "photo",
+  "catatan",
+  "createdBy",
+  "createdAt",
+  "lastEditBy",
+  "lastEditAt"
+];
+
 /* ============ INIT ============ */
 function INITIALIZE_SYSTEM() {
   const ss = ss_();
-  ensureSheet_(ss, SHEET_USERS,   USER_HEADERS);
-  ensureSheet_(ss, SHEET_TREE,    TREE_HEADERS);
-  ensureSheet_(ss, SHEET_PENDING, ["id","action","targetId","payload","by","summary","createdAt"]);
-  ensureSheet_(ss, SHEET_NOTES,   NOTE_HEADERS);
-  migrateHeaders_(SHEET_TREE, TREE_HEADERS);
-  migrateHeaders_(SHEET_USERS, USER_HEADERS);
-  migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
+  ensureSheet_(ss, SHEET_USERS,    USER_HEADERS);
+  ensureSheet_(ss, SHEET_TREE,     TREE_HEADERS);
+  ensureSheet_(ss, SHEET_PENDING,  ["id","action","targetId","payload","by","summary","createdAt"]);
+  ensureSheet_(ss, SHEET_NOTES,    NOTE_HEADERS);
+  ensureSheet_(ss, SHEET_PASANGAN, PASANGAN_HEADERS);
+  ensureSheet_(ss, SHEET_ANAK,     ANAK_HEADERS);
+  migrateHeaders_(SHEET_TREE,     TREE_HEADERS);
+  migrateHeaders_(SHEET_USERS,    USER_HEADERS);
+  migrateHeaders_(SHEET_NOTES,    NOTE_HEADERS);
+  migrateHeaders_(SHEET_PASANGAN, PASANGAN_HEADERS);
+  migrateHeaders_(SHEET_ANAK,     ANAK_HEADERS);
   ensureFolder_();
   const users = ss.getSheetByName(SHEET_USERS);
   if (users.getLastRow() < 2) {
@@ -80,20 +145,22 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.22 id-pasangan"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.23 pasangan-anak"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.22-id-pasangan";
+const _INIT_VERSION = "v2.23-pasangan-anak";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
   const ss = ss_();
-  if (!ss.getSheetByName(SHEET_USERS) || !ss.getSheetByName(SHEET_TREE) || !ss.getSheetByName(SHEET_PENDING) || !ss.getSheetByName(SHEET_NOTES)) {
+  if (!ss.getSheetByName(SHEET_USERS) || !ss.getSheetByName(SHEET_TREE) || !ss.getSheetByName(SHEET_PENDING) || !ss.getSheetByName(SHEET_NOTES) || !ss.getSheetByName(SHEET_PASANGAN) || !ss.getSheetByName(SHEET_ANAK)) {
     INITIALIZE_SYSTEM();
   } else {
-    migrateHeaders_(SHEET_TREE, TREE_HEADERS);
-    migrateHeaders_(SHEET_USERS, USER_HEADERS);
-    migrateHeaders_(SHEET_NOTES, NOTE_HEADERS);
+    migrateHeaders_(SHEET_TREE,     TREE_HEADERS);
+    migrateHeaders_(SHEET_USERS,    USER_HEADERS);
+    migrateHeaders_(SHEET_NOTES,    NOTE_HEADERS);
+    migrateHeaders_(SHEET_PASANGAN, PASANGAN_HEADERS);
+    migrateHeaders_(SHEET_ANAK,     ANAK_HEADERS);
   }
   const u = findUserBy_("username", MASTER_USER);
   if (!u) {
@@ -922,6 +989,7 @@ function addSpouse_(parentId, p, photoUrl, auth){
   setCellByHeader_(sh, n._row, "spouseName", "");
   setCellByHeader_(sh, n._row, "spousePhoto", "");
   stampEdit_(parentId, auth);
+  upsertPasangan_(parentId, order, auth);
 }
 function _loadSpouses_(n, rows){
   let spouses = [];
@@ -969,6 +1037,7 @@ function applySpouseEdit_(parentId, order, data, auth){
     if(data.photo) map.photo = data.photo;
     Object.keys(map).forEach(k=>setCellByHeader_(sh, row._row, k, map[k]));
     stampEdit_(parentId, auth);
+    upsertPasangan_(parentId, Number(map.spouseOrder)||Number(order), auth);
     return;
   }
   const spouses = _loadSpouses_(n, rows);
@@ -983,7 +1052,9 @@ function applySpouseDelete_(parentId, order, auth){
   if(!n) throw new Error("Node tidak dijumpai");
   const row = rows.find(r=>String(r.spouseOf||"")===String(parentId) && Number(r.spouseOrder||0)===Number(order));
   if(row){
+    const idPsg = row.id_pasangan || "";
     deleteRowById_(SHEET_TREE, row.id);
+    deletePasanganByIdPasangan_(idPsg);
     stampEdit_(parentId, auth);
     return;
   }
@@ -1037,6 +1108,8 @@ function expectedHeadersForSheet_(sheetName){
   if (sheetName === SHEET_USERS) return USER_HEADERS;
   if (sheetName === SHEET_NOTES) return NOTE_HEADERS;
   if (sheetName === SHEET_PENDING) return ["id","action","targetId","payload","by","summary","createdAt"];
+  if (sheetName === SHEET_PASANGAN) return PASANGAN_HEADERS;
+  if (sheetName === SHEET_ANAK) return ANAK_HEADERS;
   return [];
 }
 function ensureFieldExists_(sh, field){
@@ -1106,6 +1179,11 @@ function insertNode_(p, photoUrl, auth, pending) {
     lastEditBy: auth.username,
     lastEditAt: new Date(),
   });
+  if (!isSpouseRow && p.parentId) {
+    upsertAnak_(id, auth);
+  } else if (isSpouseRow) {
+    upsertPasangan_(String(p.spouseOf || p.parentId || ""), Number(p.spouseOrder)||1, auth);
+  }
   return id;
 }
 function applyNodeUpdate_(p, photoUrl, auth) {
@@ -1127,6 +1205,12 @@ function applyNodeUpdate_(p, photoUrl, auth) {
     if (map[k] === undefined) return;
     sh.getRange(n._row, c).setValue(map[k]);
   });
+  // v2.23: sync ke sheet PASANGAN / ANAK
+  if (n.spouseOf) {
+    upsertPasangan_(String(n.spouseOf), Number(n.spouseOrder)||1, auth);
+  } else if (n.parentId) {
+    upsertAnak_(n.id, auth);
+  }
 }
 function applyNoteUpdate_(id, data, auth){
   const sh = sheet_(SHEET_NOTES);
@@ -1190,7 +1274,17 @@ function deleteRowById_(sheetName, id) {
   const sh = sheet_(sheetName);
   const rows = readSheet_(sheetName);
   const r = rows.find(x=>x.id===id);
-  if (r) sh.deleteRow(r._row);
+  if (!r) return;
+  // v2.23: cascade cleanup ke PASANGAN & ANAK apabila baris TREE dibuang
+  if (sheetName === SHEET_TREE) {
+    try {
+      if (r.spouseOf && r.id_pasangan) deletePasanganByIdPasangan_(r.id_pasangan);
+      deletePasanganByNodeId_(r.id);
+      deleteAnakByChildId_(r.id);
+      deleteAnakByParentNodeId_(r.id);
+    } catch (e) {}
+  }
+  sh.deleteRow(r._row);
 }
 function saveImage_(file, baseName) {
   try {
@@ -1201,3 +1295,179 @@ function saveImage_(file, baseName) {
     return "https://lh3.googleusercontent.com/d/" + f.getId() + "=w400";
   } catch (e) { return ""; }
 }
+
+/* ============================================================
+ * v2.23 — MIRROR KE SHEET PASANGAN & ANAK
+ * Setiap maklumat dipecahkan ke koloum berasingan, dihubungkan
+ * melalui id_pasangan (unit pasangan) dan id_bapa/id_ibu (anak).
+ * ============================================================ */
+
+function _writeRowByHeader_(sh, rowIdx, data){
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  const out = h.map(col => data[col] !== undefined ? data[col] : "");
+  sh.getRange(rowIdx, 1, 1, h.length).setValues([out]);
+}
+function _appendRowByHeader_(sh, data){
+  const h = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  sh.appendRow(h.map(col => data[col] !== undefined ? data[col] : ""));
+}
+function _findRowByField_(sheetName, field, value){
+  if (!value) return null;
+  const rows = readSheet_(sheetName);
+  const r = rows.find(x => String(x[field] || "") === String(value));
+  return r || null;
+}
+
+/* ---------- PASANGAN ---------- */
+function upsertPasangan_(parentId, spouseOrder, auth){
+  try {
+    migrateHeaders_(SHEET_PASANGAN, PASANGAN_HEADERS);
+    const sh = sheet_(SHEET_PASANGAN);
+    const treeRows = readSheet_(SHEET_TREE);
+    const parent = treeRows.find(r => String(r.id) === String(parentId));
+    if (!parent) return;
+    const spouseRow = treeRows.find(r =>
+      String(r.spouseOf || "") === String(parentId) &&
+      Number(r.spouseOrder || 0) === Number(spouseOrder));
+    if (!spouseRow) return;
+    const idPasangan = String(spouseRow.id_pasangan || "").indexOf("PSG::") === 0
+      ? String(spouseRow.id_pasangan)
+      : makeIdPasangan_(parentId, spouseOrder);
+
+    // Tentukan suami/isteri ikut jantina
+    const parentG = String(parent.gender || "").toUpperCase();
+    const spouseG = String(spouseRow.gender || "").toUpperCase() || oppositeGender_(parentG);
+    let suami = parent, isteri = spouseRow;
+    if (parentG === "P" || spouseG === "L") { suami = spouseRow; isteri = parent; }
+
+    // Status pasangan: ambil dari status baris pasangan (hidup/cerai/mati)
+    const sStatus = String(spouseRow.status || "hidup").toLowerCase();
+    let statusPasangan = "hidup";
+    if (sStatus === "cerai") statusPasangan = "cerai";
+    else if (sStatus === "mati") statusPasangan = "kematian-pasangan";
+
+    const existing = _findRowByField_(SHEET_PASANGAN, "id_pasangan", idPasangan);
+    const data = {
+      id_pasangan: idPasangan,
+      no_pasangan: Number(spouseOrder) || 1,
+      id_suami: suami.id || "",
+      nama_suami: suami.name || "",
+      nickname_suami: suami.nickname || "",
+      id_isteri: isteri.id || "",
+      nama_isteri: isteri.name || "",
+      nickname_isteri: isteri.nickname || "",
+      status_pasangan: statusPasangan,
+      tarikh_kahwin: "",                                  // koloum berasingan — boleh diisi kemudian
+      tempat_kahwin: "",
+      tarikh_cerai: statusPasangan === "cerai" ? (spouseRow.death || "") : "",
+      tarikh_kematian_pasangan: statusPasangan === "kematian-pasangan" ? (spouseRow.death || "") : "",
+      catatan: spouseRow.notes || "",
+      lastEditBy: auth && auth.username || "",
+      lastEditAt: new Date()
+    };
+    if (existing) {
+      _writeRowByHeader_(sh, existing._row, { ...existing, ...data });
+    } else {
+      data.createdBy = auth && auth.username || "";
+      data.createdAt = new Date();
+      _appendRowByHeader_(sh, data);
+    }
+  } catch (e) { /* mirror tidak boleh menghalang operasi utama */ }
+}
+function deletePasanganByIdPasangan_(idPasangan){
+  try {
+    if (!idPasangan) return;
+    const r = _findRowByField_(SHEET_PASANGAN, "id_pasangan", idPasangan);
+    if (r) sheet_(SHEET_PASANGAN).deleteRow(r._row);
+  } catch (e) {}
+}
+function deletePasanganByNodeId_(nodeId){
+  try {
+    if (!nodeId) return;
+    const rows = readSheet_(SHEET_PASANGAN);
+    const sh = sheet_(SHEET_PASANGAN);
+    rows.filter(r => String(r.id_suami) === String(nodeId) || String(r.id_isteri) === String(nodeId))
+        .sort((a,b)=>b._row-a._row)
+        .forEach(r => sh.deleteRow(r._row));
+  } catch (e) {}
+}
+
+/* ---------- ANAK ---------- */
+function _findSpouseRowForChild_(parentNode, spouseIndex, treeRows){
+  // spouseIndex = turutan pasangan ibubapa (1, 2, 3, ...). Default 1 jika tiada.
+  const order = Number(spouseIndex) > 0 ? Number(spouseIndex) : 1;
+  return treeRows.find(r =>
+    String(r.spouseOf || "") === String(parentNode.id) &&
+    Number(r.spouseOrder || 0) === order) || null;
+}
+function upsertAnak_(childId, auth){
+  try {
+    migrateHeaders_(SHEET_ANAK, ANAK_HEADERS);
+    const sh = sheet_(SHEET_ANAK);
+    const treeRows = readSheet_(SHEET_TREE);
+    const child = treeRows.find(r => String(r.id) === String(childId));
+    if (!child) return;
+    if (child.spouseOf) return;       // baris pasangan, bukan anak
+    if (!child.parentId) return;       // root, bukan anak
+
+    const parent = treeRows.find(r => String(r.id) === String(child.parentId));
+    if (!parent) return;
+    const spouseRow = _findSpouseRowForChild_(parent, child.spouseIndex, treeRows);
+
+    const parentG = String(parent.gender || "").toUpperCase();
+    let bapa = null, ibu = null;
+    if (parentG === "L") { bapa = parent; ibu = spouseRow; }
+    else if (parentG === "P") { ibu = parent; bapa = spouseRow; }
+    else { bapa = parent; ibu = spouseRow; }
+
+    const idPasangan = spouseRow ? (spouseRow.id_pasangan || "") : "";
+    const existing = _findRowByField_(SHEET_ANAK, "id_anak", childId);
+    const data = {
+      id_anak: child.id,
+      id_pasangan: idPasangan,
+      id_bapa: bapa ? bapa.id || "" : "",
+      nama_bapa: bapa ? bapa.name || "" : "",
+      id_ibu: ibu ? ibu.id || "" : "",
+      nama_ibu: ibu ? ibu.name || "" : "",
+      no_anak: child.no || "",
+      nama_anak: child.name || "",
+      nickname: child.nickname || "",
+      jantina: child.gender || "",
+      status: child.status || "hidup",
+      tarikh_lahir: child.birth || "",
+      tempat_lahir: child.birthplace || "",
+      tarikh_mati: child.death || "",
+      tempat_mati: child.deathplace || "",
+      photo: child.photo || "",
+      catatan: child.notes || "",
+      lastEditBy: auth && auth.username || "",
+      lastEditAt: new Date()
+    };
+    if (existing) {
+      _writeRowByHeader_(sh, existing._row, { ...existing, ...data });
+    } else {
+      data.createdBy = auth && auth.username || "";
+      data.createdAt = new Date();
+      _appendRowByHeader_(sh, data);
+    }
+  } catch (e) {}
+}
+function deleteAnakByChildId_(childId){
+  try {
+    if (!childId) return;
+    const r = _findRowByField_(SHEET_ANAK, "id_anak", childId);
+    if (r) sheet_(SHEET_ANAK).deleteRow(r._row);
+  } catch (e) {}
+}
+function deleteAnakByParentNodeId_(nodeId){
+  // Bersihkan rujukan apabila bapa/ibu dipadam dari TREE.
+  try {
+    if (!nodeId) return;
+    const rows = readSheet_(SHEET_ANAK);
+    const sh = sheet_(SHEET_ANAK);
+    rows.filter(r => String(r.id_bapa) === String(nodeId) || String(r.id_ibu) === String(nodeId))
+        .sort((a,b)=>b._row-a._row)
+        .forEach(r => sh.deleteRow(r._row));
+  } catch (e) {}
+}
+
