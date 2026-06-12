@@ -1,4 +1,4 @@
-// ===== SALASILAH Code.gs — VERSI v2.18 — dijana 12 Jun 2026 =====
+// ===== SALASILAH Code.gs — VERSI v2.22 — dijana 12 Jun 2026 =====
 /**
  * SALASILAH KELUARGA ELIT — Apps Script Backend v2.13 spouse-repair
  * Deploy: Extensions → Apps Script → Deploy → New deployment → Web app
@@ -16,7 +16,7 @@ const DRIVE_FOLDER  = "SalasilahImages";
 const MASTER_USER = "admin";
 const MASTER_PASS = "101010";
 
-const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","spouseOf","spouseOrder","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt","posX","posY"];
+const TREE_HEADERS = ["id","parentId","no","name","nickname","gender","status","birth","death","birthplace","deathplace","spousesJson","spouseName","spousePhoto","spouseIndex","spouseOf","spouseOrder","id_pasangan","photo","notes","hanging","createdBy","createdAt","pending","lastEditBy","lastEditAt","approvedBy","approvedAt","posX","posY"];
 const USER_HEADERS = ["no","username","fullname","email","phone","passwordHash","photo","role","token","createdAt","fatherName","motherName","banned","approved","approvedBy","approvedAt"];
 const NOTE_HEADERS = ["id","text","x","y","font","size","color","pinned","pending","createdBy","createdAt","lastEditBy","lastEditAt","approvedBy","approvedAt"];
 
@@ -80,10 +80,10 @@ function doPost(e) {
     return out_({ ok: false, error: err.message + (err.stack ? "\n"+err.stack : "") });
   }
 }
-function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.18 layout-lock"});}
+function doGet(){ ensureInit_(); return out_({ok:true,data:"Salasilah API live v2.22 id-pasangan"});}
 function out_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
 
-const _INIT_VERSION = "v2.18-layout-lock";
+const _INIT_VERSION = "v2.22-id-pasangan";
 function ensureInit_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty("INIT_OK") === _INIT_VERSION) return;
@@ -699,6 +699,7 @@ function mergeSpouseLists_(legacySpouses, spouseRows, owner){
     if (id) seen[id] = true;
     list.push({
       id: r.id || Utilities.getUuid(),
+      id_pasangan: r.id_pasangan || "",
       name: r.name || "",
       nickname: r.nickname || "",
       gender: r.gender || oppositeGender_(owner.gender),
@@ -754,6 +755,26 @@ function resolvePendingById_(pendingId, decision, auth) {
   deleteRowById_(SHEET_PENDING, item.id);
 }
 
+/* ============ v2.22: ID KHAS PASANGAN (id_pasangan) ============
+   Setiap pasangan diberi ID khas berformat: PSG::<id suami/isteri induk>::<turutan>::<uuid pendek>
+   ID ini disimpan dalam kolum "id_pasangan" di Google Sheet dan menjadi SUMBER KEBENARAN
+   paling kuat — walaupun spouseOf/parentId rosak, pemilik pasangan masih boleh dipulihkan. */
+function makeIdPasangan_(ownerId, order){
+  return "PSG::" + String(ownerId) + "::" + String(order || 1) + "::" + Utilities.getUuid().slice(0, 8);
+}
+function parseIdPasanganOwner_(v){
+  const s = String(v || "");
+  if (s.indexOf("PSG::") !== 0) return "";
+  const parts = s.split("::");
+  return parts.length >= 2 ? String(parts[1] || "") : "";
+}
+function parseIdPasanganOrder_(v){
+  const s = String(v || "");
+  if (s.indexOf("PSG::") !== 0) return 0;
+  const parts = s.split("::");
+  return parts.length >= 3 ? (Number(parts[2]) || 0) : 0;
+}
+
 /* ============ AUTO-REPAIR: pasangan yang hilang spouseOf ============ */
 function repairSpouseLinks_(rows){
   try {
@@ -762,6 +783,14 @@ function repairSpouseLinks_(rows){
     const hasChildren = {};
     rows.forEach(function(r){ if (r.parentId) hasChildren[String(r.parentId)] = true; });
     const fixes = [];
+    // v2.22 PASS #1 (paling kuat): id_pasangan menentukan pemilik pasangan secara mutlak
+    rows.forEach(function(r){
+      const owner = parseIdPasanganOwner_(r.id_pasangan);
+      if (!owner || !byId[owner]) return;
+      if (String(r.spouseOf || "") === owner && !r.parentId) return; // sudah betul
+      for (var i = 0; i < fixes.length; i++) { if (String(fixes[i].row.id) === String(r.id)) return; }
+      fixes.push({ row: r, ownerId: owner, fixedOrder: parseIdPasanganOrder_(r.id_pasangan) });
+    });
     rows.forEach(function(child){
       const spIdx = String(child.spouseIndex || "");
       if (!spIdx || !child.parentId) return;
@@ -780,18 +809,33 @@ function repairSpouseLinks_(rows){
       for (var i = 0; i < fixes.length; i++) { if (String(fixes[i].row.id) === String(r.id)) return; }
       fixes.push({ row: r, ownerId: String(r.spouseOf) });
     });
-    if (!fixes.length) return rows;
+    // v2.22 BACKFILL: baris pasangan lama tanpa id_pasangan → jana & tulis ke Sheet
+    const backfills = rows.filter(function(r){ return r.spouseOf && !String(r.id_pasangan || ""); })
+      .filter(function(r){
+        for (var i = 0; i < fixes.length; i++) { if (String(fixes[i].row.id) === String(r.id)) return false; }
+        return true;
+      });
+    if (!fixes.length && !backfills.length) return rows;
     const sh = sheet_(SHEET_TREE);
     fixes.forEach(function(f){
-      const order = nextFreeSpouseOrder_(rows, f.ownerId, 1, f.row.id);
+      const order = f.fixedOrder > 0 ? f.fixedOrder : nextFreeSpouseOrder_(rows, f.ownerId, 1, f.row.id);
+      const idPsg = String(f.row.id_pasangan || "").indexOf("PSG::") === 0 ? String(f.row.id_pasangan) : makeIdPasangan_(f.ownerId, order);
       setCellByHeader_(sh, f.row._row, "spouseOf", f.ownerId);
       setCellByHeader_(sh, f.row._row, "spouseOrder", order);
+      setCellByHeader_(sh, f.row._row, "id_pasangan", idPsg);
       setCellByHeader_(sh, f.row._row, "parentId", "");
       setCellByHeader_(sh, f.row._row, "hanging", false);
       f.row.spouseOf = f.ownerId;
       f.row.spouseOrder = order;
+      f.row.id_pasangan = idPsg;
       f.row.parentId = "";
       f.row.hanging = false;
+    });
+    backfills.forEach(function(r){
+      const order = Number(r.spouseOrder) > 0 ? Number(r.spouseOrder) : nextFreeSpouseOrder_(rows, String(r.spouseOf), 1, r.id);
+      const idPsg = makeIdPasangan_(String(r.spouseOf), order);
+      setCellByHeader_(sh, r._row, "id_pasangan", idPsg);
+      r.id_pasangan = idPsg;
     });
     invalidateTreeCache_();
   } catch (e) { /* jangan halang paparan jika repair gagal */ }
@@ -834,6 +878,7 @@ function normalizeSpousePayload_(p, photoUrl){
     spouseStatus: p.spouseStatus || p.status || "hidup",
     spouseDeath: p.spouseDeath || p.death || "",
     photoUrl: photoUrl || p.photoUrl || "",
+    id_pasangan: p.id_pasangan || "",
   };
 }
 function addSpouse_(parentId, p, photoUrl, auth){
@@ -848,6 +893,8 @@ function addSpouse_(parentId, p, photoUrl, auth){
   const taken = {}; spouses.forEach(s=>{ if(s.order) taken[Number(s.order)] = true; });
   while (taken[order]) order++;
   const id = p.id || Utilities.getUuid();
+  // v2.22: jana ID khas pasangan — kekal terikat pada pemiliknya walau apa pun berlaku
+  const idPasangan = String(p.id_pasangan || "").indexOf("PSG::") === 0 ? String(p.id_pasangan) : makeIdPasangan_(parentId, order);
   appendNodeRow_(sh, {
     id,
     parentId: "",
@@ -862,6 +909,7 @@ function addSpouse_(parentId, p, photoUrl, auth){
     deathplace: p.deathplace || "",
     spouseOf: parentId,
     spouseOrder: order,
+    id_pasangan: idPasangan,
     photo: p.photoUrl || photoUrl || "",
     notes: p.notes || "",
     createdBy: auth.username,
@@ -1047,6 +1095,7 @@ function insertNode_(p, photoUrl, auth, pending) {
     birthplace: p.birthplace||"", deathplace: p.deathplace||"",
     spouseOf: isSpouseRow ? String(p.spouseOf || p.parentId || "") : "",
     spouseOrder: isSpouseRow ? (Number(p.spouseOrder)||1) : "",
+    id_pasangan: isSpouseRow ? (String(p.id_pasangan || "").indexOf("PSG::") === 0 ? String(p.id_pasangan) : makeIdPasangan_(String(p.spouseOf || p.parentId || ""), Number(p.spouseOrder)||1)) : "",
     spouseIndex: p.spouseIndex||"",
     photo: photoUrl||"", notes: p.notes||"",
     hanging: !isSpouseRow && !p.parentId ? !!p.hanging : false,

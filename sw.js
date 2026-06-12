@@ -1,5 +1,5 @@
-// ===== SALASILAH sw.js — VERSI v2.21 — dijana 12 Jun 2026 =====
-const V = "salasilah-v221";
+// ===== SALASILAH sw.js — VERSI v2.22 — dijana 12 Jun 2026 =====
+const V = "salasilah-v222";
 const ASSETS = [
   "./",
   "./index.html",

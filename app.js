@@ -1,8 +1,8 @@
-// ===== SALASILAH app.js — VERSI v2.21 — dijana 12 Jun 2026 =====
-/* Salasilah Keluarga Elit — app.js v2.21 spouse-ROW-FIX + couple-BIND + layout-FREEZE + orphan-safe */
+// ===== SALASILAH app.js — VERSI v2.22 — dijana 12 Jun 2026 =====
+/* Salasilah Keluarga Elit — app.js v2.22 id-PASANGAN + spouse-ROW-FIX + couple-BIND + layout-FREEZE + orphan-safe */
 
 const EXPECTED_API_VERSION = "v2.18-layout-lock";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzwo3C2N_LMMaBz6vQnOufD7QxCD0ncxBCV_uHDg1UYKpL8TRpipIpqhwF3CLCuAlq8/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyqr2OBS3y84gdsaIVnI6en6MIRzXxffJJfFh4sFz2uKChY06TQ3ANSo0iWlxjFJjOI/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
@@ -685,15 +685,42 @@ function enableNodeDrag(el, n){
 }
 
 /* ---------- Render Tree ---------- */
-/* v2.21 spouse-row-fix:
-   Pasangan (isteri/suami) sering disimpan sebagai BARIS BERASINGAN dalam Google Sheet.
-   Apabila data dimuat semula, baris itu kadangkala kembali dengan parentId = suami tetapi
-   TANPA spouseOf, lalu dipaparkan sebagai ANAK di BAWAH suami. Fungsi ini memastikan
-   setiap baris pasangan dikenal pasti dan dipulihkan spouseOf-nya supaya sentiasa
-   duduk MELINTANG di sisi pasangannya, bukan menegak di bawah. */
+/* v2.22 id-pasangan:
+   Setiap pasangan kini ada ID KHAS dalam kolum "id_pasangan" Google Sheet
+   berformat PSG::<id pemilik>::<turutan>::<kod unik>. Ini sumber kebenaran
+   paling kuat — walau Ali ada 10 isteri, setiap isteri terikat pada Ali
+   melalui ID khas dan TIDAK akan tersalah susun sebagai anak di bawahnya.
+   Pasangan sentiasa duduk MELINTANG di sisi pasangannya. */
+function parseIdPasanganOwner(v){
+  const s = String(v || "");
+  if(s.indexOf("PSG::") !== 0) return "";
+  const parts = s.split("::");
+  return parts.length >= 2 ? String(parts[1] || "") : "";
+}
+function parseIdPasanganOrder(v){
+  const s = String(v || "");
+  if(s.indexOf("PSG::") !== 0) return 0;
+  const parts = s.split("::");
+  return parts.length >= 3 ? (Number(parts[2]) || 0) : 0;
+}
+function makeIdPasangan(ownerId, order){
+  return "PSG::" + String(ownerId) + "::" + String(order || 1) + "::" + makeUUID().slice(0, 8);
+}
 function normalizeSpouseNodes(nodes){
   (nodes||[]).forEach(n=>{
     if(!n) return;
+    // v2.22: id_pasangan ialah bukti MUTLAK bahawa baris ini pasangan + siapa pemiliknya
+    const psgOwner = parseIdPasanganOwner(n.id_pasangan);
+    if(psgOwner){
+      n.spouseOf = psgOwner;
+      if((n.spouseOrder==null || n.spouseOrder==="") ){
+        const o = parseIdPasanganOrder(n.id_pasangan);
+        if(o > 0) n.spouseOrder = o;
+      }
+      n.parentId = "";
+      n.hanging = false;
+      return;
+    }
     const marker = String(n.relation || n.role || n.type || n.kind || n.hubungan || "").toLowerCase();
     const isSpouse = !!n.spouseOf || marker === "spouse" || marker === "pasangan" || marker === "isteri" || marker === "suami";
     if(!isSpouse) return;
@@ -1289,6 +1316,9 @@ $("#form-spouse").addEventListener("submit", async e=>{
     
     runCall = ()=>api("editSpouse", payload);
   } else {
+    const newOrder = Number(fd.get("spouseOrder")) > 0 ? Number(fd.get("spouseOrder"))
+      : ((State.nodes.filter(x=>String(x.spouseOf||"")===String(parent.id)).length) + ((parent.spouses||[]).length) + 1);
+    const idPasangan = makeIdPasangan(parent.id, newOrder); /* v2.22: ID khas pasangan */
     const payload = {
       id: makeUUID(),
       isNew: true,
@@ -1299,6 +1329,7 @@ $("#form-spouse").addEventListener("submit", async e=>{
       spouseDeath: fd.get("death")||"", deathplace: fd.get("deathplace")||"",
       notes: fd.get("notes")||"", spouseOrder: fd.get("spouseOrder")||"",
       spouseOf: parent.id,
+      id_pasangan: idPasangan,
     };
     if(photo) payload.photo = photo;
     
@@ -1306,7 +1337,8 @@ $("#form-spouse").addEventListener("submit", async e=>{
     State.nodes.push({
        id: payload.id,
        spouseOf: parent.id,
-       spouseOrder: payload.spouseOrder,
+       spouseOrder: payload.spouseOrder || newOrder,
+       id_pasangan: idPasangan,
        name: payload.name,
        gender: payload.gender,
        status: payload.spouseStatus,
