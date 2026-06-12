@@ -1,8 +1,8 @@
-// ===== SALASILAH app.js — VERSI v2.18 — dijana 12 Jun 2026 =====
-/* Salasilah Keluarga Elit — app.js v2.18 layout-lock + orphan-safe */
+// ===== SALASILAH app.js — VERSI v2.19 — dijana 12 Jun 2026 =====
+/* Salasilah Keluarga Elit — app.js v2.19 layout-FREEZE + orphan-safe */
 
 const EXPECTED_API_VERSION = "v2.18-layout-lock";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyifofo9eHMG7dpsAtqBjE07TkaGVlhY62ASpuQIXM40KqFG5rvgf-h5VcmtOd27tYs/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyqr2OBS3y84gdsaIVnI6en6MIRzXxffJJfFh4sFz2uKChY06TQ3ANSo0iWlxjFJjOI/exec";
 try { fetch(GAS_URL, {method:"GET", mode:"no-cors"}).catch(()=>{}); } catch(_) {}
 const LOADING_TIPS = [
   "Menyusun cabang keluarga dan hubungan setiap generasi…",
@@ -286,7 +286,7 @@ function captureLayoutSnapshot(){
     positions[String(n.id)] = {
       posX: hasPos ? Number(n.posX) : 0,
       posY: hasPos ? Number(n.posY) : 0,
-      persist: hasPos || !!n.isDraft || !!n.pending,
+      persist: true, /* v2.19 layout-freeze: kunci SEMUA node yang sedang dipaparkan supaya susun atur draf TIDAK berubah selepas simpan */
     };
   });
   State.lastLayoutSnapshot = { positions, absolute: _captureAbsolutePositions(positions) };
