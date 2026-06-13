@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycby6qdZlzJVf6PCA0xNQZR5iHOLQZpzUR3kdbPsMsP7XXY-BrRzWEcCHKX40gPPL4RFG/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbz-AgLGfoA55OvnXULYtAnbg1e6AqQmGJ38JX-CymaedAkgG2tfOTHsDEYr8EoN94br/exec";
 
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
@@ -75,7 +75,7 @@ if (LOCAL_MODE) console.warn('[SKG] Mod Tempatan aktif — Sila isikan API_URL d
 
 async function api(action, payload={}){
   const u = STORE.user;
-  const body = { action, ...payload, username: u?.username, token: u?.token };
+  const body = { action, username: u?.username, token: u?.token, ...payload };
 
   if (LOCAL_MODE) {
     throw new Error("Sistem masih dalam mod tempatan. Sila masukkan API_URL di dalam app.js terlebih dahulu.");
@@ -146,6 +146,7 @@ const tipTimer = setInterval(()=> { tipIdx=(tipIdx+1)%TIPS.length; const el=$('#
 
 let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], users:[] };
 const NODE_W = 220, NODE_H = 170, GAP_X = 60, GAP_Y = 120;
+const upperName = (s) => String(s||'').replace(/\s+/g,' ').trim().toUpperCase();
 
 function openModal(html){ $('#modal').innerHTML = html; $('#scrim').classList.add('show'); }
 function closeModal(){ $('#scrim').classList.remove('show'); }
@@ -156,7 +157,7 @@ function loginForm(){
   openModal(`
     <div class="flex items-center justify-between mb-3">
       <div class="font-head text-2xl">Selamat Datang</div>
-      <div class="chip gold-edge">v1.3</div>
+      <div class="chip gold-edge">v1.4</div>
     </div>
     <div class="flex gap-2 mb-4">
       <button class="tab active" data-tab="login">Log Masuk</button>
@@ -218,14 +219,13 @@ async function doLogin(){
 
 async function doRegister(){
   const o = {
-    fullName:$('#rname').value.trim(), fatherName:$('#rfather').value.trim(), motherName:$('#rmother').value.trim(),
+    fullName:upperName($('#rname').value), fatherName:upperName($('#rfather').value), motherName:upperName($('#rmother').value),
     address:$('#raddr').value.trim(), whatsapp:$('#rwa').value.trim(), occupation:$('#rocc').value.trim(),
-    email:$('#remail').value.trim(), username:$('#ru').value.trim().replace(/\s+/g, '').toLowerCase(), 
+    email:$('#remail').value.trim(), username:$('#ru').value.trim().toLowerCase(), 
     password:$('#rp').value, password2:$('#rp2').value
   };
   if(!o.fullName||!o.fatherName||!o.motherName||!o.address||!o.whatsapp||!o.occupation||!o.username||!o.password) return toast("Semua ruangan bertanda (*) wajib diisi.");
   if(o.password!==o.password2) return toast("Kata laluan tidak sepadan.");
-  if(o.password.length<6) return toast("Kata laluan minima 6 aksara.");
   const file = $('#rphoto').files[0];
   if(file) {
     if(file.size > 2*1024*1024) return toast("Saiz gambar maksimum ialah 2MB.");
@@ -498,7 +498,7 @@ function memberForm(m){
     </div>
   `);
   $('#saveMember').onclick = async ()=>{
-    const payload = { id:m.id, name:$('#f_name').value.trim(), gender:$('#f_g').value, birth:$('#f_b').value.trim(), alive:$('#f_a').value==='true', death:$('#f_d').value.trim(), place:$('#f_p').value.trim(), fatherName:$('#f_fa').value.trim(), motherName:$('#f_mo').value.trim(), notes:$('#f_n').value.trim() };
+    const payload = { id:m.id, name:upperName($('#f_name').value), gender:$('#f_g').value, birth:$('#f_b').value.trim(), alive:$('#f_a').value==='true', death:$('#f_d').value.trim(), place:$('#f_p').value.trim(), fatherName:upperName($('#f_fa').value), motherName:upperName($('#f_mo').value), notes:$('#f_n').value.trim() };
     if(!payload.name) return toast("Nama wajib diisi.");
     const file = $('#f_ph').files[0];
     if(file){
@@ -528,7 +528,7 @@ function spouseForm(m){
   `);
   $('#saveSpouse').onclick = async ()=>{
     const pick = $('#sp_pick').value;
-    const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:$('#sp_name').value.trim(), gender:$('#sp_g').value, alive:true }, spouseId: uid() };
+    const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:upperName($('#sp_name').value), gender:$('#sp_g').value, alive:true }, spouseId: uid() };
     if(!pick && !payload.newPartner.name) return toast("Isi maklumat pasangan.");
     try{ await dispatchApi('addSpouse', payload); notify.success("Selesai."); closeModal(); await refresh(); }catch(e){ toast(e.message); }
   };
@@ -549,7 +549,7 @@ function childForm(m){
     <div class="flex gap-2 justify-end mt-2"><button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button><button class="btn gold-edge" id="saveChild">Simpan</button></div>
   `);
   $('#saveChild').onclick = async ()=>{
-    const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:$('#ch_name').value.trim(), gender:$('#ch_g').value, alive:true } };
+    const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:upperName($('#ch_name').value), gender:$('#ch_g').value, alive:true } };
     payload.newChild.id = payload.childId;
     if(!payload.newChild.name) return toast("Nama anak wajib.");
     try{ await dispatchApi('addChild', payload); notify.success("Berjaya."); closeModal(); await refresh(); }catch(e){ toast(e.message); }

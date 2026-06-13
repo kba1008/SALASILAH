@@ -11,7 +11,7 @@
         • Execute as: Me
         • Who has access: Anyone
    7) Salin URL Web App → tampal ke API_URL dalam app.js.
-   8) Buka app → log masuk dengan: admin / 101010
+   8) Buka app → log masuk dengan akaun master admin yang ditetapkan di bawah.
    ===================================================================== */
 
 const SHEET_ID = '1wqIc6971U96VXqOJ55pD-wzxQicC4RT4TBNoUrUVtig'; // ← ISI ID GOOGLE SHEET DI SINI
@@ -21,7 +21,7 @@ const TELEGRAM_BOT_TOKEN = ''; // [PILIHAN] Masukkan token bot telegram jika mah
 const TELEGRAM_CHAT_ID = '';   // [PILIHAN] Masukkan chat ID kumpulan/admin
 
 // Akaun MASTER ADMIN Ditanam di sini! Ia akan Bypass (langkau) Google Sheet.
-const MASTER_USERNAME = 'admin';
+const MASTER_USERNAME = 'milokopi';
 const MASTER_PASSWORD = '101010';
 
 const SHEETS = {
@@ -46,7 +46,7 @@ function doPost(e) {
   }
 }
 function doGet() {
-  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '1.3' });
+  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '1.4' });
 }
 function json(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
@@ -152,6 +152,7 @@ function nextMemberId() {
   return MEMBER_ID_PREFIX+'-'+yr+'-'+String(n+1).padStart(4,'0');
 }
 function normName(s) { return String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim(); }
+function upperName(s) { return String(s||'').replace(/\s+/g,' ').trim().toUpperCase(); }
 
 function requireAuth(body, roles) {
   ensureSheets();
@@ -159,7 +160,7 @@ function requireAuth(body, roles) {
   if (String(body.username).toLowerCase() === MASTER_USERNAME.toLowerCase()) {
     if (body.token === getMasterToken()) {
       if (roles && roles.length && roles.indexOf('master') < 0) throw new Error('Akses peranan ditolak.');
-      return { username: MASTER_USERNAME, role: 'master', fullName: 'Pentadbir Utama', memberId: 'KEL-MASTER' };
+      return { username: MASTER_USERNAME, role: 'master', fullName: 'PENTADBIR UTAMA', memberId: 'KEL-MASTER' };
     } else {
       throw new Error('Sesi Master tamat. Sila log masuk semula.');
     }
@@ -227,8 +228,8 @@ const HANDLERS = {
     ensureSheets();
     const username = String(body.username||'').trim().toLowerCase();
     const password = String(body.password||'');
-    const fullName = String(body.fullName||'').trim();
-    if (username.length<3 || password.length<6) throw new Error('Kriteria nama pengguna atau kata laluan tidak sah.');
+    const fullName = upperName(body.fullName);
+    if (!username || !password) throw new Error('Nama pengguna dan kata laluan wajib diisi.');
     if (!fullName) throw new Error('Nama penuh wajib diisi.');
     
     if (username === MASTER_USERNAME.toLowerCase()) throw new Error('Nama pengguna telah digunakan.');
@@ -241,7 +242,7 @@ const HANDLERS = {
     if (body.photoB64) photoUrl = savePhoto(body.photoB64, body.photoMime || 'image/jpeg', 'profile_'+username);
     
     appendRow('PENGGUNA', {
-      username, fullName, fatherName: body.fatherName||'', motherName: body.motherName||'',
+      username, fullName, fatherName: upperName(body.fatherName), motherName: upperName(body.motherName),
       address: body.address||'', whatsapp: body.whatsapp||'', occupation: body.occupation||'',
       photo: photoUrl, email: body.email||'', phone: body.whatsapp||'',
       password, passwordHash: hash, salt, role: 'user', approved: false,
@@ -258,7 +259,7 @@ const HANDLERS = {
     
     // LALUAN MASTER ADMIN (Bypass Google Sheet)
     if (uname === MASTER_USERNAME.toLowerCase() && pwd === MASTER_PASSWORD) {
-      return { ok: true, username: MASTER_USERNAME, role: 'master', token: getMasterToken(), fullName: 'Pentadbir Utama', memberId: 'KEL-MASTER', photo: '' };
+      return { ok: true, username: MASTER_USERNAME, role: 'master', token: getMasterToken(), fullName: 'PENTADBIR UTAMA', memberId: 'KEL-MASTER', photo: '' };
     }
     
     // LALUAN PENGGUNA BIASA (Semak di Google Sheet)
@@ -342,7 +343,7 @@ const HANDLERS = {
     const isAdmin = u.role==='admin' || u.role==='master';
     let photoUrl = '';
     if (body.photoB64) photoUrl = savePhoto(body.photoB64, body.photoMime || 'image/jpeg', body.id);
-    const rec = { id: body.id, name: String(body.name||'').slice(0,200), gender: body.gender||'M', alive: body.alive!==false, birth: body.birth||'', death: body.death||'', place: body.place||'', photo: photoUrl, notes: body.notes||'', fatherName: String(body.fatherName||'').slice(0,200), motherName: String(body.motherName||'').slice(0,200), editedBy: u.username, editedAt: now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
+    const rec = { id: body.id, name: upperName(body.name).slice(0,200), gender: body.gender||'M', alive: body.alive!==false, birth: body.birth||'', death: body.death||'', place: body.place||'', photo: photoUrl, notes: body.notes||'', fatherName: upperName(body.fatherName).slice(0,200), motherName: upperName(body.motherName).slice(0,200), editedBy: u.username, editedAt: now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
     if (!isAdmin) { queuePending('addMember', rec, u.username); return { ok: true, pending: true }; }
     appendRow('SALASILAH', rec); return { ok: true };
   },
@@ -351,6 +352,9 @@ const HANDLERS = {
     const isAdmin = u.role==='admin' || u.role==='master';
     const patch = { ...body };
     delete patch.action; delete patch.username; delete patch.token;
+    if (patch.name !== undefined) patch.name = upperName(patch.name).slice(0,200);
+    if (patch.fatherName !== undefined) patch.fatherName = upperName(patch.fatherName).slice(0,200);
+    if (patch.motherName !== undefined) patch.motherName = upperName(patch.motherName).slice(0,200);
     if (body.photoB64) patch.photo = savePhoto(body.photoB64, body.photoMime || 'image/jpeg', body.id);
     delete patch.photoB64; delete patch.photoMime;
     patch.editedBy = u.username; patch.editedAt = now();
@@ -370,7 +374,7 @@ const HANDLERS = {
     let partnerId = body.partnerId;
     if (!partnerId && body.newPartner) {
       partnerId = body.newPartner.id;
-      const rec = { id: partnerId, name: body.newPartner.name, gender: body.newPartner.gender, alive: body.newPartner.alive!==false, birth:'', death:'', place:'', photo:'', notes:'', editedBy:u.username, editedAt:now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
+      const rec = { id: partnerId, name: upperName(body.newPartner.name), gender: body.newPartner.gender, alive: body.newPartner.alive!==false, birth:'', death:'', place:'', photo:'', notes:'', editedBy:u.username, editedAt:now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
       if (isAdmin) appendRow('SALASILAH', rec); else queuePending('addMember', rec, u.username);
     }
     const anchor = readAll('SALASILAH').find(m=>m.id===body.anchorId);
@@ -383,7 +387,7 @@ const HANDLERS = {
     const u = requireAuth(body);
     const isAdmin = u.role==='admin' || u.role==='master';
     if (body.newChild) {
-      const rec = { id: body.childId, name: body.newChild.name, gender: body.newChild.gender||'M', alive: body.newChild.alive!==false, birth: body.newChild.birth||'', death:'', place:'', photo:'', notes:'', editedBy:u.username, editedAt:now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
+      const rec = { id: body.childId, name: upperName(body.newChild.name), gender: body.newChild.gender||'M', alive: body.newChild.alive!==false, birth: body.newChild.birth||'', death:'', place:'', photo:'', notes:'', editedBy:u.username, editedAt:now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
       if (isAdmin) appendRow('SALASILAH', rec); else queuePending('addMember', rec, u.username);
     }
     const link = { spouseId: body.spouseId, childId: body.childId, editedBy:u.username, editedAt:now() };
@@ -435,7 +439,7 @@ function testRegisterAndLogin() {
     const regRes = HANDLERS.register({
       username: testUser,
       password: testPass,
-      fullName: "Ahmad Penguji",
+      fullName: "AHMAD PENGUJI",
       whatsapp: "0123456789",
       occupation: "IT Tester"
     });
