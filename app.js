@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbx9IKRumeSvyuaB_hXMLLU8tqqDrgMmAZT1CFSYS8rxOTUhSrJlv7BbWb3fG4GkZDcJ/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbySnlDlLMvubSyGg9zrQ6KbGpH76gM38-HRk4z_GqX1rH6HK_fGQPVGNkRRUwBg7unn/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -701,68 +701,81 @@ async function autoArrangeHead(headId){
   catch(err){ notify.warn('Susunan dipaparkan tetapi gagal disimpan: ' + (err && err.message || err)); }
 }
 
-// Auto-letak kemas untuk kad BAHARU sahaja (pasangan/anak yang baru ditambah).
-// 1) Jika kad baharu jatuh di bawah sebuah Kepala Salasilah, susun semula
-//    cabang tersebut menggunakan variasi 0 (tanpa kitar) — hasil paling kemas.
-// 2) Selainnya, letak bersebelahan pasangan / di bawah ibu-bapa supaya
-//    tidak ditinggalkan di penjuru kanvas.
+// Auto-letak untuk kad BAHARU sahaja (pasangan/anak yang baru ditambah).
+// Susunan sedia ada TIDAK diubah — kad baharu hanya disambung pada tempatnya:
+//   • Pasangan baharu  -> diletakkan tepat di sebelah pasangannya.
+//   • Anak baharu      -> diletakkan di bawah ibu bapa, di hujung adik-beradik.
+// Pengguna boleh seret manual kemudian jika mahu halusi kedudukan.
 async function autoPlaceNew(hints){
   const hasPos = (m)=> m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY);
   const hintIds = Array.isArray(hints) ? hints.filter(Boolean).map(String) : [];
   const newOnes = (DATA.members||[]).filter(m=> !hasPos(m) || hintIds.includes(String(m.id)));
-  if(!newOnes.length && !hintIds.length) return;
+  if(!newOnes.length) return;
 
-  const positions = [];
-  const placedIds = new Set();
-
-  // (1) Susun semula setiap cabang Kepala yang mempunyai kad baharu / hint.
-  const headsToFix = new Set();
-  newOnes.forEach(m=>{ const h = findHeadForMember(m.id); if(h) headsToFix.add(h); });
-  hintIds.forEach(id=>{ const h = findHeadForMember(id); if(h) headsToFix.add(h); });
-  headsToFix.forEach(h=>{
-    const layout = autoLayoutSubtree(h, 0);
-    Object.keys(layout).forEach(id=>{
-      if(placedIds.has(String(id))) return;
-      positions.push({ id, x: layout[id].x, y: layout[id].y });
-      placedIds.add(String(id));
-    });
-  });
-
-  // (2) Kad baharu di luar mana-mana Kepala Salasilah — letak dekat saudara.
+  // Snapshot susunan SEMASA — kekalkan, jangan rombak.
   const lay  = buildLayout();
   const auto = autoLayout();
   const SP = getRenderSpouses();
   const CH = getRenderChildren();
-  const taken = new Set(Object.values(lay).map(p=>`${Math.round(p.x)},${Math.round(p.y)}`));
-  positions.forEach(p=> taken.add(`${p.x},${p.y}`));
+  const taken = new Set(Object.values(lay)
+    .filter(p=> p && isFinite(p.x) && isFinite(p.y))
+    .map(p=>`${Math.round(p.x)},${Math.round(p.y)}`));
 
-  newOnes.filter(m=> !placedIds.has(String(m.id))).forEach(m=>{
+  const positions = [];
+
+  // Susun anak-anak (jika berbilang) supaya rapat & seimbang di bawah ibu bapa.
+  newOnes.forEach(m=>{
     let pos = null;
+
+    // (a) PASANGAN — letak sebelah pasangannya (kiri jika kosong, kanan jika tidak).
     const partnerIds = SP.filter(s=>s.husbandId===m.id||s.wifeId===m.id)
       .map(s=> s.husbandId===m.id ? s.wifeId : s.husbandId).filter(Boolean);
     for(const pid of partnerIds){
-      if(lay[pid]){ pos = { x: lay[pid].x + COL_STEP, y: lay[pid].y }; break; }
+      const pp = lay[pid]; if(!pp) continue;
+      // Cuba kanan dulu, kemudian kiri.
+      const right = { x: pp.x + COL_STEP, y: pp.y };
+      const left  = { x: pp.x - COL_STEP, y: pp.y };
+      const rightTaken = taken.has(`${Math.round(right.x)},${Math.round(right.y)}`);
+      const leftTaken  = taken.has(`${Math.round(left.x)},${Math.round(left.y)}`);
+      pos = !rightTaken ? right : (!leftTaken ? left : right);
+      break;
     }
+
+    // (b) ANAK — letak bawah ibu bapa, sebelah kanan adik-beradik terkanan.
     if(!pos){
       const parentSpouseIds = CH.filter(c=>c.childId===m.id).map(c=>c.spouseId);
       for(const sid of parentSpouseIds){
         const sp = SP.find(s=>s.id===sid); if(!sp) continue;
-        const pa = lay[sp.husbandId] || lay[sp.wifeId];
-        if(pa){
-          const sibs = CH.filter(c=>c.spouseId===sid).map(c=>c.childId)
-            .filter(id=> id!==m.id && lay[id]);
-          pos = { x: pa.x + sibs.length*COL_STEP, y: pa.y + ROW_STEP };
-          break;
+        const pa = lay[sp.husbandId]; const pb = lay[sp.wifeId];
+        const anchor = pa && pb
+          ? { x:(pa.x+pb.x)/2, y: Math.max(pa.y, pb.y) }
+          : (pa || pb);
+        if(!anchor) continue;
+        const sibs = CH.filter(c=>c.spouseId===sid).map(c=>c.childId)
+          .filter(id=> id!==m.id && lay[id])
+          .map(id=> lay[id]);
+        const childY = anchor.y + ROW_STEP;
+        if(sibs.length){
+          const maxX = Math.max(...sibs.map(s=>s.x));
+          pos = { x: maxX + COL_STEP, y: childY };
+        } else {
+          pos = { x: anchor.x, y: childY };
         }
+        break;
       }
     }
+
+    // (c) Fallback — guna kedudukan auto kalau langsung tiada konteks.
     if(!pos) pos = auto[m.id];
     if(!pos) return;
+
+    // Elak bertindih dengan kad lain.
     let x = Math.round(pos.x), y = Math.round(pos.y), guard = 0;
-    while(taken.has(`${x},${y}`) && guard++ < 80){ x += COL_STEP; }
+    while(taken.has(`${x},${y}`) && guard++ < 120){ x += COL_STEP; }
     taken.add(`${x},${y}`);
     positions.push({ id:m.id, x, y });
-    placedIds.add(String(m.id));
+    // kemas kini snapshot supaya kad baharu seterusnya pun ambil kira.
+    lay[m.id] = { x, y };
   });
 
   if(!positions.length) return;
@@ -828,7 +841,7 @@ function renderNodes(layout){
       if(isDraft && (isAdmin || pendingRec?.user!==STORE.user?.username)) openDraftReview(m, pendingRec);
       else openMemberMenu(m);
     });
-    if (isAdmin) enableNodeDrag(el, m.id, layout);
+    enableNodeDrag(el, m.id, layout);
     frag.appendChild(el);
   });
   wrap.appendChild(frag);
@@ -1181,18 +1194,25 @@ window.addEventListener('pointercancel', _endJunctionDrag);
 
 
 // Sembunyi node luar viewport untuk skala besar (1000+ kad)
+// Hanya aktif jika node banyak (>250) untuk elak kad hilang semasa zoom
 function cullViewport(){
   if(!panzoomInstance) return;
+  const nodes = $$('#nodes .node');
+  if(nodes.length <= 250){
+    // Pastikan semua kelihatan ketika culling tidak diperlukan
+    nodes.forEach(el=>{ if(el.style.visibility==='hidden') el.style.visibility=''; });
+    return;
+  }
   const stage = $('#stage').getBoundingClientRect();
-  const pad = 600;
-  const wrap = $('#nodes');
   const t = panzoomInstance.getScale();
   const pan = panzoomInstance.getPan();
-  $$('#nodes .node').forEach(el=>{
+  // Padding besar supaya kad tidak hilang semasa zoom/pan pantas
+  const pad = Math.max(1200, stage.width, stage.height);
+  nodes.forEach(el=>{
     const x = parseFloat(el.style.left), y = parseFloat(el.style.top);
     const sx = x*t + pan.x, sy = y*t + pan.y;
     const visible = sx + NODE_W*t > -pad && sx < stage.width + pad && sy + NODE_H*t > -pad && sy < stage.height + pad;
-    el.style.visibility = visible ? 'visible' : 'hidden';
+    el.style.visibility = visible ? '' : 'hidden';
   });
 }
 

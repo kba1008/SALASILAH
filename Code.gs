@@ -714,7 +714,7 @@ const HANDLERS = {
     return { ok: true };
   },
   setPositions(body) {
-    requireAuth(body, ['admin','master']);
+    requireAuth(body);
     const list = Array.isArray(body.positions) ? body.positions : [];
     let updated = 0;
     list.forEach(function(p){
@@ -729,7 +729,7 @@ const HANDLERS = {
     return { ok: true, updated: updated };
   },
   setJunction(body) {
-    requireAuth(body, ['admin','master']);
+    requireAuth(body);
     const id = body.spouseId || body.id;
     if (!id) throw new Error('spouseId diperlukan.');
     const patch = {
