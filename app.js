@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbx-qmSLpaHsOpZq78cokLljsIkmfAvcmsRt1uDsER8RiQ783iH66sKlk8A3mM4A4jWv/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbySnlDlLMvubSyGg9zrQ6KbGpH76gM38-HRk4z_GqX1rH6HK_fGQPVGNkRRUwBg7unn/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -702,29 +702,59 @@ async function autoArrangeHead(headId){
 }
 
 // Auto-letak untuk kad BAHARU sahaja (pasangan/anak yang baru ditambah).
-// Susunan sedia ada TIDAK diubah — kad baharu hanya disambung pada tempatnya:
+// Susunan sedia ada TIDAK diubah — paksi sebelum tambah dibekukan dahulu,
+// kemudian kad baharu disambung pada paksi itu:
 //   • Pasangan baharu  -> diletakkan tepat di sebelah pasangannya.
 //   • Anak baharu      -> diletakkan di bawah ibu bapa, di hujung adik-beradik.
 // Pengguna boleh seret manual kemudian jika mahu halusi kedudukan.
-async function autoPlaceNew(hints){
+async function autoPlaceNew(hints, options){
+  options = options || {};
   const hasPos = (m)=> m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY);
   const hintIds = Array.isArray(hints) ? hints.filter(Boolean).map(String) : [];
-  const newOnes = (DATA.members||[]).filter(m=> !hasPos(m) || hintIds.includes(String(m.id)));
-  if(!newOnes.length) return;
+  const baseLayout = options.baseLayout || null;
+  const existingIds = new Set((options.existingIds || []).filter(Boolean).map(String));
+  const forceIds = new Set((options.forceIds || []).filter(Boolean).map(String));
+  const members = getRenderMembers();
+  const targetIds = new Set();
+  members.forEach(m=>{
+    const id = String(m.id);
+    const wasExisting = existingIds.has(id);
+    if(forceIds.has(id)) targetIds.add(id);
+    else if(!hasPos(m) && (!existingIds.size || !wasExisting)) targetIds.add(id);
+    else if(hintIds.includes(id) && (!existingIds.size || !wasExisting)) targetIds.add(id);
+  });
+  if(!targetIds.size && !baseLayout) return;
 
   // Snapshot susunan SEMASA — kekalkan, jangan rombak.
   const lay  = buildLayout();
+  if(baseLayout){
+    existingIds.forEach(id=>{
+      const p = baseLayout[id];
+      if(p && isFinite(p.x) && isFinite(p.y)) lay[id] = { x:Number(p.x), y:Number(p.y) };
+    });
+  }
   const auto = autoLayout();
   const SP = getRenderSpouses();
   const CH = getRenderChildren();
-  const taken = new Set(Object.values(lay)
-    .filter(p=> p && isFinite(p.x) && isFinite(p.y))
-    .map(p=>`${Math.round(p.x)},${Math.round(p.y)}`));
+  const taken = new Set();
+  Object.keys(lay).forEach(id=>{
+    if(targetIds.has(String(id))) return;
+    const p = lay[id];
+    if(p && isFinite(p.x) && isFinite(p.y)) taken.add(`${Math.round(p.x)},${Math.round(p.y)}`);
+  });
 
   const positions = [];
+  if(baseLayout){
+    members.forEach(m=>{
+      const id = String(m.id);
+      if(!existingIds.has(id) || targetIds.has(id)) return;
+      const p = lay[id]; if(!p || !isFinite(p.x) || !isFinite(p.y)) return;
+      positions.push({ id:m.id, x:Math.round(p.x), y:Math.round(p.y) });
+    });
+  }
 
   // Susun anak-anak (jika berbilang) supaya rapat & seimbang di bawah ibu bapa.
-  newOnes.forEach(m=>{
+  members.filter(m=>targetIds.has(String(m.id))).forEach(m=>{
     let pos = null;
 
     // (a) PASANGAN — letak sebelah pasangannya (kiri jika kosong, kanan jika tidak).
@@ -782,6 +812,12 @@ async function autoPlaceNew(hints){
   DATA.members = (DATA.members||[]).map(m=>{
     const f = positions.find(x=> String(x.id)===String(m.id));
     return f ? { ...m, posX:f.x, posY:f.y } : m;
+  });
+  DATA.pending = (DATA.pending||[]).map(p=>{
+    if(!p || !p.payload) return p;
+    const pid = p.payload.id || p.payload.childId;
+    const f = positions.find(x=> String(x.id)===String(pid));
+    return f ? { ...p, payload:{ ...p.payload, posX:f.x, posY:f.y } } : p;
   });
   renderAll();
   try{ await dispatchApi('setPositions', { positions }); }catch(_){}
@@ -950,6 +986,24 @@ function enableNodeDrag(el, id, layout){
   el.addEventListener('pointercancel', finish);
 }
 
+async function approvePendingAndPlace(pendingId){
+  const p = (DATA.pending||[]).find(x=>String(x.id)===String(pendingId));
+  const beforeIds = new Set((DATA.members||[]).map(m=>String(m.id)));
+  const existingIds = Array.from(beforeIds);
+  const baseLayout = buildLayout();
+  const payload = p && p.payload ? p.payload : {};
+  const placeIds = [];
+  if(p){
+    if(p.action==='addMember' && payload.id) placeIds.push(payload.id);
+    if(p.action==='addChild' && payload.childId) placeIds.push(payload.childId);
+    if(p.action==='addSpouse') [payload.husbandId, payload.wifeId].forEach(id=>{ if(id && !beforeIds.has(String(id))) placeIds.push(id); });
+  }
+  await dispatchApi('approve', { id: pendingId });
+  await refresh({ silent:true });
+  if(placeIds.length) await autoPlaceNew(placeIds, { baseLayout, existingIds, forceIds:placeIds });
+  else renderAll();
+}
+
 // Paparan semakan kad DRAF (belum disahkan). Admin boleh sah/batal; pengedit
 // hanya nampak status menunggu. Memaparkan nama pengedit & no telefon.
 function openDraftReview(m, p){
@@ -1012,7 +1066,7 @@ function openDraftReview(m, p){
 
   const ap = $('#drApprove');
   if(ap) ap.onclick = async ()=>{
-    try{ await dispatchApi('approve', { id: ap.dataset.id }); notify.success('Profil disahkan.'); closeModal(); await refresh(); }
+    try{ await approvePendingAndPlace(ap.dataset.id); notify.success('Profil disahkan.'); closeModal(); }
     catch(e){ toast('Gagal sah: '+e.message); }
   };
   const rj = $('#drReject');
@@ -1476,7 +1530,10 @@ function spouseForm(m){
     const pick = $('#sp_pick').value;
     const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:upperName($('#sp_name').value), gender:$('#sp_g').value, alive:true }, spouseId: uid(), reason:$('#sp_reason')?.value.trim()||'' };
     if(!pick && !payload.newPartner.name) return toast("Isi maklumat pasangan.");
-    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh(); await autoPlaceNew([m.id, pick || payload.newPartner?.id]); }catch(e){ toast(e.message); }
+    const baseLayout = buildLayout();
+    const existingIds = getRenderMembers().map(x=>x.id);
+    const partnerId = pick || payload.newPartner?.id;
+    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh({ silent:true }); await autoPlaceNew([partnerId], { baseLayout, existingIds, forceIds:[partnerId] }); }catch(e){ toast(e.message); }
   };
 }
 
@@ -1502,7 +1559,9 @@ function childForm(m){
     const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:upperName($('#ch_name').value), gender:$('#ch_g').value, alive:true }, reason:$('#ch_reason')?.value.trim()||'' };
     payload.newChild.id = payload.childId;
     if(!payload.newChild.name) return toast("Nama anak wajib.");
-    try{ const r = await dispatchApi('addChild', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya."); } closeModal(); await refresh(); await autoPlaceNew(); }catch(e){ toast(e.message); }
+    const baseLayout = buildLayout();
+    const existingIds = getRenderMembers().map(x=>x.id);
+    try{ const r = await dispatchApi('addChild', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya."); } closeModal(); await refresh({ silent:true }); await autoPlaceNew([payload.childId], { baseLayout, existingIds, forceIds:[payload.childId] }); }catch(e){ toast(e.message); }
   };
 }
 
@@ -1590,7 +1649,7 @@ function adminPanel(tab='pending'){
     body.innerHTML = DATA.pending?.length ? DATA.pending.map(p=> renderPendingCard(p, isAdmin)).join('') : '<p class="text-sm ink-soft">Tiada perubahan menunggu.</p>';
     $$('button[data-a]', body).forEach(b=> b.onclick = async ()=>{
       if(b.dataset.a==='reject' && !confirm('Tolak perubahan ini?')) return;
-      try{ await dispatchApi(b.dataset.a, { id:b.dataset.id }); notify.success("Selesai."); await refresh(); adminPanel('pending'); }catch(e){ toast(e.message); }
+      try{ if(b.dataset.a==='approve') await approvePendingAndPlace(b.dataset.id); else { await dispatchApi(b.dataset.a, { id:b.dataset.id }); await refresh(); } notify.success("Selesai."); adminPanel('pending'); }catch(e){ toast(e.message); }
     });
     $$('button[data-edit-pending]', body).forEach(b=> b.onclick = ()=>editPendingForm(b.dataset.editPending));
   } else if(tab==='users'){
@@ -1780,7 +1839,7 @@ function updatePendingBadge(){
   const b = $('#pendingBadge'); if(b){ b.style.display = n>0?'':'none'; b.textContent = n; }
 }
 
-async function refresh(){ try{ let r = await api('bootstrap'); if (STORE.user && r?.data && !r.data.viewer) { if (await silentRelogin()) r = await api('bootstrap'); } DATA = { ...DATA, ...r.data }; STORE.cache = DATA; }catch(e){} renderAll(); updatePendingBadge(); }
+async function refresh(options){ try{ let r = await api('bootstrap'); if (STORE.user && r?.data && !r.data.viewer) { if (await silentRelogin()) r = await api('bootstrap'); } DATA = { ...DATA, ...r.data }; STORE.cache = DATA; }catch(e){} if(!(options&&options.silent)) renderAll(); updatePendingBadge(); }
 
 if('serviceWorker' in navigator){ window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 

@@ -714,7 +714,7 @@ const HANDLERS = {
     return { ok: true };
   },
   setPositions(body) {
-    requireAuth(body);
+    const u = requireAuth(body);
     const list = Array.isArray(body.positions) ? body.positions : [];
     let updated = 0;
     list.forEach(function(p){
@@ -724,7 +724,20 @@ const HANDLERS = {
       if (p.y !== undefined) patch.posY = Number(p.y) || 0;
       if (p.posX !== undefined) patch.posX = Number(p.posX) || 0;
       if (p.posY !== undefined) patch.posY = Number(p.posY) || 0;
-      try { updateRow('SALASILAH', 'id', p.id, patch); updated++; } catch(_){}
+      try {
+        if (updateRow('SALASILAH', 'id', p.id, patch)) { updated++; return; }
+        const rows = readAll('PENDING');
+        rows.forEach(function(row){
+          if (row.action !== 'addMember' || !isPendingRecord(row)) return;
+          if (!(u.role==='admin' || u.role==='master') && String(row.user)!==String(u.username)) return;
+          const payload = safeParse(row.payload) || {};
+          if (String(payload.id)!==String(p.id)) return;
+          payload.posX = patch.posX;
+          payload.posY = patch.posY;
+          updateRow('PENDING', 'id', row.id, { payload:JSON.stringify(payload), ts:now() });
+          updated++;
+        });
+      } catch(_){}
     });
     return { ok: true, updated: updated };
   },
