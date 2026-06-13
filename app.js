@@ -157,7 +157,7 @@ function loginForm(){
   openModal(`
     <div class="flex items-center justify-between mb-3">
       <div class="font-head text-2xl">Selamat Datang</div>
-      <div class="chip gold-edge">v1.5</div>
+      <div class="chip gold-edge">v1.9</div>
     </div>
     <div class="flex gap-2 mb-4">
       <button class="tab active" data-tab="login">Log Masuk</button>
@@ -298,8 +298,25 @@ async function boot(){
   flushQueue();
 }
 
+// Draf ahli BAHARU (addMember belum lulus) yang belum wujud dalam DATA.members.
+// Server hanya hantar pending milik pengguna sendiri (untuk pengguna biasa) atau
+// semua pending (untuk admin), jadi keterlihatan sudah terkawal di pelayan.
+function getDraftAdds(){
+  return (DATA.pending||[])
+    .filter(p => p.action==='addMember' && p.payload && p.payload.id && !DATA.members.find(m=>String(m.id)===String(p.payload.id)))
+    .map(p => ({ ...p.payload, alive: p.payload.alive!==false, _draft:true, _pending:p }));
+}
+// Peta id ahli sedia ada yang ada cadangan edit (editMember) belum lulus.
+function getEditPendingMap(){
+  const map = {};
+  (DATA.pending||[]).forEach(p => { if(p.action==='editMember' && p.payload && p.payload.id) map[String(p.payload.id)] = p; });
+  return map;
+}
+function getRenderMembers(){ return DATA.members.concat(getDraftAdds()); }
+
 function buildLayout(){
-  const byId = Object.fromEntries(DATA.members.map(m=>[m.id, m]));
+  const MEMBERS = getRenderMembers();
+  const byId = Object.fromEntries(MEMBERS.map(m=>[m.id, m]));
   const childMap = {};
   DATA.children.forEach(c=>{
     const sp = DATA.spouses.find(s=>s.id===c.spouseId);
@@ -309,7 +326,7 @@ function buildLayout(){
     });
   });
   const placed = {};
-  const roots = DATA.members.filter(m => !DATA.children.find(c=>c.childId===m.id));
+  const roots = MEMBERS.filter(m => !DATA.children.find(c=>c.childId===m.id));
   let cursorX = 200;
   const baseY = 220;
 
@@ -335,7 +352,7 @@ function buildLayout(){
     return Math.max(x + totalWidth + GAP_X, childrenEnd + GAP_X);
   }
   roots.forEach(r=>{ cursorX = place(r.id, 0, cursorX) + GAP_X*2; });
-  DATA.members.forEach(m=>{ if(!placed[m.id]){ placed[m.id] = { x: cursorX, y: baseY }; cursorX += NODE_W + GAP_X; } });
+  getRenderMembers().forEach(m=>{ if(!placed[m.id]){ placed[m.id] = { x: cursorX, y: baseY }; cursorX += NODE_W + GAP_X; } });
   return placed;
 }
 
@@ -350,16 +367,19 @@ function renderAll(){
 
 function renderNodes(layout){
   const wrap = $('#nodes'); wrap.innerHTML='';
-  // Tandakan ahli yang ada draf belum lulus (pending)
-  const pendingIds = new Set((DATA.pending||[]).filter(p=>p.action==='editMember' || p.action==='addMember').map(p => p.payload && p.payload.id).filter(Boolean));
+  const editMap = getEditPendingMap();           // id ahli sedia ada -> cadangan edit
   const isAdmin = ['admin','master'].includes(STORE.user?.role);
   const frag = document.createDocumentFragment();
-  DATA.members.forEach(m=>{
+  getRenderMembers().forEach(m=>{
     const pos = layout[m.id] || {x:200,y:200};
     const el = document.createElement('div');
     const tag = m._tag || 'none';
     const tagCls = tag==='admin' ? 'tag-admin' : (tag==='member' ? 'tag-member' : '');
-    const draftCls = (isAdmin && pendingIds.has(m.id)) ? 'tag-draft' : '';
+    // Draf = ahli baharu belum lulus (m._draft) ATAU ahli sedia ada yang ada cadangan edit.
+    const editPending = editMap[String(m.id)] || null;
+    const pendingRec = m._pending || editPending;
+    const isDraft = !!pendingRec;
+    const draftCls = isDraft ? 'tag-draft' : '';
     el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls}`;
     el.style.left = pos.x+'px'; el.style.top = pos.y+'px';
     el.dataset.id = m.id;
@@ -368,7 +388,9 @@ function renderNodes(layout){
     const badge = tag==='admin'
       ? '<span class="chip" style="background:linear-gradient(180deg,#ff8a8a,#b71c1c);color:#fff">🛡️ Admin</span>'
       : (tag==='member' ? `<span class="chip" style="background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#241704">⭐ Ahli${m._memberId?' '+escapeHtml(m._memberId):''}</span>` : '');
-    const draftBadge = draftCls ? '<span class="chip" style="background:#b71c1c;color:#fff">📝 Draf</span>' : '';
+    const draftBadge = isDraft
+      ? `<span class="chip draft-chip">📝 Belum Disahkan</span>`
+      : '';
     el.innerHTML = `
       <div class="avatar">${m.photo?`<img src="${m.photo}">`:(m.name||'?').slice(0,1).toUpperCase()}</div>
       <div class="nm">${escapeHtml(m.name||'Tanpa Nama')}</div>
@@ -379,11 +401,90 @@ function renderNodes(layout){
         ${badge}${draftBadge}
       </div>
     `;
-    el.addEventListener('click', e=>{ e.stopPropagation(); openMemberMenu(m); });
+    if(isDraft){
+      el.addEventListener('click', e=>{ e.stopPropagation(); openDraftReview(m, pendingRec); });
+    } else {
+      el.addEventListener('click', e=>{ e.stopPropagation(); openMemberMenu(m); });
+    }
     frag.appendChild(el);
   });
   wrap.appendChild(frag);
 }
+
+// Paparan semakan kad DRAF (belum disahkan). Admin boleh sah/batal; pengedit
+// hanya nampak status menunggu. Memaparkan nama pengedit & no telefon.
+function openDraftReview(m, p){
+  const isAdmin = ['admin','master'].includes(STORE.user?.role);
+  const data = (p && p.payload) ? p.payload : m;
+  const isNew = p && p.action==='addMember';
+  const before = (p && p.before) || {};
+  const fields = [
+    ['name','Nama'], ['gender','Jantina'], ['alive','Status'], ['birth','Lahir'],
+    ['death','Meninggal'], ['place','Asal'], ['address','Alamat'],
+    ['fatherName','Bapa'], ['motherName','Ibu'], ['notes','Catatan']
+  ];
+  const fmt = (k,v)=> (v===undefined||v===null||v==='') ? '—'
+    : k==='alive' ? ((v===true||String(v)==='true')?'Hidup':'Allahyarham')
+    : k==='gender' ? (v==='F'?'Perempuan':'Lelaki') : String(v);
+  const rows = fields.map(([k,lbl])=>{
+    const av = data[k], bv = before[k];
+    if(av===undefined && bv===undefined) return '';
+    const changed = !isNew && String(bv||'')!==String(av||'');
+    return `<div class="mc-row ${changed?'diff-changed':''}"><span>${lbl}</span><b>${escapeHtml(fmt(k,av))}</b></div>`;
+  }).join('');
+
+  const editorName = escapeHtml((p&&(p.userFullName||p.user))||'Tidak diketahui');
+  const editorUser = escapeHtml((p&&p.user)||'');
+  const phone = (p && (p.userWhatsapp||p.userPhone)) || '';
+  const phoneClean = String(phone).replace(/[^0-9]/g,'');
+  const waLink = phoneClean ? (phoneClean.startsWith('0') ? '6'+phoneClean : phoneClean) : '';
+  const contactBlock = isAdmin ? `
+    <div class="bevel-soft rounded-lg p-3 mb-2">
+      <div class="text-xs ink-soft mb-1">Maklumat Pengedit (untuk siasatan sebelum sah)</div>
+      <div class="mc-row"><span>Pengedit</span><b>${editorName} ${editorUser?'(@'+editorUser+')':''}</b></div>
+      <div class="mc-row"><span>No. Telefon</span><b>${phone?escapeHtml(phone):'Tiada'}</b></div>
+      ${waLink?`<a class="btn gold-edge w-full justify-center mt-2" target="_blank" rel="noopener" href="https://wa.me/${waLink}">💬 Hubungi via WhatsApp</a>`:''}
+    </div>` : '';
+
+  openModal(`
+    <div class="flex items-center justify-between mb-2">
+      <div class="font-head text-2xl">${isNew?'Profil Baharu (Draf)':'Cadangan Edit (Draf)'}</div>
+      <span class="chip draft-chip">📝 Belum Disahkan</span>
+    </div>
+    <div class="profile-head mb-2">
+      <div class="profile-avatar">${data.photo?`<img src="${data.photo}" alt="">`:(data.name||'?').slice(0,1).toUpperCase()}</div>
+      <div class="profile-meta">
+        <div class="pn">${escapeHtml(data.name||'Tanpa Nama')}</div>
+        <div class="ps">${data.gender==='F'?'Perempuan':'Lelaki'} • ${data.alive===false?'Allahyarham':'Hidup'}</div>
+      </div>
+    </div>
+    <div class="bevel-soft rounded-lg p-3 mb-2">${rows||'<div class="ink-soft text-sm">Tiada maklumat.</div>'}</div>
+    ${contactBlock}
+    ${isAdmin ? `
+      <p class="text-xs ink-soft mb-2">Sila siasat maklumat & hubungi pengedit terlebih dahulu sebelum membuat pengesahan.</p>
+      <div class="flex gap-2">
+        <button class="btn gold-edge flex-1 justify-center" id="drApprove" data-id="${escapeHtml(p?p.id:'')}">✅ Sahkan</button>
+        <button class="btn btn-ghost" style="color:var(--danger)" id="drReject" data-id="${escapeHtml(p?p.id:'')}">❌ Batalkan</button>
+        <button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button>
+      </div>` : `
+      <div class="bevel-soft rounded-lg p-2 text-sm ink-soft">Maklumat ini sedang menunggu pengesahan pentadbir. Hanya anda &amp; pentadbir boleh melihatnya buat masa ini.</div>
+      <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>`}
+  `);
+
+  const ap = $('#drApprove');
+  if(ap) ap.onclick = async ()=>{
+    try{ await dispatchApi('approve', { id: ap.dataset.id }); notify.success('Profil disahkan.'); closeModal(); await refresh(); }
+    catch(e){ toast('Gagal sah: '+e.message); }
+  };
+  const rj = $('#drReject');
+  if(rj) rj.onclick = async ()=>{
+    if(!confirm('Batalkan draf ini? Maklumat akan dibuang.')) return;
+    try{ await dispatchApi('reject', { id: rj.dataset.id }); notify.success('Draf dibatalkan.'); closeModal(); await refresh(); }
+    catch(e){ toast('Gagal batal: '+e.message); }
+  };
+}
+
+
 
 function renderLinks(layout){
   const svg = $('#links');
@@ -752,6 +853,7 @@ function adminPanel(tab='pending'){
     <div class="flex gap-2 mb-3 flex-wrap">
       <button class="tab ${tab==='pending'?'active':''}" data-t="pending">Perubahan ${DATA.pending?.length?`<span class="chip" style="background:#b71c1c;color:#fff;margin-left:4px">${DATA.pending.length}</span>`:''}</button>
       <button class="tab ${tab==='users'?'active':''}" data-t="users">Pengguna Baru</button>
+      <button class="tab ${tab==='members'?'active':''}" data-t="members">Senarai Ahli</button>
       <button class="tab ${tab==='log'?'active':''}" data-t="log">Log Lulus</button>
       <button class="tab ${tab==='seed'?'active':''}" data-t="seed">Cipta Akar</button>
     </div>
@@ -786,6 +888,40 @@ function adminPanel(tab='pending'){
     $$('button[data-pv]', body).forEach(b=> b.onclick = ()=> viewPendingUser(b.dataset.pv));
     $$('button[data-ap]', body).forEach(b=> b.onclick = async ()=>{ try{ await dispatchApi('approveUser', { target:b.dataset.ap }); notify.success("Diluluskan."); await refresh(); adminPanel('users'); }catch(e){ toast(e.message); } });
     $$('button[data-rj]', body).forEach(b=> b.onclick = async ()=>{ if(confirm('Tolak?')){ try{ await dispatchApi('rejectUser', { target:b.dataset.rj }); notify.success("Ditolak."); await refresh(); adminPanel('users'); }catch(e){ toast(e.message); } } });
+  } else if(tab==='members'){
+    const isMaster = STORE.user?.role==='master';
+    const list = (DATA.users || []).slice().sort((a,b)=> String(a.fullName||a.username).localeCompare(String(b.fullName||b.username)));
+    if(!list.length){
+      body.innerHTML = '<p class="text-sm ink-soft">Tiada ahli diluluskan lagi. Ahli akan muncul di sini selepas anda meluluskan pendaftaran mereka di tab “Pengguna Baru”.</p>';
+    } else {
+      body.innerHTML = `<p class="text-xs ink-soft mb-2">Lantik ahli sebagai <b>Admin</b> untuk membantu menguruskan salasilah, atau tarik balik peranan admin.</p>` +
+      list.map(u=>{
+        const isAdminRole = u.role==='admin';
+        const phone = u.whatsapp || u.phone || '';
+        return `
+        <div class="bevel-soft rounded-lg p-2 mb-2 text-sm flex items-center gap-3">
+          ${u.photo? `<img src="${escapeHtml(u.photo)}" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid var(--line)">` : `<div style="width:44px;height:44px;border-radius:50%;background:var(--bg-soft);display:flex;align-items:center;justify-content:center">👤</div>`}
+          <div class="flex-1 min-w-0">
+            <div class="truncate"><b>${escapeHtml(u.fullName||u.username)}</b>
+              ${isAdminRole?'<span class="chip" style="background:linear-gradient(180deg,#ff8a8a,#b71c1c);color:#fff;margin-left:4px">🛡️ Admin</span>':'<span class="chip" style="background:color-mix(in oklab, var(--gold) 25%, transparent);color:var(--ink);margin-left:4px">Ahli</span>'}
+            </div>
+            <div class="text-xs ink-soft truncate">@${escapeHtml(u.username)}${u.memberId?' • '+escapeHtml(u.memberId):''}${phone?' • '+escapeHtml(phone):''}</div>
+            <div class="flex gap-2 mt-2">
+              ${isAdminRole
+                ? `<button class="btn btn-ghost" style="color:var(--danger)" data-role-user="${escapeHtml(u.username)}" data-role="user">Tarik Admin</button>`
+                : `<button class="btn gold-edge" data-role-user="${escapeHtml(u.username)}" data-role="admin">Lantik sebagai Admin</button>`}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+      $$('button[data-role-user]', body).forEach(b=> b.onclick = async ()=>{
+        const target = b.dataset.roleUser, role = b.dataset.role;
+        const verb = role==='admin' ? 'Lantik' : 'Tarik balik peranan admin daripada';
+        if(!confirm(`${verb} @${target}?`)) return;
+        try{ await dispatchApi('setRole', { username: target, role }); notify.success('Peranan dikemaskini.'); await refresh(); adminPanel('members'); }
+        catch(e){ toast('Gagal: '+e.message); }
+      });
+    }
   } else if(tab==='seed'){
     body.innerHTML = `<button class="btn gold-edge" id="seedBtn">+ Tambah Moyang Pertama</button>`;
     $('#seedBtn').onclick = ()=>{ closeModal(); memberForm(null); };

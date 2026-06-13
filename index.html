@@ -139,6 +139,23 @@
       outline:3px solid #e74c3c; box-shadow:0 0 0 4px rgba(231,76,60,.35), 0 22px 40px -14px var(--shadow);
       background:linear-gradient(180deg, color-mix(in oklab, #ff8a8a 18%, var(--card)), var(--card-2)); 
     }
+    /* Kad DRAF — belum disahkan admin: kotak & font jadi kelabu */
+    .node.tag-draft {
+      outline:2px dashed #9a9a9a !important;
+      box-shadow:0 10px 22px -12px rgba(0,0,0,.45) !important;
+      background:linear-gradient(180deg,#ececec,#d8d8d8) !important;
+      color:#6f6f6f !important;
+    }
+    .node.tag-draft .nm,
+    .node.tag-draft .yrs { color:#6f6f6f !important; }
+    .node.tag-draft .avatar {
+      background:linear-gradient(180deg,#cfcfcf,#b6b6b6) !important;
+      color:#6b6b6b !important; filter:grayscale(1);
+    }
+    .node.tag-draft .avatar img { filter:grayscale(1) opacity(.85); }
+    .chip.draft-chip { background:#6f6f6f !important; color:#fff !important; }
+
+
 
     .member-card {
       position:relative; border-radius:18px; padding:16px; color:#1a1208;

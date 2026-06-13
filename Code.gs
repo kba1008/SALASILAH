@@ -46,7 +46,7 @@ function doPost(e) {
   }
 }
 function doGet() {
-  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '1.5' });
+  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '1.9' });
 }
 function json(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
@@ -178,7 +178,10 @@ function requireAuth(body, roles) {
   if (String(body.username).toLowerCase() === MASTER_USERNAME.toLowerCase()) {
     if (body.token === getMasterToken()) {
       if (roles && roles.length && roles.indexOf('master') < 0) throw new Error('Akses peranan ditolak.');
-      return { username: MASTER_USERNAME, role: 'master', fullName: 'PENTADBIR UTAMA', memberId: 'KEL-MASTER' };
+      // PENTING: sertakan token master supaya proses pengesahan (approve) yang
+      // memanggil semula handler lain (mis. addMember) tidak ranap dengan ralat
+      // "Sesi Master tamat".
+      return { username: MASTER_USERNAME, role: 'master', fullName: 'PENTADBIR UTAMA', memberId: 'KEL-MASTER', token: getMasterToken() };
     } else {
       throw new Error('Sesi Master tamat. Sila log masuk semula.');
     }
@@ -364,12 +367,33 @@ const HANDLERS = {
     const children = readAll('ANAK');
     const notes = readAll('NOTA').map(n => ({ ...n, pinned: String(n.pinned)==='true'||n.pinned===true, x:Number(n.x)||0, y:Number(n.y)||0, size:Number(n.size)||14 }));
     
+    // Peta pengguna untuk lampirkan maklumat hubungan pengedit (admin sahaja boleh lihat).
+    const userByName = {};
+    allUsers.forEach(x => { userByName[String(x.username).toLowerCase()] = x; });
+    function enrichPending(p) {
+      const out = { ...p, payload: safeParse(p.payload), before: p.before ? safeParse(p.before) : null };
+      if (isAdmin) {
+        const eu = userByName[String(p.user).toLowerCase()];
+        out.userWhatsapp = eu ? (eu.whatsapp || eu.phone || '') : '';
+        out.userPhone = eu ? (eu.phone || eu.whatsapp || '') : '';
+        out.userPhoto = eu ? (eu.photo || '') : '';
+      }
+      return out;
+    }
     const pending = isAdmin
-      ? readAll('PENDING').filter(p=>p.status==='pending').map(p=>({ ...p, payload: safeParse(p.payload), before: p.before? safeParse(p.before): null }))
-      : (u ? readAll('PENDING').filter(p=>p.user===u.username).map(p=>({ ...p, payload: safeParse(p.payload), before: p.before? safeParse(p.before): null })) : []);
+      ? readAll('PENDING').filter(p=>p.status==='pending').map(enrichPending)
+      : (u ? readAll('PENDING').filter(p=>p.user===u.username).map(enrichPending) : []);
     const pendingLog = isAdmin ? readAll('PENDING').filter(p=>p.status!=='pending').slice(-50).map(p=>({ id:p.id, action:p.action, user:p.user, userFullName:p.userFullName, ts:p.ts, status:p.status, approvedBy:p.approvedBy, approvedAt:p.approvedAt })) : [];
     const pendingUsers = isAdmin ? allUsers.filter(x => !(x.approved===true||String(x.approved)==='true') && x.role!=='master') : [];
-    const users = isMaster ? allUsers.filter(x => x.role !== 'master').map(x => ({ ...x, password: x.password })) : [];
+    // Senarai semua ahli yang telah diluluskan — untuk Master/Admin melantik admin.
+    // Master nampak penuh; admin biasa nampak versi ringkas tanpa kata laluan.
+    const users = isAdmin
+      ? allUsers
+          .filter(x => x.role !== 'master' && (x.approved===true || String(x.approved)==='true'))
+          .map(x => isMaster
+            ? { ...x }
+            : { username:x.username, fullName:x.fullName, role:x.role, approved:x.approved, memberId:x.memberId, whatsapp:x.whatsapp, phone:x.phone, photo:x.photo })
+      : [];
 
     return { ok: true, data: { members, spouses, children, notes, pending, pendingLog, pendingUsers, users, publicUsers, viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null }};
   },
