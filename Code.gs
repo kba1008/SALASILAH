@@ -264,6 +264,18 @@ function savePhoto(b64, mime, name) {
 }
 
 function queuePending(action, payload, username, before) {
+  const existing = readAll('PENDING').find(p =>
+    p.status === 'pending' && String(p.user) === String(username) &&
+    String(p.action) === String(action) && pendingKey(action, safeParse(p.payload)) === pendingKey(action, payload)
+  );
+  if (existing) {
+    updateRow('PENDING', 'id', existing.id, {
+      payload: JSON.stringify(payload),
+      before: existing.before || (before ? JSON.stringify(before) : ''),
+      ts: now()
+    });
+    return existing.id;
+  }
   const id = Utilities.getUuid();
   const user = readAll('PENGGUNA').find(x => String(x.username)===String(username));
   appendRow('PENDING', {
@@ -274,6 +286,52 @@ function queuePending(action, payload, username, before) {
   });
   notifyTelegram(`📝 <b>PERUBAHAN MENUNGGU KELULUSAN</b>\n<b>Tindakan:</b> ${action}\n<b>Oleh:</b> @${username}\nSila log masuk ke panel pentadbir untuk kelulusan.`);
   return id;
+}
+
+function pendingKey(action, payload) {
+  payload = payload || {};
+  if (action === 'addMember' || action === 'editMember') return String(payload.id || '');
+  if (action === 'addSpouse') return String(payload.id || payload.spouseId || '');
+  if (action === 'addChild') return String(payload.spouseId || '') + ':' + String(payload.childId || '');
+  return '';
+}
+
+function pendingForUser(username) {
+  return readAll('PENDING').filter(p => p.status === 'pending' && String(p.user) === String(username));
+}
+
+function visibleMemberForUser(id, username) {
+  const live = readAll('SALASILAH').find(m => String(m.id) === String(id));
+  if (live) return live;
+  const draft = pendingForUser(username).find(p => p.action === 'addMember' && String(safeParse(p.payload).id) === String(id));
+  return draft ? safeParse(draft.payload) : null;
+}
+
+function visibleSpouseForUser(id, username) {
+  const live = readAll('PASANGAN').find(s => String(s.id) === String(id));
+  if (live) return live;
+  const draft = pendingForUser(username).find(p => p.action === 'addSpouse' && String(safeParse(p.payload).id) === String(id));
+  return draft ? safeParse(draft.payload) : null;
+}
+
+function approveDraftMemberIfNeeded(memberId, owner, approver) {
+  if (readAll('SALASILAH').some(m => String(m.id) === String(memberId))) return;
+  const draft = readAll('PENDING').find(p => p.status==='pending' && p.action==='addMember' && String(p.user)===String(owner) && String(safeParse(p.payload).id)===String(memberId));
+  if (!draft) throw new Error('Profil berkaitan belum tersedia untuk disahkan.');
+  const member = safeParse(draft.payload);
+  appendRow('SALASILAH', Object.assign({}, member, { approvedBy:approver, approvedAt:now() }));
+  updateRow('PENDING', 'id', draft.id, { status:'approved', approvedBy:approver, approvedAt:now() });
+}
+
+function approveDraftSpouseIfNeeded(spouseId, owner, approver) {
+  if (readAll('PASANGAN').some(s => String(s.id) === String(spouseId))) return;
+  const draft = readAll('PENDING').find(p => p.status==='pending' && p.action==='addSpouse' && String(p.user)===String(owner) && String(safeParse(p.payload).id)===String(spouseId));
+  if (!draft) throw new Error('Hubungan pasangan belum tersedia untuk disahkan.');
+  const spouse = safeParse(draft.payload);
+  approveDraftMemberIfNeeded(spouse.husbandId, owner, approver);
+  approveDraftMemberIfNeeded(spouse.wifeId, owner, approver);
+  appendRow('PASANGAN', spouse);
+  updateRow('PENDING', 'id', draft.id, { status:'approved', approvedBy:approver, approvedAt:now() });
 }
 
 const HANDLERS = {
@@ -430,7 +488,10 @@ const HANDLERS = {
   editMember(body) {
     const u = requireAuth(body);
     const isAdmin = u.role==='admin' || u.role==='master';
-    const before = readAll('SALASILAH').find(m=>String(m.id)===String(body.id)) || null;
+    const liveBefore = readAll('SALASILAH').find(m=>String(m.id)===String(body.id)) || null;
+    const draftBefore = !isAdmin ? pendingForUser(u.username).find(p => p.action==='addMember' && String(safeParse(p.payload).id)===String(body.id)) : null;
+    const before = liveBefore || (draftBefore ? safeParse(draftBefore.payload) : null);
+    if (!before) throw new Error('Ahli tidak dijumpai atau draf bukan milik anda.');
     const patch = { ...body };
     delete patch.action; delete patch.username; delete patch.token;
     if (patch.name !== undefined) patch.name = upperName(patch.name).slice(0,200);
@@ -444,7 +505,11 @@ const HANDLERS = {
       updateRow('SALASILAH', 'id', body.id, patch);
       return { ok: true };
     }
-    queuePending('editMember', patch, u.username, before);
+    if (draftBefore) {
+      updateRow('PENDING', 'id', draftBefore.id, { payload:JSON.stringify(Object.assign({}, before, patch)), ts:now() });
+      return { ok:true, pending:true };
+    }
+    queuePending('editMember', Object.assign({}, before, patch), u.username, liveBefore);
     return { ok: true, pending: true };
   },
   deleteMember(body) { requireAuth(body, ['admin','master']); deleteRow('SALASILAH', 'id', body.id); deleteWhere('PASANGAN', s => s.husbandId===body.id || s.wifeId===body.id); deleteWhere('ANAK', c => c.childId===body.id); return { ok: true }; },
@@ -458,7 +523,7 @@ const HANDLERS = {
       const rec = { id: partnerId, name: upperName(body.newPartner.name), gender: body.newPartner.gender, alive: body.newPartner.alive!==false, birth:'', death:'', place:'', photo:'', notes:'', editedBy:u.username, editedAt:now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
       if (isAdmin) appendRow('SALASILAH', rec); else queuePending('addMember', rec, u.username);
     }
-    const anchor = readAll('SALASILAH').find(m=>m.id===body.anchorId);
+    const anchor = visibleMemberForUser(body.anchorId, u.username);
     if (!anchor) throw new Error('Ahli utama tidak dijumpai.');
     const rec = { id: body.spouseId, husbandId: anchor.gender==='M' ? body.anchorId : partnerId, wifeId: anchor.gender==='M' ? partnerId : body.anchorId, status: body.status||'kahwin', marriageDate: body.marriageDate||'', divorceDate: body.divorceDate||'', deathDate: body.deathDate||'', editedBy: u.username, editedAt: now() };
     if (!isAdmin) { queuePending('addSpouse', rec, u.username); return { ok: true, pending: true }; }
@@ -467,6 +532,7 @@ const HANDLERS = {
   addChild(body) {
     const u = requireAuth(body);
     const isAdmin = u.role==='admin' || u.role==='master';
+    if (!visibleSpouseForUser(body.spouseId, u.username)) throw new Error('Pasangan tidak dijumpai atau draf bukan milik anda.');
     if (body.newChild) {
       const rec = { id: body.childId, name: upperName(body.newChild.name), gender: body.newChild.gender||'M', alive: body.newChild.alive!==false, birth: body.newChild.birth||'', death:'', place:'', photo:'', notes:'', editedBy:u.username, editedAt:now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
       if (isAdmin) appendRow('SALASILAH', rec); else queuePending('addMember', rec, u.username);
@@ -483,15 +549,38 @@ const HANDLERS = {
 
   approve(body) {
     const u = requireAuth(body, ['admin','master']);
-    const p = readAll('PENDING').find(x=>x.id===body.id);
-    if (!p) throw new Error('Pending tidak dijumpai.');
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+    const p = readAll('PENDING').find(x=>x.id===body.id && x.status==='pending');
+    if (!p) throw new Error('Draf tidak dijumpai atau telah diproses.');
     const payload = safeParse(p.payload);
-    // Guna kelayakan sebenar pemanggil (token tunggal yang sah), bukan u.token
-    // yang mungkin gabungan berbilang token — supaya requireAuth dalaman lulus.
-    const fakeBody = Object.assign({}, payload, { username: body.username, token: body.token });
-    HANDLERS[p.action](fakeBody);
+    // Terapkan terus sebagai keputusan pentadbir. Jangan panggil semula handler
+    // pengguna kerana ia boleh menjalankan auth/draf kali kedua dan menyebabkan
+    // ralat peranan disalah anggap sebagai sesi tamat di klien lama.
+    if (p.action === 'addMember') {
+      if (readAll('SALASILAH').some(m => String(m.id)===String(payload.id))) updateRow('SALASILAH', 'id', payload.id, payload);
+      else appendRow('SALASILAH', Object.assign({}, payload, { approvedBy:u.username, approvedAt:now() }));
+    } else if (p.action === 'editMember') {
+      if (!readAll('SALASILAH').some(m => String(m.id)===String(payload.id))) throw new Error('Sahkan draf ahli baharu ini terlebih dahulu.');
+      updateRow('SALASILAH', 'id', payload.id, Object.assign({}, payload, { approvedBy:u.username, approvedAt:now() }));
+    } else if (p.action === 'addSpouse') {
+      approveDraftMemberIfNeeded(payload.husbandId, p.user, u.username);
+      approveDraftMemberIfNeeded(payload.wifeId, p.user, u.username);
+      if (!readAll('PASANGAN').some(s=>String(s.id)===String(payload.id))) appendRow('PASANGAN', payload);
+    } else if (p.action === 'addChild') {
+      approveDraftSpouseIfNeeded(payload.spouseId, p.user, u.username);
+      approveDraftMemberIfNeeded(payload.childId, p.user, u.username);
+      const exists = readAll('ANAK').some(c=>String(c.spouseId)===String(payload.spouseId) && String(c.childId)===String(payload.childId));
+      if (!exists) appendRow('ANAK', payload);
+    } else {
+      throw new Error('Jenis draf tidak disokong untuk pengesahan: ' + p.action);
+    }
     updateRow('PENDING', 'id', body.id, { status:'approved', approvedBy:u.username, approvedAt:now() });
     return { ok: true };
+    } finally {
+      lock.releaseLock();
+    }
   },
   reject(body) { const u = requireAuth(body, ['admin','master']); updateRow('PENDING', 'id', body.id, { status:'rejected', approvedBy:u.username, approvedAt:now() }); return { ok: true }; },
   setRole(body) {

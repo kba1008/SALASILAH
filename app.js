@@ -116,7 +116,9 @@ async function api(action, payload={}){
 
   if (!j.ok && j.error) {
     const err = new Error(j.error);
-    if (/sesi.*tamat|log masuk semula|tidak dibenarkan|akses peranan/i.test(j.error)) err.authExpired = true;
+    // Penolakan peranan bukan sesi tamat. Menandainya sebagai authExpired akan
+    // memadam sesi admin yang masih sah apabila sesuatu tindakan ditolak.
+    if (/sesi.*tamat|log masuk semula|tidak dibenarkan/i.test(j.error)) err.authExpired = true;
     throw err;
   }
   return j;
@@ -124,16 +126,18 @@ async function api(action, payload={}){
 
 async function flushQueue(){
   let q = STORE.queue; if(!q.length) return;
+  if (STORE.user && STORE.cred) await silentRelogin();
   const left = [];
   for(const item of q){
     try {
       await api(item.action, item.payload);
     } catch(err) {
-      if (err.network) left.push(item);
+      left.push(item);
+      if (!err.network) notify.warn("Perubahan luar talian belum dapat dihantar: " + (err.message || "ralat pelayan"), { ms:6000 });
     }
   }
   STORE.queue = left;
-  if(q.length && !left.length) notify.success("Penyegerakan luar talian selesai.");
+  if(q.length > left.length) notify.success("Penyegerakan luar talian selesai.");
 }
 window.addEventListener('online', flushQueue);
 navigator.serviceWorker?.addEventListener?.('message', e => { if(e.data?.type==='SYNC_NOW') flushQueue(); });
@@ -161,7 +165,9 @@ async function dispatchApi(action, payload) {
   try {
     return await api(action, payload);
   } catch (err) {
-    if (err.network && ['addMember','editMember','deleteMember','addSpouse','addChild','addNote','editNote','approve','reject'].includes(action)) {
+    // Kelulusan/penolakan tidak boleh dibaris-gilir secara luar talian kerana
+    // keputusan admin mesti dibuat terhadap rekod pending semasa di pelayan.
+    if (err.network && ['addMember','editMember','addSpouse','addChild','addNote','editNote'].includes(action)) {
       const q = STORE.queue; q.push({ action, payload, ts: Date.now() }); STORE.queue = q;
       notify.warn("Tiada internet — Perubahan telah disimpan dan akan disegerakkan kelak.", { ms: 6000 });
       return { ok: true, pending: true };
@@ -176,9 +182,9 @@ async function dispatchApi(action, payload) {
         catch (e2) { err.message = e2.message || err.message; }
       }
       if (action !== 'bootstrap') {
-        STORE.user = null; STORE.cred = null;
-        notify.error("Sesi anda telah tamat. Sila log masuk semula untuk meneruskan.", { ms: 6000 });
-        setTimeout(() => { try { loginForm(); } catch (_) { location.reload(); } }, 400);
+        // Kekalkan identiti/tempatan. Jangan paksa logout hanya kerana satu
+        // permintaan gagal; pengguna boleh cuba semula atau log masuk semula.
+        notify.error("Sesi tidak dapat disahkan. Sila cuba semula atau log masuk semula.", { ms: 6000 });
       }
     }
     throw new Error(err.message || err);
@@ -371,7 +377,13 @@ function getEditPendingMap(){
   (DATA.pending||[]).forEach(p => { if(p.action==='editMember' && p.payload && p.payload.id) map[String(p.payload.id)] = p; });
   return map;
 }
-function getRenderMembers(){ return DATA.members.concat(getDraftAdds()); }
+function getRenderMembers(){
+  const editMap = getEditPendingMap();
+  return DATA.members.concat(getDraftAdds()).map(m => {
+    const pending = editMap[String(m.id)];
+    return pending ? { ...m, ...pending.payload, _draft:true, _pending:pending } : m;
+  });
+}
 
 // Draf PASANGAN (addSpouse belum lulus) supaya pasangan baharu turut dipaparkan
 // dan anak draf boleh diletakkan di bawah pasangan tersebut.
@@ -481,11 +493,11 @@ function renderNodes(layout){
         ${badge}${draftBadge}
       </div>
     `;
-    if(isDraft){
-      el.addEventListener('click', e=>{ e.stopPropagation(); openDraftReview(m, pendingRec); });
-    } else {
-      el.addEventListener('click', e=>{ e.stopPropagation(); openMemberMenu(m); });
-    }
+    el.addEventListener('click', e=>{
+      e.stopPropagation();
+      if(isDraft && isAdmin) openDraftReview(m, pendingRec);
+      else openMemberMenu(m);
+    });
     frag.appendChild(el);
   });
   wrap.appendChild(frag);
