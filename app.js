@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbwQzmdT4T0v7ltKgs8cZNZnux21_FwMJjxxYSWQjl2Dz-OEJhhC1UnQos-Rf_J5R_id/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzvsE177XPFc3phhRCZfO0RXCljoHJeRC4qHvgc2hHhhBes_d9SnDKeFBZqCn3u7ZLl/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -69,6 +69,10 @@ window.addEventListener('unhandledrejection', (e) => { notify.error('Ralat: '+(e
 const STORE = {
   get user(){ try{return JSON.parse(localStorage.getItem('skg_user')||'null')}catch{return null} },
   set user(v){ v? localStorage.setItem('skg_user', JSON.stringify(v)) : localStorage.removeItem('skg_user') },
+  // Kelayakan log masuk disimpan supaya sesi boleh disegarkan secara senyap
+  // (silent re-login) tanpa pengguna ter-log keluar bila token lapuk.
+  get cred(){ try{return JSON.parse(localStorage.getItem('skg_cred')||'null')}catch{return null} },
+  set cred(v){ v? localStorage.setItem('skg_cred', JSON.stringify(v)) : localStorage.removeItem('skg_cred') },
   get cache(){ try{return JSON.parse(localStorage.getItem('skg_cache')||'{}')}catch{return {}} },
   set cache(v){ localStorage.setItem('skg_cache', JSON.stringify(v)) },
   get queue(){ try{return JSON.parse(localStorage.getItem('skg_queue')||'[]')}catch{return []} },
@@ -76,6 +80,7 @@ const STORE = {
   get theme(){ return localStorage.getItem('skg_theme') || 'royal' },
   set theme(v){ localStorage.setItem('skg_theme', v); document.body.dataset.theme = v }
 };
+
 document.body.dataset.theme = STORE.theme;
 
 const LOCAL_MODE = !API_URL || API_URL.includes('PASTE_DEPLOY_ID_DI_SINI');
@@ -133,6 +138,24 @@ async function flushQueue(){
 window.addEventListener('online', flushQueue);
 navigator.serviceWorker?.addEventListener?.('message', e => { if(e.data?.type==='SYNC_NOW') flushQueue(); });
 
+// Segarkan sesi secara senyap menggunakan kelayakan yang disimpan.
+// Mengembalikan true jika token baharu berjaya diperoleh.
+let _reloginInFlight = null;
+async function silentRelogin(){
+  const c = STORE.cred;
+  if(!c || !c.username || !c.password) return false;
+  if(_reloginInFlight) return _reloginInFlight;
+  _reloginInFlight = (async ()=>{
+    try{
+      const r = await api('login', { username:c.username, password:c.password });
+      STORE.user = { username:r.username, role:r.role, token:r.token, fullName:r.fullName, memberId:r.memberId, photo:r.photo };
+      return true;
+    }catch(_){ return false; }
+    finally{ _reloginInFlight = null; }
+  })();
+  return _reloginInFlight;
+}
+
 // Wrap API calls that can be queued offline
 async function dispatchApi(action, payload) {
   try {
@@ -143,14 +166,24 @@ async function dispatchApi(action, payload) {
       notify.warn("Tiada internet — Perubahan telah disimpan dan akan disegerakkan kelak.", { ms: 6000 });
       return { ok: true, pending: true };
     }
-    // Sesi tamat / token lapuk: bersihkan sesi & minta log masuk semula automatik.
-    if (err.authExpired && action !== 'login' && action !== 'bootstrap') {
-      STORE.user = null;
-      notify.error("Sesi anda telah tamat. Sila log masuk semula untuk meneruskan.", { ms: 6000 });
-      setTimeout(() => { try { loginForm(); } catch (_) { location.reload(); } }, 400);
+    // Token lapuk: cuba segarkan sesi secara senyap & ulang tindakan SEKALI.
+    // Hanya jika gagal sepenuhnya barulah minta log masuk semula — supaya
+    // pengguna (terutama master/admin) tidak ter-log keluar tanpa sebab.
+    if (err.authExpired && action !== 'login') {
+      const ok = await silentRelogin();
+      if (ok) {
+        try { return await api(action, payload); }
+        catch (e2) { err.message = e2.message || err.message; }
+      }
+      if (action !== 'bootstrap') {
+        STORE.user = null; STORE.cred = null;
+        notify.error("Sesi anda telah tamat. Sila log masuk semula untuk meneruskan.", { ms: 6000 });
+        setTimeout(() => { try { loginForm(); } catch (_) { location.reload(); } }, 400);
+      }
     }
     throw new Error(err.message || err);
   }
+
 }
 
 const TIPS = [
@@ -175,7 +208,7 @@ function loginForm(){
   openModal(`
     <div class="flex items-center justify-between mb-3">
       <div class="font-head text-2xl">Selamat Datang</div>
-      <div class="chip gold-edge">v2.0</div>
+      <div class="chip gold-edge">v2.1</div>
     </div>
     <div class="flex gap-2 mb-4">
       <button class="tab active" data-tab="login">Log Masuk</button>
@@ -230,6 +263,8 @@ async function doLogin(){
   try {
     const r = await dispatchApi('login', { username:u, password:p });
     STORE.user = { username:r.username, role:r.role, token:r.token, fullName:r.fullName, memberId:r.memberId, photo:r.photo };
+    STORE.cred = { username:u, password:p }; // untuk segar semula sesi automatik
+
     notify.success("Selamat datang, "+(r.fullName||u)+"!");
     closeModal(); await boot();
   } catch(e) { toast("Gagal log masuk: " + e.message); }
@@ -274,7 +309,7 @@ $('#btnAccount').onclick = ()=>{
     <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
   `);
   $('#acProfile').onclick = ()=>{ closeModal(); openProfile(); };
-  $('#acLogout').onclick = ()=>{ STORE.user=null; notify.success("Sesi tamat."); location.reload(); };
+  $('#acLogout').onclick = ()=>{ STORE.user=null; STORE.cred=null; notify.success("Sesi tamat."); location.reload(); };
 };
 
 $('#btnSettings').onclick = ()=>{
@@ -305,7 +340,12 @@ function applyRoleUI(){
 async function boot(){
   applyRoleUI();
   try {
-    const r = await api('bootstrap');
+    let r = await api('bootstrap');
+    // Token lapuk: server pulangkan viewer:null walaupun kita masih log masuk.
+    // Segarkan sesi secara senyap supaya pengguna tidak hilang status admin/master.
+    if (STORE.user && r?.data && !r.data.viewer) {
+      if (await silentRelogin()) r = await api('bootstrap');
+    }
     DATA = { ...DATA, ...r.data }; STORE.cache = DATA;
   } catch(e) {
     if (e.network) DATA = { ...DATA, ...(STORE.cache||{}) }; // fallback mode luartalian
@@ -315,6 +355,7 @@ async function boot(){
   setTimeout(()=>{ $('#splash').style.display='none'; clearInterval(tipTimer); }, 400);
   flushQueue();
 }
+
 
 // Draf ahli BAHARU (addMember belum lulus) yang belum wujud dalam DATA.members.
 // Server hanya hantar pending milik pengguna sendiri (untuk pengguna biasa) atau
@@ -1081,7 +1122,7 @@ function updatePendingBadge(){
   const b = $('#pendingBadge'); if(b){ b.style.display = n>0?'':'none'; b.textContent = n; }
 }
 
-async function refresh(){ try{ const r = await api('bootstrap'); DATA = { ...DATA, ...r.data }; STORE.cache = DATA; }catch(e){} renderAll(); updatePendingBadge(); }
+async function refresh(){ try{ let r = await api('bootstrap'); if (STORE.user && r?.data && !r.data.viewer) { if (await silentRelogin()) r = await api('bootstrap'); } DATA = { ...DATA, ...r.data }; STORE.cache = DATA; }catch(e){} renderAll(); updatePendingBadge(); }
 
 if('serviceWorker' in navigator){ window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 

@@ -46,7 +46,7 @@ function doPost(e) {
   }
 }
 function doGet() {
-  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '1.9' });
+  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '2.1' });
 }
 function json(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
@@ -187,7 +187,9 @@ function requireAuth(body, roles) {
     }
   }
   
-  const u = readAll('PENGGUNA').find(x => String(x.username) === String(body.username) && x.token && x.token === body.token);
+  // Sokong berbilang token (multi-peranti) — token disimpan dipisah dengan '|'.
+  // Ini mengelak pengguna ter-log keluar bila log masuk di peranti lain.
+  const u = readAll('PENGGUNA').find(x => String(x.username) === String(body.username) && x.token && String(x.token).split('|').indexOf(String(body.token)) >= 0);
   if (!u) throw new Error('Tidak dibenarkan — sila log masuk semula.');
   if (roles && roles.length && roles.indexOf(u.role) < 0) throw new Error('Akses peranan ditolak.');
   return u;
@@ -325,7 +327,10 @@ const HANDLERS = {
     }
     
     const token = randomToken();
-    updateRow('PENGGUNA', 'username', u.username, { token });
+    // Simpan token baharu tanpa membatalkan token peranti lain (had 5 terkini).
+    const prev = String(u.token||'').split('|').filter(Boolean);
+    prev.push(token);
+    updateRow('PENGGUNA', 'username', u.username, { token: prev.slice(-5).join('|') });
     return { ok: true, username: u.username, role: u.role, token, fullName: u.fullName, memberId: u.memberId, photo: u.photo };
   },
 
@@ -481,7 +486,9 @@ const HANDLERS = {
     const p = readAll('PENDING').find(x=>x.id===body.id);
     if (!p) throw new Error('Pending tidak dijumpai.');
     const payload = safeParse(p.payload);
-    const fakeBody = Object.assign({}, payload, { username: u.username, token: u.token });
+    // Guna kelayakan sebenar pemanggil (token tunggal yang sah), bukan u.token
+    // yang mungkin gabungan berbilang token — supaya requireAuth dalaman lulus.
+    const fakeBody = Object.assign({}, payload, { username: body.username, token: body.token });
     HANDLERS[p.action](fakeBody);
     updateRow('PENDING', 'id', body.id, { status:'approved', approvedBy:u.username, approvedAt:now() });
     return { ok: true };
