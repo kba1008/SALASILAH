@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyYx7I3Nh2EJrZ1cu5AEJk4eMn9HIafHow2JXwghaNhACwTEhdyvCjZQ7xplays8p8Y/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbySnlDlLMvubSyGg9zrQ6KbGpH76gM38-HRk4z_GqX1rH6HK_fGQPVGNkRRUwBg7unn/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1055,13 +1055,14 @@ function renderLinks(layout){
     const busY = jy < kyMin - 4 ? Math.max(jy + 18, kyMin - 24) : kyMin - 20;
     const isDraftGroup = kids.every(c=> c._draft);
     const cls = isDraftGroup ? 'draft-link' : '';
+    const grpAttr = `class="child-group ${cls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
     // Satu batang dari junction ke busbar
-    paths += `<path class="${cls}" d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
+    paths += `<path ${grpAttr} d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
     // Busbar mendatar merentangi semua anak (termasuk titik di bawah junction)
     const leftX = Math.min(jx, ...kxs);
     const rightX = Math.max(jx, ...kxs);
     if(rightX - leftX > 0.5){
-      paths += `<path class="${cls}" d="M ${leftX} ${busY} L ${rightX} ${busY}"/>`;
+      paths += `<path ${grpAttr} d="M ${leftX} ${busY} L ${rightX} ${busY}"/>`;
     }
     // Satu titik turun untuk setiap anak
     kids.forEach(c=>{
@@ -1086,49 +1087,97 @@ function renderLinks(layout){
     });
   }
   svg.innerHTML = paths + labels + handles;
-  if(isAdmin) wireJunctionHandles(svg);
+  if(isAdmin){
+    wireJunctionHandles(svg);
+    wireChildGroupReset(svg);
+  }
+}
+
+function wireChildGroupReset(svg){
+  svg.querySelectorAll('.child-group').forEach(p=>{
+    p.addEventListener('dblclick', async (e)=>{
+      e.stopPropagation(); e.preventDefault();
+      const sid = p.dataset.spouseid;
+      const sp = (DATA.spouses||[]).find(s=>String(s.id)===String(sid));
+      if(!sp) return;
+      sp.junctionDx = 0; sp.junctionDy = 0;
+      renderLinks(buildLayout());
+      try{ await dispatchApi('setJunction', { spouseId: sid, dx: 0, dy: 0 }); }
+      catch(err){ notify.warn('Reset junction tidak disimpan: ' + (err.message||err)); }
+    });
+  });
 }
 
 let _junctionDrag = null;
+let _junctionRAF = null;
 function wireJunctionHandles(svg){
   svg.querySelectorAll('.junction-handle').forEach(h=>{
     h.style.cursor = 'grab';
     h.addEventListener('pointerdown', (e)=>{
       e.stopPropagation(); e.preventDefault();
       const sid = h.dataset.spouseid;
-      const sp = getRenderSpouses().find(s=>String(s.id)===String(sid)); if(!sp) return;
+      const sp = (DATA.spouses||[]).find(s=>String(s.id)===String(sid)); if(!sp) return;
+      const layout = buildLayout();
+      const a = layout[sp.husbandId], b = layout[sp.wifeId];
+      if(!a || !b) return;
+      const ax = a.x + NODE_W/2, ay = a.y + NODE_H/2;
+      const bx = b.x + NODE_W/2, by = b.y + NODE_H/2;
+      const cx0 = (ax+bx)/2, cy0 = (ay+by)/2; // titik tengah garisan (offset 0,0)
       const scale = panzoomInstance ? panzoomInstance.getScale() : 1;
-      _junctionDrag = { sid, sx:e.clientX, sy:e.clientY, scale,
-        baseDx: Number(sp.junctionDx)||0, baseDy: Number(sp.junctionDy)||0, moved:false };
-      h.setPointerCapture(e.pointerId);
+      _junctionDrag = {
+        sid, sx:e.clientX, sy:e.clientY, scale,
+        baseDx: Number(sp.junctionDx)||0, baseDy: Number(sp.junctionDy)||0,
+        ax, ay, bx, by, cx0, cy0, moved:false,
+      };
       if(panzoomInstance) panzoomInstance.setOptions({ disablePan:true });
       h.style.cursor = 'grabbing';
+      document.body.style.cursor = 'grabbing';
     });
-    h.addEventListener('pointermove', (e)=>{
-      if(!_junctionDrag || _junctionDrag.sid !== h.dataset.spouseid) return;
-      const dx = (e.clientX - _junctionDrag.sx) / _junctionDrag.scale;
-      const dy = (e.clientY - _junctionDrag.sy) / _junctionDrag.scale;
-      if(Math.abs(dx)+Math.abs(dy) > 2) _junctionDrag.moved = true;
-      const sid = _junctionDrag.sid;
-      const sp = (DATA.spouses||[]).find(s=>String(s.id)===String(sid));
-      if(sp){ sp.junctionDx = _junctionDrag.baseDx + dx; sp.junctionDy = _junctionDrag.baseDy + dy; }
-      renderLinks(buildLayout());
-    });
-    const end = async (e)=>{
-      if(!_junctionDrag || _junctionDrag.sid !== h.dataset.spouseid) return;
-      const st = _junctionDrag; _junctionDrag = null;
-      if(panzoomInstance) panzoomInstance.setOptions({ disablePan:false });
-      h.style.cursor = 'grab';
-      if(!st.moved) return;
-      const sp = (DATA.spouses||[]).find(s=>String(s.id)===String(st.sid));
-      if(!sp) return;
-      try{ await dispatchApi('setJunction', { spouseId: st.sid, dx: Math.round(sp.junctionDx||0), dy: Math.round(sp.junctionDy||0) }); }
-      catch(err){ notify.warn('Junction tidak disimpan: ' + (err.message||err)); }
-    };
-    h.addEventListener('pointerup', end);
-    h.addEventListener('pointercancel', end);
   });
 }
+
+// Listener global — kekal aktif walaupun handle SVG di-render semula.
+window.addEventListener('pointermove', (e)=>{
+  if(!_junctionDrag) return;
+  const st = _junctionDrag;
+  const dxm = (e.clientX - st.sx) / st.scale;
+  const dym = (e.clientY - st.sy) / st.scale;
+  if(Math.abs(dxm)+Math.abs(dym) > 2) st.moved = true;
+  // Sasaran kursor dalam koordinat world.
+  const tx = st.cx0 + st.baseDx + dxm;
+  const ty = st.cy0 + st.baseDy + dym;
+  // Project ke atas segmen garisan pasangan A→B supaya sentiasa menyentuh garisan.
+  const vx = st.bx - st.ax, vy = st.by - st.ay;
+  const len2 = vx*vx + vy*vy || 1;
+  let t = ((tx - st.ax)*vx + (ty - st.ay)*vy) / len2;
+  if(t < 0) t = 0; else if(t > 1) t = 1;
+  const px = st.ax + vx*t, py = st.ay + vy*t;
+  const sp = (DATA.spouses||[]).find(s=>String(s.id)===String(st.sid));
+  if(!sp) return;
+  sp.junctionDx = px - st.cx0;
+  sp.junctionDy = py - st.cy0;
+  if(_junctionRAF) return;
+  _junctionRAF = requestAnimationFrame(()=>{
+    _junctionRAF = null;
+    if(_junctionDrag) renderLinks(buildLayout());
+  });
+});
+
+async function _endJunctionDrag(){
+  if(!_junctionDrag) return;
+  const st = _junctionDrag; _junctionDrag = null;
+  if(_junctionRAF){ cancelAnimationFrame(_junctionRAF); _junctionRAF = null; }
+  if(panzoomInstance) panzoomInstance.setOptions({ disablePan:false });
+  document.body.style.cursor = '';
+  renderLinks(buildLayout());
+  if(!st.moved) return;
+  const sp = (DATA.spouses||[]).find(s=>String(s.id)===String(st.sid));
+  if(!sp) return;
+  try{ await dispatchApi('setJunction', { spouseId: st.sid, dx: Math.round(sp.junctionDx||0), dy: Math.round(sp.junctionDy||0) }); }
+  catch(err){ notify.warn('Junction tidak disimpan: ' + (err.message||err)); }
+}
+window.addEventListener('pointerup', _endJunctionDrag);
+window.addEventListener('pointercancel', _endJunctionDrag);
 
 
 // Sembunyi node luar viewport untuk skala besar (1000+ kad)
