@@ -464,3 +464,53 @@ function testRegisterAndLogin() {
     Logger.log("❌ RALAT UJIAN KRITIKAL: " + e.message);
   }
 }
+
+
+/* =====================================================================
+   AUTORISASI PENUH — Jalankan SEKALI untuk kelulusan semua sekatan
+   Google Drive (akaun Kementerian / Delima).
+   Cara guna:
+     1) Editor → pilih fungsi `authorizeAll` → Run
+     2) Klik "Review Permissions" → pilih akaun Delima
+     3) Jika papar "Google hasn't verified", klik "Advanced" → "Go to ... (unsafe)"
+     4) Tekan "Allow" untuk semua skop yang diminta.
+   ===================================================================== */
+function authorizeAll() {
+  var report = [];
+
+  try {
+    var s = ss();
+    s.getName();
+    report.push('✅ Spreadsheet: ' + s.getName());
+    ensureSheets();
+    report.push('✅ Semua tab sheet sedia: ' + Object.keys(SHEETS).join(', '));
+  } catch(e) { report.push('⛔ Spreadsheet: ' + e.message); }
+
+  try {
+    DriveApp.getRootFolder().getName();
+    report.push('✅ Drive root access OK');
+    var f = getPhotoFolder();
+    report.push('✅ Folder foto: ' + f.getName() + ' (' + f.getId() + ')');
+    // Uji tulis & padam fail kecil
+    var test = f.createFile(Utilities.newBlob('OK', 'text/plain', 'skg_auth_test.txt'));
+    test.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    test.setTrashed(true);
+    report.push('✅ Uji tulis fail Drive OK (Delima approve berjaya)');
+  } catch(e) { report.push('⛔ Drive: ' + e.message); }
+
+  try {
+    UrlFetchApp.fetch('https://www.google.com/generate_204', { muteHttpExceptions:true });
+    report.push('✅ UrlFetch (Telegram dsb.) OK');
+  } catch(e) { report.push('⛔ UrlFetch: ' + e.message); }
+
+  try {
+    ScriptApp.getOAuthToken();
+    report.push('✅ OAuth token tersedia');
+  } catch(e) { report.push('⛔ OAuth: ' + e.message); }
+
+  var msg = report.join('\n');
+  Logger.log(msg);
+  try { SpreadsheetApp.getActive().toast('Autorisasi siap. Lihat log (View → Logs).'); } catch(_e) {}
+  return msg;
+}
+

@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbz-AgLGfoA55OvnXULYtAnbg1e6AqQmGJ38JX-CymaedAkgG2tfOTHsDEYr8EoN94br/execc";
+const API_URL = "https://script.google.com/macros/s/AKfycbz-AgLGfoA55OvnXULYtAnbg1e6AqQmGJ38JX-CymaedAkgG2tfOTHsDEYr8EoN94br/exec";
 
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
@@ -169,7 +169,7 @@ function loginForm(){
     <div class="field"><label>Nama pengguna</label><input id="lu" autocomplete="username"/></div>
     <div class="field"><label>Kata laluan</label><input id="lp" type="password" autocomplete="current-password" placeholder="••••••"/></div>
     <button class="btn gold-edge w-full justify-center mt-2" id="doLoginBtn">Log Masuk</button>
-    <p class="text-xs ink-soft mt-3">Log masuk menggunakan ID <b>admin</b> dan kata laluan <b>101010</b> (jika kali pertama).</p>
+    <p class="text-xs ink-soft mt-3">Sila log masuk menggunakan akaun yang telah didaftarkan dan diluluskan oleh pentadbir.</p>
   `;
   const renderReg = ()=> body.innerHTML = `
     <p class="text-xs ink-soft mb-2">Maklumat diperlukan untuk daftar dan akan disemak pentadbir.</p>
