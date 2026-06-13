@@ -729,7 +729,7 @@ const HANDLERS = {
         if (updateRow('SALASILAH', 'id', p.id, patch)) { updated++; return; }
         const rows = readAll('PENDING');
         rows.forEach(function(row){
-          if (row.action !== 'addMember' || !isPendingRecord(row)) return;
+          if ((row.action !== 'addMember' && row.action !== 'editMember') || !isPendingRecord(row)) return;
           if (!(u.role==='admin' || u.role==='master') && String(row.user)!==String(u.username)) return;
           const payload = safeParse(row.payload) || {};
           if (String(payload.id)!==String(p.id)) return;
@@ -737,6 +737,16 @@ const HANDLERS = {
           payload.posY = patch.posY;
           updateRow('PENDING', 'id', row.id, { payload:JSON.stringify(payload), ts:now() });
           updated++;
+        });
+        const rowsForSpouse = readAll('PENDING');
+        rowsForSpouse.forEach(function(row){
+          if (row.action !== 'addSpouse' || !isPendingRecord(row)) return;
+          if (!(u.role==='admin' || u.role==='master') && String(row.user)!==String(u.username)) return;
+          const payload = safeParse(row.payload) || {};
+          if (String(payload.id)!==String(j.id)) return;
+          payload.junctionDx = Number(j.dx) || 0;
+          payload.junctionDy = Number(j.dy) || 0;
+          updateRow('PENDING', 'id', row.id, { payload:JSON.stringify(payload), ts:now() });
         });
       } catch(_){}
     });

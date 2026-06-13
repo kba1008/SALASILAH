@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbz2Xxy4T79nFkVdsPYbuSmzfeworNJ2oAWOpbfoWG1IFkVjSDfqlpeHrOt9lTWwQH9e/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbySnlDlLMvubSyGg9zrQ6KbGpH76gM38-HRk4z_GqX1rH6HK_fGQPVGNkRRUwBg7unn/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -589,12 +589,12 @@ function findHeadForMember(id){
   return null;
 }
 
-// 3 tahap jarak profesional — setiap susunan tetap mengutamakan ruang subtree
-// sebenar supaya cabang besar tidak menghimpit cabang di sebelahnya.
+// 3 tahap jarak profesional — lebih lapang supaya kad draf, pasangan ramai
+// dan cabang besar tidak menghimpit atau menghasilkan garis bertindan.
 const AUTO_VARIANTS = [
-  { gapX: GAP_X,       gapY: GAP_Y,        branchGap: 44, label: 'kemas'  },
-  { gapX: GAP_X * 1.5, gapY: GAP_Y * 1.1,  branchGap: 70, label: 'lega'   },
-  { gapX: GAP_X * 2.1, gapY: GAP_Y * 1.25, branchGap: 96, label: 'galeri' },
+  { gapX: 96,  gapY: GAP_Y * 1.18, branchGap: 112, familyGap: 142, childGap: 82,  safeGap: 44, label: 'lapang' },
+  { gapX: 134, gapY: GAP_Y * 1.28, branchGap: 150, familyGap: 184, childGap: 104, safeGap: 58, label: 'lega'   },
+  { gapX: 178, gapY: GAP_Y * 1.42, branchGap: 192, familyGap: 232, childGap: 130, safeGap: 72, label: 'galeri' },
 ];
 
 // Kira tata letak HANYA untuk subtree Kepala Salasilah, mengikut variasi.
@@ -617,35 +617,56 @@ function autoLayoutSubtree(headId, variantIdx){
     .map(s=> s.husbandId===id ? s.wifeId : s.husbandId)
     .filter(Boolean);
 
-  const kidsOfUnit = unit => {
-    const out = [];
-    SPOUSES.filter(s=> unit.includes(s.husbandId) || unit.includes(s.wifeId)).forEach(s=>{
-      CHILDREN.filter(c=> c.spouseId===s.id).forEach(c=>{
-        if(byId[c.childId] && subtree.has(c.childId) && !out.includes(c.childId)) out.push(c.childId);
-      });
-    });
-    out.sort((a,b)=>{ const ka=_sortKey(byId[a]), kb=_sortKey(byId[b]); return ka[0]-kb[0] || (ka[1]<kb[1]?-1:1); });
-    return out;
-  };
+  const childrenForSpouse = sid => CHILDREN
+    .filter(c=> c.spouseId===sid && byId[c.childId] && subtree.has(c.childId))
+    .map(c=> c.childId)
+    .filter((id,i,a)=> a.indexOf(id)===i)
+    .sort((a,b)=>{ const ka=_sortKey(byId[a]), kb=_sortKey(byId[b]); return ka[0]-kb[0] || (ka[1]<kb[1]?-1:1); });
+
+  function familyGroupsForUnit(unit){
+    const seenKids = new Set();
+    return SPOUSES
+      .filter(s=> unit.includes(s.husbandId) || unit.includes(s.wifeId))
+      .map(s=>{
+        const ia = unit.indexOf(s.husbandId), ib = unit.indexOf(s.wifeId);
+        const order = Math.min(ia < 0 ? 999 : ia, ib < 0 ? 999 : ib);
+        return { spouse:s, order };
+      })
+      .sort((a,b)=> a.order-b.order || String(a.spouse.id).localeCompare(String(b.spouse.id)))
+      .map(item=>{
+        const kids = childrenForSpouse(item.spouse.id).filter(k=> !unit.includes(k) && !seenKids.has(k));
+        kids.forEach(k=>seenKids.add(k));
+        return { spouseId:item.spouse.id, kids };
+      })
+      .filter(g=>g.kids.length);
+  }
 
   function describeUnit(id){
     if(unitCache[id]) return unitCache[id];
     const partners = spousesOf(id).filter(p=> p && subtree.has(p));
     const unit = [id, ...partners.filter((p,i,a)=> a.indexOf(p)===i)];
-    const kids = kidsOfUnit(unit).filter(k=> !unit.includes(k));
-    return (unitCache[id] = { unit, kids });
+    const familyGroups = familyGroupsForUnit(unit);
+    const kids = familyGroups.flatMap(g=>g.kids);
+    return (unitCache[id] = { unit, familyGroups, kids });
   }
 
-  // Ukur dahulu setiap keturunan. Lebar ibu/bapa atau jumlah semua subtree
-  // anak (mana lebih besar) menjadi petak eksklusif cabang tersebut.
+  function sumWidths(widths, gap){
+    return widths.reduce((n,w)=>n+w,0) + Math.max(0, widths.length-1) * gap;
+  }
+
+  // Ukur dahulu setiap keturunan. Setiap keluarga pasangan mendapat ruang
+  // eksklusif, jadi cabang adik-beradik dan cabang pasangan berbeza tidak rapat.
   function measure(id){
     if(widthCache[id]) return widthCache[id];
     if(measuring.has(id)) return NODE_W;
     measuring.add(id);
     const desc = describeUnit(id);
     const unitWidth = desc.unit.length * NODE_W + Math.max(0, desc.unit.length-1) * cfg.gapX;
-    const childWidths = desc.kids.map(measure);
-    const childrenWidth = childWidths.reduce((n,w)=>n+w,0) + Math.max(0, childWidths.length-1) * cfg.branchGap;
+    const familyWidths = desc.familyGroups.map(g=>{
+      const childWidths = g.kids.map(measure);
+      return Math.max(NODE_W, sumWidths(childWidths, cfg.childGap));
+    });
+    const childrenWidth = sumWidths(familyWidths, cfg.familyGap);
     measuring.delete(id);
     return (widthCache[id] = Math.max(unitWidth, childrenWidth, NODE_W));
   }
@@ -663,12 +684,21 @@ function autoLayoutSubtree(headId, variantIdx){
       depthOf[memberId] = depth;
     });
 
-    const childWidths = desc.kids.map(measure);
-    const childrenWidth = childWidths.reduce((n,w)=>n+w,0) + Math.max(0, childWidths.length-1) * cfg.branchGap;
-    let childLeft = boxLeft + (boxWidth-childrenWidth)/2;
-    desc.kids.forEach((kid,i)=>{
-      placeUnit(kid, depth+1, childLeft);
-      childLeft += childWidths[i] + cfg.branchGap;
+    const familyWidths = desc.familyGroups.map(g=>{
+      const childWidths = g.kids.map(measure);
+      return Math.max(NODE_W, sumWidths(childWidths, cfg.childGap));
+    });
+    const childrenWidth = sumWidths(familyWidths, cfg.familyGap);
+    let familyLeft = boxLeft + (boxWidth-childrenWidth)/2;
+    desc.familyGroups.forEach((group,gi)=>{
+      const childWidths = group.kids.map(measure);
+      const childTotal = sumWidths(childWidths, cfg.childGap);
+      let childLeft = familyLeft + (familyWidths[gi]-childTotal)/2;
+      group.kids.forEach((kid,i)=>{
+        placeUnit(kid, depth+1, childLeft);
+        childLeft += childWidths[i] + cfg.childGap;
+      });
+      familyLeft += familyWidths[gi] + cfg.familyGap;
     });
   }
   placeUnit(headId, 0, 0);
@@ -686,6 +716,28 @@ function autoLayoutSubtree(headId, variantIdx){
     const dy = depthOf[id] * rowStep;
     placed[id] = { x: Math.round(anchorX + dx), y: Math.round(anchorY + dy) };
   });
+
+  // Benteng akhir anti-bertindih: setiap baris generasi dipisahkan semula
+  // mengikut lebar sebenar kad + ruang selamat, kemudian seluruh tree
+  // dianjak balik supaya Kepala Salasilah kekal pada titik asalnya.
+  const rows = {};
+  Object.keys(placed).forEach(id=>{ (rows[depthOf[id] || 0] = rows[depthOf[id] || 0] || []).push(id); });
+  Object.keys(rows).forEach(key=>{
+    const row = rows[key].sort((a,b)=> placed[a].x - placed[b].x);
+    const beforeLeft = Math.min(...row.map(id=>placed[id].x));
+    const beforeRight = Math.max(...row.map(id=>placed[id].x + NODE_W));
+    let nextLeft = -Infinity;
+    row.forEach(id=>{
+      if(placed[id].x < nextLeft) placed[id].x = nextLeft;
+      nextLeft = placed[id].x + NODE_W + cfg.safeGap;
+    });
+    const afterLeft = Math.min(...row.map(id=>placed[id].x));
+    const afterRight = Math.max(...row.map(id=>placed[id].x + NODE_W));
+    const centreShift = ((beforeLeft+beforeRight) - (afterLeft+afterRight)) / 2;
+    row.forEach(id=>{ placed[id].x = Math.round(placed[id].x + centreShift); });
+  });
+  const anchorShift = placed[headId] ? placed[headId].x - anchorX : 0;
+  if(anchorShift) Object.keys(placed).forEach(id=>{ placed[id].x = Math.round(placed[id].x - anchorShift); });
   return placed;
 }
 
@@ -713,12 +765,19 @@ async function autoArrangeHead(headId){
     return f ? { ...m, posX:f.x, posY:f.y } : m;
   });
   DATA.pending = (DATA.pending||[]).map(p=>{
-    if(p.action!=='addMember' || !p.payload || !p.payload.id) return p;
+    if((p.action!=='addMember' && p.action!=='editMember') || !p.payload || !p.payload.id) return p;
     const f = positions.find(x=> String(x.id)===String(p.payload.id));
     return f ? { ...p, payload:{ ...p.payload, posX:f.x, posY:f.y } } : p;
   });
   DATA.spouses = (DATA.spouses||[]).map(s=> arrangedIds.has(String(s.husbandId)) || arrangedIds.has(String(s.wifeId))
     ? { ...s, junctionDx:0, junctionDy:0 } : s);
+  DATA.pending = (DATA.pending||[]).map(p=>{
+    if(p.action!=='addSpouse' || !p.payload || !p.payload.id) return p;
+    const s = p.payload;
+    return arrangedIds.has(String(s.husbandId)) || arrangedIds.has(String(s.wifeId))
+      ? { ...p, payload:{ ...s, junctionDx:0, junctionDy:0 } }
+      : p;
+  });
   renderAll();
   notify.success(`Cabang disusun semula dengan kemas (${AUTO_VARIANTS[v].label} • ${positions.length} kad).`);
   try{ await dispatchApi('setPositions', { positions, junctions }); }
@@ -1133,7 +1192,14 @@ function renderLinks(layout){
     if(!SPOUSES.find(s=>s.id===c.spouseId)) return;
     (childrenBySpouse[c.spouseId] = childrenBySpouse[c.spouseId] || []).push(c);
   });
-  Object.keys(childrenBySpouse).forEach(sid=>{
+  const laneByRow = {};
+  Object.keys(childrenBySpouse).sort((sidA,sidB)=>{
+    const ax = Math.min(...childrenBySpouse[sidA].map(c=> layout[c.childId].x));
+    const bx = Math.min(...childrenBySpouse[sidB].map(c=> layout[c.childId].x));
+    const ay = Math.min(...childrenBySpouse[sidA].map(c=> layout[c.childId].y));
+    const by = Math.min(...childrenBySpouse[sidB].map(c=> layout[c.childId].y));
+    return ay-by || ax-bx;
+  }).forEach(sid=>{
     const sp = SPOUSES.find(s=>s.id===sid); if(!sp) return;
     const kids = childrenBySpouse[sid];
     const j = junctions[sp.id];
@@ -1141,15 +1207,18 @@ function renderLinks(layout){
     let jx, jy;
     if(j){ jx = j.x; jy = j.y; }
     else { jx = a && b ? (a.x+b.x)/2 + NODE_W/2 : (a||b).x + NODE_W/2; jy = (a||b).y + NODE_H; }
+    kids.sort((c1,c2)=> (layout[c1.childId].x-layout[c2.childId].x) || String(c1.childId).localeCompare(String(c2.childId)));
     const kxs = kids.map(c=> layout[c.childId].x + NODE_W/2);
     const kyMin = Math.min(...kids.map(c=> layout[c.childId].y));
-    const busY = jy < kyMin - 4 ? Math.max(jy + 18, kyMin - 24) : kyMin - 20;
+    const laneKey = String(Math.round(kyMin));
+    const lane = laneByRow[laneKey] || 0;
+    laneByRow[laneKey] = lane + 1;
+    const busY = jy < kyMin - 4 ? Math.max(jy + 30, kyMin - 34 - lane*18) : kyMin - 28 - lane*18;
     const isDraftGroup = kids.every(c=> c._draft);
     const cls = isDraftGroup ? 'draft-link' : '';
     const grpAttr = `class="child-group ${cls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
-    // Satu batang dari junction ke busbar
+    // Laluan siku 90°: turun dari junction ke busbar, kemudian busbar bercabang.
     paths += `<path ${grpAttr} d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
-    // Busbar mendatar merentangi semua anak (termasuk titik di bawah junction)
     const leftX = Math.min(jx, ...kxs);
     const rightX = Math.max(jx, ...kxs);
     if(rightX - leftX > 0.5){
