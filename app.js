@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbwar-oHgpnJoA2DARABQpUbtd79-Nkf-twQvpZSu17jnHhXcaU8lt1n2C5zHoJos3Id/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbx4CIOYCeUsaMq7-iDJ-y83vPmDQmt-9_fNxCDfJ1USD0JyLBD8g0eLdvf5NVf8llp8/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -985,50 +985,6 @@ async function autoPlaceNew(hints, options){
 
 
 let panzoomInstance = null;
-
-// ===== Nasab keturunan (mengikut syariat) =====
-// blood : semua zuriat biologi Kepala Salasilah (anak lelaki & perempuan sama mulia)
-// patri : rantaian NASAB — anak (L/P) yang bapanya berada dalam rantaian nasab.
-//         Anak perempuan TETAP dikira nasab keluarga ini; namun anak-anaknya
-//         mengambil nasab bapa mereka (suami), jadi rantaian diteruskan melalui bapa.
-//         Jika menantu berkahwin lain di luar keluarga, anak dari perkahwinan
-//         tersebut tidak masuk dalam set nasab keluarga ini.
-function computeNasabSets(){
-  const heads = getHeadRoots();
-  const SP = getRenderSpouses();
-  const CH = getRenderChildren();
-  const MEMBERS = getRenderMembers();
-  const byId = Object.fromEntries(MEMBERS.map(m=>[m.id,m]));
-  const blood = new Set();
-  const patri = new Set();
-  function dfsBlood(id){
-    if(blood.has(id)) return;
-    blood.add(id);
-    SP.filter(s=> s.husbandId===id || s.wifeId===id).forEach(s=>{
-      CH.filter(c=> c.spouseId===s.id).forEach(c=>{
-        if(byId[c.childId]) dfsBlood(c.childId);
-      });
-    });
-  }
-  function dfsPatri(id){
-    if(patri.has(id)) return;
-    patri.add(id);
-    const m = byId[id]; if(!m) return;
-    // Anak perempuan tetap dikira nasab (sudah ditambah di atas),
-    // tetapi rantaian ke cucu hanya diteruskan melalui bapa (lelaki).
-    if(m.gender==='F') return;
-    SP.filter(s=> s.husbandId===id).forEach(s=>{
-      CH.filter(c=> c.spouseId===s.id).forEach(c=>{
-        if(byId[c.childId]) dfsPatri(c.childId);
-      });
-    });
-  }
-  heads.forEach(h=>{
-    if(byId[h]){ dfsBlood(h); dfsPatri(h); }
-  });
-  return { blood, patri };
-}
-
 function renderAll(){
   const layout = buildLayout();
   renderNodes(layout);
@@ -1042,7 +998,6 @@ function renderNodes(layout){
   const editMap = getEditPendingMap();           // id ahli sedia ada -> cadangan edit
   const isAdmin = ['admin','master'].includes(STORE.user?.role);
   const headRoots = getHeadRoots();
-  const { blood: bloodSet, patri: patriSet } = computeNasabSets();
   const frag = document.createDocumentFragment();
   getRenderMembers().forEach(m=>{
     const pos = layout[m.id] || {x:200,y:200};
@@ -1055,13 +1010,7 @@ function renderNodes(layout){
     const isDraft = !!pendingRec;
     const draftCls = isDraft ? 'tag-draft' : '';
     const isHead = headRoots.has(m.id);
-    const isInLaw = !bloodSet.has(m.id) && bloodSet.size>0;
-    const isPatri = patriSet.has(m.id);
-    // Bukan Nasab: zuriat biologi keluarga ini tetapi bapanya bukan dari nasab
-    // (cth: anak perempuan keluarga × suami luar — anak ikut nasab suami).
-    const isNonNasab = bloodSet.has(m.id) && !patriSet.has(m.id) && !isHead;
-    const kinCls = bloodSet.size===0 ? '' : (isInLaw ? 'kin-inlaw' : (isPatri ? 'kin-patri' : (isNonNasab ? 'kin-nonnasab' : 'kin-blood')));
-    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls} ${isHead?'root-head':''} ${kinCls}`;
+    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls} ${isHead?'root-head':''}`;
     if(isHead) el.title = isAdmin ? 'Kepala Salasilah — seret untuk gerakkan keseluruhan family tree' : 'Kepala Salasilah';
     el.style.left = pos.x+'px'; el.style.top = pos.y+'px';
     el.dataset.id = m.id;
@@ -1073,11 +1022,6 @@ function renderNodes(layout){
     const draftBadge = isDraft
       ? `<span class="chip draft-chip">📝 ${pendingRec?.user===STORE.user?.username?'Draf Anda':'Sedang diedit: @'+escapeHtml(pendingRec?.user||'pengguna')}</span>`
       : '';
-    const kinChip = isInLaw
-      ? '<span class="chip kin-chip-inlaw">💞 Menantu</span>'
-      : (isPatri && !isHead
-          ? '<span class="chip kin-chip-patri">🩸 Nasab</span>'
-          : (isNonNasab ? '<span class="chip kin-chip-nonnasab" title="Ikut nasab bapa (luar keluarga)">🚫 Bukan Nasab</span>' : ''));
     el.innerHTML = `
       <div class="avatar">${m.photo?`<img src="${m.photo}" class="lb-img" onclick="event.stopPropagation();openImageLightbox('${m.photo}')" alt="${escapeHtml(m.name||'')}">`:(m.name||'?').slice(0,1).toUpperCase()}</div>
       <div class="nm">${escapeHtml(m.name||'Tanpa Nama')}</div>
@@ -1085,7 +1029,7 @@ function renderNodes(layout){
       <div class="row">
         <span class="chip" style="background:color-mix(in oklab, var(--gold) 25%, transparent); color:var(--ink)">${ic}</span>
         ${m.alive===false?'<span class="chip" style="background:#3334; color:var(--ink)">Allahyarham</span>':'<span class="chip" style="background:color-mix(in oklab, var(--ok) 30%, transparent); color:var(--ink)">Hidup</span>'}
-        ${isHead?'<span class="chip root-head-chip">👑 Kepala</span>':''}${kinChip}${badge}${draftBadge}
+        ${isHead?'<span class="chip root-head-chip">👑 Kepala</span>':''}${badge}${draftBadge}
       </div>
     `;
     el.addEventListener('click', e=>{
@@ -1301,7 +1245,6 @@ function renderLinks(layout){
   const SPOUSES = getRenderSpouses();
   const CHILDREN = getRenderChildren();
   const isAdmin = ['admin','master'].includes(STORE.user?.role);
-  const { patri: patriSet } = computeNasabSets();
   let paths = '';
   let labels = '';
   let handles = '';
@@ -1381,40 +1324,23 @@ function renderLinks(layout){
     const isDraftGroup = kids.every(c=> c._draft);
     const cls = isDraftGroup ? 'draft-link' : '';
     const grpAttr = `class="child-group ${cls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
-    // Klasifikasi nasab pasangan ini:
-    //  - groupPatri  : bapa dlm patriSet → nasab kuat (garis merah)
-    //  - nonNasabGrp : bapa BUKAN nasab keluarga ini, tetapi ibu nasab/blood
-    //                   → anak ikut nasab bapa (luar) → garis kelabu putus-putus
-    const fatherPatri = patriSet.has(sp.husbandId);
-    const fatherBlood = bloodSet.has(sp.husbandId);
-    const motherBlood = bloodSet.has(sp.wifeId);
-    const groupPatri = fatherPatri && kids.some(c=> patriSet.has(c.childId));
-    const nonNasabGrp = !fatherBlood && motherBlood; // bapa luar, ibu dari keluarga
-    let extra = '';
-    if(groupPatri) extra = ' nasab-patri';
-    else if(nonNasabGrp) extra = ' non-nasab';
-    const trunkCls = (cls + extra).trim();
-    const grpAttrPatri = `class="child-group ${trunkCls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
     // Laluan siku 90°: turun dari junction ke busbar, kemudian busbar bercabang.
     const trunkOffset = trunkLaneFor(jx, jy, busY);
     if(trunkOffset){
       const tx = jx + trunkOffset;
-      paths += `<path ${grpAttrPatri} d="M ${jx} ${jy} L ${tx} ${jy} L ${tx} ${busY} L ${jx} ${busY}"/>`;
+      paths += `<path ${grpAttr} d="M ${jx} ${jy} L ${tx} ${jy} L ${tx} ${busY} L ${jx} ${busY}"/>`;
     } else {
-      paths += `<path ${grpAttrPatri} d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
+      paths += `<path ${grpAttr} d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
     }
     if(rightX - leftX > 0.5){
-      paths += `<path ${grpAttrPatri} d="M ${leftX} ${busY} L ${rightX} ${busY}"/>`;
+      paths += `<path ${grpAttr} d="M ${leftX} ${busY} L ${rightX} ${busY}"/>`;
     }
     // Satu titik turun untuk setiap anak
     kids.forEach(c=>{
       const k = layout[c.childId];
       const kx = k.x + NODE_W/2;
-      const childPatri = fatherPatri && patriSet.has(c.childId);
-      const childNon = nonNasabGrp; // anak dari pasangan ini = bukan nasab
-      const ce = childPatri ? 'nasab-patri' : (childNon ? 'non-nasab' : '');
-      const ccls = (c._draft ? 'draft-link ' : '') + ce;
-      paths += `<path class="${ccls.trim()}" d="M ${kx} ${busY} L ${kx} ${k.y}"/>`;
+      const ccls = c._draft ? 'draft-link' : '';
+      paths += `<path class="${ccls}" d="M ${kx} ${busY} L ${kx} ${k.y}"/>`;
       const dad = byId[sp.husbandId], mom = byId[sp.wifeId];
       const dn = (dad?.name||'?').split(' ')[0];
       const mn = (mom?.name||'?').split(' ')[0];

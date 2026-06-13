@@ -358,41 +358,6 @@
     .spinner { width:34px; height:34px; border-radius:50%; border:3px solid color-mix(in oklab, var(--gold) 40%, transparent); border-top-color:var(--gold); animation:spin 1s linear infinite }
     @keyframes spin { to { transform:rotate(360deg) } }
 
-
-    /* ===== Nasab keturunan & Menantu ===== */
-    .node.kin-blood { /* anak kandung — kekal warna asal */ }
-    .node.kin-patri {
-      background:linear-gradient(180deg, color-mix(in oklab, #ffb4a8 22%, var(--card)), color-mix(in oklab, #ff7a6b 14%, var(--card-2)));
-      border-color:color-mix(in oklab, #c62828 70%, transparent);
-    }
-    .node.kin-inlaw {
-      background:linear-gradient(180deg, color-mix(in oklab, #9ec5ff 22%, var(--card)), color-mix(in oklab, #6ea8ff 14%, var(--card-2)));
-      border-color:color-mix(in oklab, #2a64c8 55%, transparent);
-    }
-    .node.kin-nonnasab {
-      background:linear-gradient(180deg, color-mix(in oklab, #b8b8b8 26%, var(--card)), color-mix(in oklab, #7a7a7a 16%, var(--card-2)));
-      border-color:color-mix(in oklab, #6b6b6b 60%, transparent);
-      opacity:.92;
-    }
-    .chip.kin-chip-inlaw { background:linear-gradient(180deg,#9ec5ff,#3a78d8); color:#0b1a3a; font-weight:700; }
-    .chip.kin-chip-patri { background:linear-gradient(180deg,#ffb4a8,#c62828); color:#fff; font-weight:700; }
-    .chip.kin-chip-nonnasab { background:linear-gradient(180deg,#d6d6d6,#6f6f6f); color:#1a1a1a; font-weight:700; }
-    /* Garis nasab patrilineal — merah terang & lebih tebal */
-    svg.links path.nasab-patri {
-      stroke:#ff1f2e !important;
-      stroke-width:3.2 !important;
-      filter: drop-shadow(0 0 6px rgba(255,31,46,.55)) drop-shadow(0 2px 0 rgba(0,0,0,.25)) !important;
-    }
-    svg.links path.nasab-patri.draft-link { stroke:#ff8a8a !important; }
-    /* Garis BUKAN nasab — kelabu putus-putus (cth: ibu blood × bapa luar) */
-    svg.links path.non-nasab {
-      stroke:#8a8a8a !important;
-      stroke-width:2 !important;
-      stroke-dasharray:6 6 !important;
-      opacity:.75 !important;
-      filter:none !important;
-    }
-
     .node.match { box-shadow:0 0 0 3px var(--accent), 0 22px 40px -14px var(--shadow); animation:pulse 1.2s ease-in-out infinite alternate; }
     @keyframes pulse { to { box-shadow:0 0 0 6px color-mix(in oklab, var(--accent) 60%, transparent), 0 22px 40px -14px var(--shadow); } }
 
