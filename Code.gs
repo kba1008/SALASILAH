@@ -63,19 +63,37 @@ function sheet(name) {
     sh = s.insertSheet(name);
     sh.appendRow(SHEETS[name]);
     sh.setFrozenRows(1);
-  }
-  if (sh.getLastRow() === 0) {
-    sh.appendRow(SHEETS[name]);
-    sh.setFrozenRows(1);
+    return sh;
   }
   const expected = SHEETS[name];
-  const current = sh.getRange(1,1,1,Math.max(expected.length, sh.getLastColumn())).getValues()[0];
-  let needWrite = false;
-  for(let i=0; i<expected.length; i++) {
-    if(current[i] !== expected[i]) { needWrite = true; break; }
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1,1,1,expected.length).setValues([expected]);
+    sh.setFrozenRows(1);
+    return sh;
+  }
+  // Sentiasa selaras header dengan definisi SHEETS — tiada rujukan no baris/kolum tetap.
+  const lastCol = Math.max(expected.length, sh.getLastColumn());
+  const current = sh.getRange(1,1,1,lastCol).getValues()[0];
+  let needWrite = current.length < expected.length;
+  for(let i=0; i<expected.length && !needWrite; i++) {
+    if(current[i] !== expected[i]) needWrite = true;
   }
   if(needWrite) {
-    sh.getRange(1,1,1,expected.length).setValues([expected]);
+    // Pelihara data sedia ada: petakan mengikut nama header lama → baharu.
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) {
+      const data = sh.getRange(2,1,lastRow-1,lastCol).getValues();
+      const oldHdr = current;
+      const remapped = data.map(row => expected.map(h => {
+        const j = oldHdr.indexOf(h);
+        return j >= 0 ? row[j] : '';
+      }));
+      sh.clear();
+      sh.getRange(1,1,1,expected.length).setValues([expected]);
+      sh.getRange(2,1,remapped.length,expected.length).setValues(remapped);
+    } else {
+      sh.getRange(1,1,1,expected.length).setValues([expected]);
+    }
     sh.setFrozenRows(1);
   }
   return sh;
@@ -191,6 +209,33 @@ function setupSheets() {
   DriveApp.getRootFolder(); // Meminta kebenaran awal Google Drive
   Logger.log('✅ Semua sheet sedia.');
   return { ok: true, message: 'Google Sheets & Kebenaran sedia.', sheets: Object.keys(SHEETS) };
+}
+
+/**
+ * resetSheets() — PADAM SEMUA DATA dalam setiap sheet dan tulis semula
+ * header mengikut definisi `SHEETS` di atas. Akaun PENGGUNA admin/master
+ * akan dikekalkan supaya anda tidak terkunci dari sistem.
+ *
+ * CARA GUNA: Apps Script → pilih fungsi `resetSheets` → Run.
+ * AMARAN: Tindakan ini tidak boleh dibatalkan. Buat salinan sheet dahulu
+ * jika perlu.
+ */
+function resetSheets() {
+  if (!SHEET_ID || SHEET_ID.includes('PASTE_')) throw new Error('SHEET_ID belum ditetapkan dalam Code.gs');
+  const s = ss();
+  const keepUsers = readAll('PENGGUNA').filter(u => u.role === 'admin' || u.role === 'master');
+  Object.keys(SHEETS).forEach(name => {
+    let sh = s.getSheetByName(name);
+    if (!sh) sh = s.insertSheet(name);
+    sh.clear();
+    const hdr = SHEETS[name];
+    sh.getRange(1,1,1,hdr.length).setValues([hdr]);
+    sh.setFrozenRows(1);
+  });
+  // Pulangkan akaun admin/master ke PENGGUNA
+  keepUsers.forEach(u => appendRow('PENGGUNA', u));
+  Logger.log('✅ Semua sheet telah dipadam & dibina semula. ' + keepUsers.length + ' akaun admin dikekalkan.');
+  return { ok: true, message: 'Sheet dibina semula. Header diselaras dengan definisi SHEETS.', kept: keepUsers.length };
 }
 
 function getPhotoFolder() {
