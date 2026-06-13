@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbx3CH2DfMIq6iv61SojuboWv42_56jsGSqd_-RPsKW45x6MF7CvTrwujNt2kxQRx41W/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbySnlDlLMvubSyGg9zrQ6KbGpH76gM38-HRk4z_GqX1rH6HK_fGQPVGNkRRUwBg7unn/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1033,24 +1033,48 @@ function renderLinks(layout){
     const dy = Number(s.junctionDy) || 0;
     junctions[s.id] = { x: cx + dx, y: cy + dy };
   });
+  // Kumpulkan anak mengikut pasangan supaya hanya SATU batang turun dari
+  // garisan putus-putus pasangan ke busbar, kemudian busbar bercabang ke
+  // setiap anak. Ini elak garisan bertindih dari junction.
+  const childrenBySpouse = {};
   CHILDREN.forEach(c=>{
-    const sp = SPOUSES.find(s=>s.id===c.spouseId); if(!sp) return;
+    if(!layout[c.childId]) return;
+    if(!SPOUSES.find(s=>s.id===c.spouseId)) return;
+    (childrenBySpouse[c.spouseId] = childrenBySpouse[c.spouseId] || []).push(c);
+  });
+  Object.keys(childrenBySpouse).forEach(sid=>{
+    const sp = SPOUSES.find(s=>s.id===sid); if(!sp) return;
+    const kids = childrenBySpouse[sid];
     const j = junctions[sp.id];
-    const a = layout[sp.husbandId], b = layout[sp.wifeId], k = layout[c.childId];
-    if(!k) return;
+    const a = layout[sp.husbandId], b = layout[sp.wifeId];
     let jx, jy;
     if(j){ jx = j.x; jy = j.y; }
     else { jx = a && b ? (a.x+b.x)/2 + NODE_W/2 : (a||b).x + NODE_W/2; jy = (a||b).y + NODE_H; }
-    const kx = k.x + NODE_W/2;
-    // Busbar pada paras junction; jika junction di atas anak guna jy, jika tidak turun dulu.
-    const busY = jy < k.y - 4 ? jy : k.y - 20;
-    paths += `<path class="${c._draft?'draft-link':''}" d="M ${jx} ${jy} L ${jx} ${busY} L ${kx} ${busY} L ${kx} ${k.y}"/>`;
-    // Label kecil maklumat ibu/bapa pada cabang (untuk poligami / >1 perkahwinan)
-    const dad = byId[sp.husbandId], mom = byId[sp.wifeId];
-    const dn = (dad?.name||'?').split(' ')[0];
-    const mn = (mom?.name||'?').split(' ')[0];
-    const lblY = busY - 6;
-    labels += `<g class="branch-lbl"><rect x="${kx-58}" y="${lblY-11}" width="116" height="14" rx="6"/><text x="${kx}" y="${lblY}" text-anchor="middle">${escapeHtml(dn)} × ${escapeHtml(mn)}</text></g>`;
+    const kxs = kids.map(c=> layout[c.childId].x + NODE_W/2);
+    const kyMin = Math.min(...kids.map(c=> layout[c.childId].y));
+    const busY = jy < kyMin - 4 ? Math.max(jy + 18, kyMin - 24) : kyMin - 20;
+    const isDraftGroup = kids.every(c=> c._draft);
+    const cls = isDraftGroup ? 'draft-link' : '';
+    // Satu batang dari junction ke busbar
+    paths += `<path class="${cls}" d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
+    // Busbar mendatar merentangi semua anak (termasuk titik di bawah junction)
+    const leftX = Math.min(jx, ...kxs);
+    const rightX = Math.max(jx, ...kxs);
+    if(rightX - leftX > 0.5){
+      paths += `<path class="${cls}" d="M ${leftX} ${busY} L ${rightX} ${busY}"/>`;
+    }
+    // Satu titik turun untuk setiap anak
+    kids.forEach(c=>{
+      const k = layout[c.childId];
+      const kx = k.x + NODE_W/2;
+      const ccls = c._draft ? 'draft-link' : '';
+      paths += `<path class="${ccls}" d="M ${kx} ${busY} L ${kx} ${k.y}"/>`;
+      const dad = byId[sp.husbandId], mom = byId[sp.wifeId];
+      const dn = (dad?.name||'?').split(' ')[0];
+      const mn = (mom?.name||'?').split(' ')[0];
+      const lblY = busY - 6;
+      labels += `<g class="branch-lbl"><rect x="${kx-58}" y="${lblY-11}" width="116" height="14" rx="6"/><text x="${kx}" y="${lblY}" text-anchor="middle">${escapeHtml(dn)} × ${escapeHtml(mn)}</text></g>`;
+    });
   });
   // Pemegang junction — hanya admin & jika pasangan punya anak.
   if(isAdmin){
@@ -1383,7 +1407,7 @@ function spouseForm(m){
     const pick = $('#sp_pick').value;
     const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:upperName($('#sp_name').value), gender:$('#sp_g').value, alive:true }, spouseId: uid(), reason:$('#sp_reason')?.value.trim()||'' };
     if(!pick && !payload.newPartner.name) return toast("Isi maklumat pasangan.");
-    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh(); if(!r.pending) await autoPlaceNew([m.id, pick || payload.newPartner?.id]); }catch(e){ toast(e.message); }
+    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh(); await autoPlaceNew([m.id, pick || payload.newPartner?.id]); }catch(e){ toast(e.message); }
   };
 }
 
@@ -1409,7 +1433,7 @@ function childForm(m){
     const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:upperName($('#ch_name').value), gender:$('#ch_g').value, alive:true }, reason:$('#ch_reason')?.value.trim()||'' };
     payload.newChild.id = payload.childId;
     if(!payload.newChild.name) return toast("Nama anak wajib.");
-    try{ const r = await dispatchApi('addChild', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya."); } closeModal(); await refresh(); if(!r.pending) await autoPlaceNew(); }catch(e){ toast(e.message); }
+    try{ const r = await dispatchApi('addChild', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya."); } closeModal(); await refresh(); await autoPlaceNew(); }catch(e){ toast(e.message); }
   };
 }
 
