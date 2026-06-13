@@ -4,7 +4,15 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycby11XrFoUJsjmpiDaZDU1uWGWD_AtrXfXqxkWnk4qNAlSp8KLmQgSON1Zg_CP7nQABX/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzvsE177XPFc3phhRCZfO0RXCljoHJeRC4qHvgc2hHhhBes_d9SnDKeFBZqCn3u7ZLl/exec";
+
+// 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
+const ADMIN_PHONE = "01110661077";
+const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
+function adminContactMsg(prefix){
+  return (prefix || "📝 Disimpan sebagai DRAF.") +
+    " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
+}
 
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
@@ -101,7 +109,11 @@ async function api(action, payload={}){
     throw { network: true, message: "Sistem gagal diproses. Pastikan Web App anda di-deploy sebagai 'Execute as: Me' dan 'Who has access: Anyone'." };
   }
 
-  if (!j.ok && j.error) throw new Error(j.error);
+  if (!j.ok && j.error) {
+    const err = new Error(j.error);
+    if (/sesi.*tamat|log masuk semula|tidak dibenarkan|akses peranan/i.test(j.error)) err.authExpired = true;
+    throw err;
+  }
   return j;
 }
 
@@ -131,6 +143,12 @@ async function dispatchApi(action, payload) {
       notify.warn("Tiada internet — Perubahan telah disimpan dan akan disegerakkan kelak.", { ms: 6000 });
       return { ok: true, pending: true };
     }
+    // Sesi tamat / token lapuk: bersihkan sesi & minta log masuk semula automatik.
+    if (err.authExpired && action !== 'login' && action !== 'bootstrap') {
+      STORE.user = null;
+      notify.error("Sesi anda telah tamat. Sila log masuk semula untuk meneruskan.", { ms: 6000 });
+      setTimeout(() => { try { loginForm(); } catch (_) { location.reload(); } }, 400);
+    }
     throw new Error(err.message || err);
   }
 }
@@ -157,7 +175,7 @@ function loginForm(){
   openModal(`
     <div class="flex items-center justify-between mb-3">
       <div class="font-head text-2xl">Selamat Datang</div>
-      <div class="chip gold-edge">v1.9</div>
+      <div class="chip gold-edge">v2.0</div>
     </div>
     <div class="flex gap-2 mb-4">
       <button class="tab active" data-tab="login">Log Masuk</button>
@@ -314,26 +332,47 @@ function getEditPendingMap(){
 }
 function getRenderMembers(){ return DATA.members.concat(getDraftAdds()); }
 
+// Draf PASANGAN (addSpouse belum lulus) supaya pasangan baharu turut dipaparkan
+// dan anak draf boleh diletakkan di bawah pasangan tersebut.
+function getDraftSpouses(){
+  return (DATA.pending||[])
+    .filter(p => p.action==='addSpouse' && p.payload && p.payload.id &&
+      !(DATA.spouses||[]).find(s=>String(s.id)===String(p.payload.id)))
+    .map(p => ({ ...p.payload, _draft:true }));
+}
+// Draf hubungan ANAK (addChild belum lulus) supaya anak draf duduk di bawah
+// pasangan ibu/bapa, bukan terapung sebagai akar berasingan.
+function getDraftChildLinks(){
+  return (DATA.pending||[])
+    .filter(p => p.action==='addChild' && p.payload && p.payload.childId && p.payload.spouseId &&
+      !(DATA.children||[]).find(c=>String(c.childId)===String(p.payload.childId) && String(c.spouseId)===String(p.payload.spouseId)))
+    .map(p => ({ ...p.payload, _draft:true }));
+}
+function getRenderSpouses(){ return (DATA.spouses||[]).concat(getDraftSpouses()); }
+function getRenderChildren(){ return (DATA.children||[]).concat(getDraftChildLinks()); }
+
 function buildLayout(){
   const MEMBERS = getRenderMembers();
+  const SPOUSES = getRenderSpouses();
+  const CHILDREN = getRenderChildren();
   const byId = Object.fromEntries(MEMBERS.map(m=>[m.id, m]));
   const childMap = {};
-  DATA.children.forEach(c=>{
-    const sp = DATA.spouses.find(s=>s.id===c.spouseId);
+  CHILDREN.forEach(c=>{
+    const sp = SPOUSES.find(s=>s.id===c.spouseId);
     if(!sp) return;
     [sp.husbandId, sp.wifeId].forEach(pid=>{
       if(pid) (childMap[pid] ||= []).push(c.childId);
     });
   });
   const placed = {};
-  const roots = MEMBERS.filter(m => !DATA.children.find(c=>c.childId===m.id));
+  const roots = MEMBERS.filter(m => !CHILDREN.find(c=>c.childId===m.id));
   let cursorX = 200;
   const baseY = 220;
 
   function place(memberId, depth, startX){
     if(placed[memberId]) return placed[memberId].x + NODE_W;
     const m = byId[memberId]; if(!m) return startX;
-    const spouseRecs = DATA.spouses.filter(s=>s.husbandId===memberId || s.wifeId===memberId);
+    const spouseRecs = SPOUSES.filter(s=>s.husbandId===memberId || s.wifeId===memberId);
     const partners = spouseRecs.map(s => s.husbandId===memberId ? s.wifeId : s.husbandId).filter(Boolean).map(id=>byId[id]).filter(Boolean);
     const kids = Array.from(new Set((childMap[memberId]||[])));
     let x = startX;
@@ -488,22 +527,24 @@ function openDraftReview(m, p){
 
 function renderLinks(layout){
   const svg = $('#links');
-  const byId = Object.fromEntries(DATA.members.map(m=>[m.id, m]));
+  const byId = Object.fromEntries(getRenderMembers().map(m=>[m.id, m]));
+  const SPOUSES = getRenderSpouses();
+  const CHILDREN = getRenderChildren();
   let paths = '';
   let labels = '';
-  DATA.spouses.forEach(s=>{
+  SPOUSES.forEach(s=>{
     const a = layout[s.husbandId], b = layout[s.wifeId];
     if(!a || !b) return;
-    paths += `<path class="spouse" d="M ${a.x + NODE_W/2} ${a.y + NODE_H/2} L ${b.x + NODE_W/2} ${b.y + NODE_H/2}"/>`;
+    paths += `<path class="spouse${s._draft?' draft-link':''}" d="M ${a.x + NODE_W/2} ${a.y + NODE_H/2} L ${b.x + NODE_W/2} ${b.y + NODE_H/2}"/>`;
   });
-  DATA.children.forEach(c=>{
-    const sp = DATA.spouses.find(s=>s.id===c.spouseId); if(!sp) return;
+  CHILDREN.forEach(c=>{
+    const sp = SPOUSES.find(s=>s.id===c.spouseId); if(!sp) return;
     const a = layout[sp.husbandId], b = layout[sp.wifeId], k = layout[c.childId];
     if(!k) return;
     const px = a && b ? (a.x+b.x)/2 + NODE_W/2 : (a||b).x + NODE_W/2;
     const py = (a||b).y + NODE_H;
     const my = (py+k.y)/2, kx = k.x + NODE_W/2;
-    paths += `<path d="M ${px} ${py} L ${px} ${my} L ${kx} ${my} L ${kx} ${k.y}"/>`;
+    paths += `<path class="${c._draft?'draft-link':''}" d="M ${px} ${py} L ${px} ${my} L ${kx} ${my} L ${kx} ${k.y}"/>`;
     // Label kecil maklumat ibu/bapa pada cabang (untuk poligami / >1 perkahwinan)
     const dad = byId[sp.husbandId], mom = byId[sp.wifeId];
     const dn = (dad?.name||'?').split(' ')[0];
@@ -732,12 +773,12 @@ function memberForm(m){
       payload.photoB64 = dataUrl.split(',')[1];
       payload.photoMime = 'image/jpeg';
     }
-    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); notify[r.pending?'warn':'success'](r.pending?'📝 Disimpan sebagai DRAF. Menunggu kelulusan pentadbir.':'Berjaya.'); closeModal(); await refresh(); }catch(e){ toast("Gagal: "+e.message); }
+    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success('Berjaya.'); } closeModal(); await refresh(); }catch(e){ toast("Gagal: "+e.message); }
   };
 }
 
 function spouseForm(m){
-  const others = DATA.members.filter(x=>x.id!==m.id && x.gender!==m.gender);
+  const others = getRenderMembers().filter(x=>x.id!==m.id && x.gender!==m.gender && !x._draft);
   openModal(`
     <div class="font-head text-2xl mb-3">Tambah Pasangan</div>
     <div class="field"><label>Pilih ahli sedia ada</label>
@@ -756,17 +797,20 @@ function spouseForm(m){
     const pick = $('#sp_pick').value;
     const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:upperName($('#sp_name').value), gender:$('#sp_g').value, alive:true }, spouseId: uid() };
     if(!pick && !payload.newPartner.name) return toast("Isi maklumat pasangan.");
-    try{ await dispatchApi('addSpouse', payload); notify.success("Selesai."); closeModal(); await refresh(); }catch(e){ toast(e.message); }
+    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh(); }catch(e){ toast(e.message); }
   };
 }
 
 function childForm(m){
-  const couples = DATA.spouses.filter(s=>s.husbandId===m.id || s.wifeId===m.id);
+  const RMEMBERS = getRenderMembers();
+  const findM = (id)=> RMEMBERS.find(x=>x.id===id);
+  // Termasuk pasangan draf supaya anak boleh terus ditambah di bawah pasangan tersebut.
+  const couples = getRenderSpouses().filter(s=>s.husbandId===m.id || s.wifeId===m.id);
   if(!couples.length) return toast("Sila daftarkan pasangan terlebih dahulu.");
   openModal(`
     <div class="font-head text-2xl mb-3">Tambah Anak</div>
     <div class="field"><label>Dari pasangan</label>
-      <select id="ch_couple">${couples.map(c=>{const a=DATA.members.find(x=>x.id===c.husbandId),b=DATA.members.find(x=>x.id===c.wifeId);return `<option value="${c.id}">${escapeHtml(a?.name||'?')} & ${escapeHtml(b?.name||'?')}</option>`;}).join('')}</select>
+      <select id="ch_couple">${couples.map(c=>{const a=findM(c.husbandId),b=findM(c.wifeId);return `<option value="${c.id}">${escapeHtml(a?.name||'?')} & ${escapeHtml(b?.name||'?')}${c._draft?' (draf)':''}</option>`;}).join('')}</select>
     </div>
     <div class="grid grid-cols-2 gap-2">
       <div class="field sm:col-span-2"><label>Nama Anak Baru</label><input id="ch_name"/></div>
@@ -778,7 +822,7 @@ function childForm(m){
     const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:upperName($('#ch_name').value), gender:$('#ch_g').value, alive:true } };
     payload.newChild.id = payload.childId;
     if(!payload.newChild.name) return toast("Nama anak wajib.");
-    try{ await dispatchApi('addChild', payload); notify.success("Berjaya."); closeModal(); await refresh(); }catch(e){ toast(e.message); }
+    try{ const r = await dispatchApi('addChild', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya."); } closeModal(); await refresh(); }catch(e){ toast(e.message); }
   };
 }
 

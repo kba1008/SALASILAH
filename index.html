@@ -203,6 +203,8 @@
     svg.links { position:absolute; inset:0; width:100%; height:100%; pointer-events:none }
     svg.links path { stroke:var(--line); stroke-width:2.2; fill:none; filter: drop-shadow(0 2px 0 color-mix(in oklab, var(--shadow) 35%, transparent)); }
     svg.links path.spouse { stroke-dasharray:6 5; stroke:var(--gold); }
+    /* Hubungan DRAF (belum disahkan): garisan kelabu putus-putus */
+    svg.links path.draft-link { stroke:#9a9a9a !important; stroke-dasharray:4 5; opacity:.8; filter:none; }
     /* Label kecil pada cabang anak (ibu × bapa) */
     svg.links .branch-lbl rect {
       fill: var(--card);
