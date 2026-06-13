@@ -358,6 +358,7 @@ function applyRoleUI(){
   const isAdmin = !!u && (u.role==='admin' || u.role==='master');
   $('#btnAdmin').style.display = isAdmin ? '' : 'none';
   $('#btnAddNote').style.display = isAdmin ? '' : 'none';
+  $('#btnAutoTree').style.display = isAdmin ? '' : 'none';
 }
 
 async function boot(){
@@ -434,54 +435,154 @@ function getDraftChildLinks(){
 function getRenderSpouses(){ return (DATA.spouses||[]).concat(getDraftSpouses()); }
 function getRenderChildren(){ return (DATA.children||[]).concat(getDraftChildLinks()); }
 
-function buildLayout(){
-  const MEMBERS = getRenderMembers();
-  const SPOUSES = getRenderSpouses();
+// ===================================================================
+// AUTO LAYOUT — Susunan salasilah kemas (tidy-tree)
+// Mengira kedudukan setiap kad secara automatik berdasarkan generasi
+// (kedalaman) dan menengahkan ibu/bapa di atas anak-anak. Pasangan
+// diletak bersebelahan, anak digantung di bawah pasangan.
+// ===================================================================
+const COL_STEP = NODE_W + GAP_X;   // jarak melintang antara lajur
+const ROW_STEP = NODE_H + GAP_Y;   // jarak menegak antara generasi
+const ORIGIN_X = 200;
+const ORIGIN_Y = 160;
+
+// Susun ikut tahun lahir kemudian nama supaya kekal kemas & konsisten.
+function _sortKey(m){
+  const yr = parseInt(String(m && m.birth || '').replace(/[^0-9]/g,''),10);
+  return [isFinite(yr) ? yr : 9999, String(m && m.name || '').toLowerCase()];
+}
+
+// Mengira kedudukan automatik (dalam piksel) untuk SEMUA ahli yang dipapar.
+// Tidak mengambil kira posX/posY tersimpan — ini susunan "bersih".
+function autoLayout(){
+  const MEMBERS  = getRenderMembers();
+  const SPOUSES  = getRenderSpouses();
   const CHILDREN = getRenderChildren();
   const byId = Object.fromEntries(MEMBERS.map(m=>[m.id, m]));
-  const childMap = {};
-  CHILDREN.forEach(c=>{
-    const sp = SPOUSES.find(s=>s.id===c.spouseId);
-    if(!sp) return;
-    [sp.husbandId, sp.wifeId].forEach(pid=>{
-      if(pid) (childMap[pid] ||= []).push(c.childId);
-    });
-  });
-  const placed = {};
-  const roots = MEMBERS.filter(m => !CHILDREN.find(c=>c.childId===m.id));
-  let cursorX = 200;
-  const baseY = 220;
 
-  function place(memberId, depth, startX){
-    if(placed[memberId]) return placed[memberId].x + NODE_W;
-    const m = byId[memberId]; if(!m) return startX;
-    const spouseRecs = SPOUSES.filter(s=>s.husbandId===memberId || s.wifeId===memberId);
-    const partners = spouseRecs.map(s => s.husbandId===memberId ? s.wifeId : s.husbandId).filter(Boolean).map(id=>byId[id]).filter(Boolean);
-    const kids = Array.from(new Set((childMap[memberId]||[])));
-    let x = startX;
-    let childrenStart = x, childrenEnd = x;
-    if(kids.length){
-      let cx = x;
-      kids.forEach(kid=>{ cx = place(kid, depth+1, cx) + GAP_X; });
-      childrenStart = placed[kids[0]].x;
-      childrenEnd   = placed[kids[kids.length-1]].x + NODE_W;
+  const col = {};      // id -> lajur (float)
+  const depthOf = {};  // id -> generasi
+  const done = new Set();
+  let cursor = 0;      // lajur seterusnya yang kosong
+
+  const spousesOf = (id)=> SPOUSES
+    .filter(s=> s.husbandId===id || s.wifeId===id)
+    .map(s=> s.husbandId===id ? s.wifeId : s.husbandId)
+    .filter(Boolean);
+
+  const kidsOfUnit = (unit)=>{
+    const out = [];
+    SPOUSES.filter(s=> unit.includes(s.husbandId) || unit.includes(s.wifeId)).forEach(s=>{
+      CHILDREN.filter(c=> c.spouseId===s.id).forEach(c=>{
+        if(byId[c.childId] && !out.includes(c.childId)) out.push(c.childId);
+      });
+    });
+    out.sort((a,b)=>{ const ka=_sortKey(byId[a]), kb=_sortKey(byId[b]); return ka[0]-kb[0] || (ka[1]<kb[1]?-1:1); });
+    return out;
+  };
+
+  // Letak satu "unit" (ahli + pasangan) dan keturunannya secara post-order.
+  // Mengembalikan senarai semua id yang diletak dalam subtree ini.
+  function placeUnit(id, depth){
+    if(done.has(id)) return [];
+    done.add(id);
+    const partners = spousesOf(id).filter(p=> p && !done.has(p));
+    partners.forEach(p=> done.add(p));
+    const unit = [id, ...partners];
+    const unitCols = unit.length;
+
+    const kids = kidsOfUnit(unit).filter(k=> !done.has(k));
+    let placed = unit.slice();
+
+    if(kids.length === 0){
+      const left = cursor;
+      unit.forEach((m,i)=>{ col[m] = left + i; depthOf[m] = depth; });
+      cursor += unitCols;
+    } else {
+      const childLeft = cursor;
+      kids.forEach(k=>{ placed = placed.concat(placeUnit(k, depth+1)); });
+      const childRight = cursor;
+      const childSpan = childRight - childLeft;
+      if(unitCols <= childSpan){
+        const unitLeft = childLeft + (childSpan - unitCols)/2;
+        unit.forEach((m,i)=>{ col[m] = unitLeft + i; depthOf[m] = depth; });
+      } else {
+        // Ibu/bapa lebih lebar dari anak — anjak anak ke kanan supaya seimbang.
+        const extra = unitCols - childSpan;
+        placed.forEach(m=>{ if(!unit.includes(m)) col[m] += extra/2; });
+        cursor += extra;
+        unit.forEach((m,i)=>{ col[m] = childLeft + i; depthOf[m] = depth; });
+      }
     }
-    const selfWidth = NODE_W + partners.length*(NODE_W+GAP_X);
-    const totalWidth = Math.max(selfWidth, childrenEnd - childrenStart);
-    const baseX = kids.length ? (childrenStart + childrenEnd)/2 - selfWidth/2 : x;
-    placed[memberId] = { x: baseX, y: baseY + depth*(NODE_H+GAP_Y) };
-    partners.forEach((p,i)=>{ placed[p.id] = { x: baseX + (i+1)*(NODE_W+GAP_X), y: placed[memberId].y }; });
-    return Math.max(x + totalWidth + GAP_X, childrenEnd + GAP_X);
+    return placed;
   }
-  roots.forEach(r=>{ cursorX = place(r.id, 0, cursorX) + GAP_X*2; });
-  getRenderMembers().forEach(m=>{ if(!placed[m.id]){ placed[m.id] = { x: cursorX, y: baseY }; cursorX += NODE_W + GAP_X; } });
-  // Override dengan kedudukan tersimpan (admin telah seret kotak)
+
+  // Akar = ahli tanpa ibu/bapa direkod.
+  const childIds = new Set(CHILDREN.map(c=> c.childId));
+  const roots = MEMBERS.filter(m=> !childIds.has(m.id)).sort((a,b)=>{
+    const ka=_sortKey(a), kb=_sortKey(b); return ka[0]-kb[0] || (ka[1]<kb[1]?-1:1);
+  });
+
+  roots.forEach(r=>{
+    if(done.has(r.id)) return;
+    placeUnit(r.id, 0);
+    cursor += 1; // ruang antara keluarga akar berasingan
+  });
+
+  // Ahli yatim (tiada kaitan langsung) — baris bawah.
+  let maxDepth = 0;
+  Object.values(depthOf).forEach(d=>{ if(d>maxDepth) maxDepth = d; });
   MEMBERS.forEach(m=>{
+    if(done.has(m.id)) return;
+    done.add(m.id);
+    col[m.id] = cursor++; depthOf[m.id] = maxDepth + 2;
+  });
+
+  // Tukar lajur/generasi -> piksel.
+  const placed = {};
+  MEMBERS.forEach(m=>{
+    const c = col[m.id]; const d = depthOf[m.id];
+    if(c==null || d==null) return;
+    placed[m.id] = { x: ORIGIN_X + c*COL_STEP, y: ORIGIN_Y + d*ROW_STEP };
+  });
+  return placed;
+}
+
+function buildLayout(){
+  const placed = autoLayout();
+  // Override dengan kedudukan tersimpan (admin telah seret kotak secara manual)
+  getRenderMembers().forEach(m=>{
     if(m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY)){
       placed[m.id] = { x: Number(m.posX), y: Number(m.posY) };
     }
   });
   return placed;
+}
+
+// Butang "Auto Family Tree": susun semula semua kad & garisan secara auto,
+// abaikan kedudukan manual, kemudian simpan supaya kekal & dilihat semua.
+async function autoArrange(){
+  const layout = autoLayout();
+  const knownIds = new Set((DATA.members||[]).map(m=> String(m.id)));
+  const positions = [];
+  getRenderMembers().forEach(m=>{
+    const p = layout[m.id]; if(!p) return;
+    if(knownIds.has(String(m.id))) positions.push({ id:m.id, x:Math.round(p.x), y:Math.round(p.y) });
+  });
+  // Terap segera supaya papar kemas tanpa tunggu rangkaian.
+  DATA.members = (DATA.members||[]).map(m=>{
+    const f = positions.find(x=> String(x.id)===String(m.id));
+    return f ? { ...m, posX:f.x, posY:f.y } : m;
+  });
+  renderAll();
+  setTimeout(()=> panzoomInstance && panzoomInstance.reset(), 60);
+  if(!positions.length){ notify.info('Tiada kad untuk disusun.'); return; }
+  try{
+    await dispatchApi('setPositions', { positions });
+    notify.success('Salasilah disusun secara automatik & disimpan.');
+  }catch(err){
+    notify.warn('Susunan dipaparkan tetapi gagal disimpan: ' + (err && err.message || err));
+  }
 }
 
 let panzoomInstance = null;
@@ -497,6 +598,7 @@ function renderNodes(layout){
   const wrap = $('#nodes'); wrap.innerHTML='';
   const editMap = getEditPendingMap();           // id ahli sedia ada -> cadangan edit
   const isAdmin = ['admin','master'].includes(STORE.user?.role);
+  const headRoots = getHeadRoots();
   const frag = document.createDocumentFragment();
   getRenderMembers().forEach(m=>{
     const pos = layout[m.id] || {x:200,y:200};
@@ -508,7 +610,9 @@ function renderNodes(layout){
     const pendingRec = m._pending || editPending;
     const isDraft = !!pendingRec;
     const draftCls = isDraft ? 'tag-draft' : '';
-    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls}`;
+    const isHead = headRoots.has(m.id);
+    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls} ${isHead?'root-head':''}`;
+    if(isHead) el.title = isAdmin ? 'Kepala Salasilah — seret untuk gerakkan keseluruhan family tree' : 'Kepala Salasilah';
     el.style.left = pos.x+'px'; el.style.top = pos.y+'px';
     el.dataset.id = m.id;
     const yrs = `${m.birth||'?'} – ${m.alive===false?(m.death||'?'):''}`.trim();
@@ -526,7 +630,7 @@ function renderNodes(layout){
       <div class="row">
         <span class="chip" style="background:color-mix(in oklab, var(--gold) 25%, transparent); color:var(--ink)">${ic}</span>
         ${m.alive===false?'<span class="chip" style="background:#3334; color:var(--ink)">Allahyarham</span>':'<span class="chip" style="background:color-mix(in oklab, var(--ok) 30%, transparent); color:var(--ink)">Hidup</span>'}
-        ${badge}${draftBadge}
+        ${isHead?'<span class="chip root-head-chip">👑 Kepala</span>':''}${badge}${draftBadge}
       </div>
     `;
     el.addEventListener('click', e=>{
@@ -568,6 +672,26 @@ function isRootMember(id){
   const CHILDREN = getRenderChildren();
   return !CHILDREN.find(c=>c.childId===id);
 }
+// "Kepala Root" = SATU ahli puncak bagi setiap keluarga (moyang teratas).
+// Hanya kepala root ini yang menggerakkan KESELURUHAN family tree apabila
+// diseret. Pasangan kepala, anak-anak, & menantu boleh digerakkan sendiri.
+function getHeadRoots(){
+  const MEMBERS = getRenderMembers();
+  const CHILDREN = getRenderChildren();
+  const childIds = new Set(CHILDREN.map(c=>c.childId));
+  const roots = MEMBERS.filter(m=>!childIds.has(m.id)).sort((a,b)=>{
+    const ka=_sortKey(a), kb=_sortKey(b); return ka[0]-kb[0] || (ka[1]<kb[1]?-1:1);
+  });
+  const heads = new Set();
+  const claimed = new Set();
+  roots.forEach(r=>{
+    if(claimed.has(r.id)) return;
+    heads.add(r.id);
+    getSubtreeIds(r.id).forEach(id=>claimed.add(id)); // tuntut seluruh keluarga
+  });
+  return heads;
+}
+function isHeadRoot(id){ return getHeadRoots().has(id); }
 let _dragState = null;
 function enableNodeDrag(el, id, layout){
   el.style.touchAction = 'none';
@@ -576,7 +700,7 @@ function enableNodeDrag(el, id, layout){
     // jangan ganggu klik pada gambar / butang dalam kad
     if(e.target.closest('.lb-img,button,a,input,select,textarea')) return;
     e.stopPropagation();
-    const isRoot = isRootMember(id);
+    const isRoot = isHeadRoot(id);
     const ids = isRoot ? getSubtreeIds(id) : new Set([id]);
     const scale = panzoomInstance ? panzoomInstance.getScale() : 1;
     const lay = buildLayout(); // snapshot terkini
@@ -620,7 +744,7 @@ function enableNodeDrag(el, id, layout){
         const f = positions.find(x=>String(x.id)===String(m.id));
         return f ? { ...m, posX:f.x, posY:f.y } : m;
       });
-      notify.success(st.isRoot ? 'Akar & rangkaian dipindahkan.' : 'Kotak dipindahkan.');
+      notify.success(st.isRoot ? 'Keseluruhan family tree dipindahkan.' : 'Kotak dipindahkan.');
     }catch(err){ toast('Gagal simpan kedudukan: '+err.message); await refresh(); }
   };
   el.addEventListener('pointerup', finish);
@@ -779,6 +903,8 @@ $('#zIn').onclick = ()=> panzoomInstance?.zoomIn();
 $('#zOut').onclick = ()=> panzoomInstance?.zoomOut();
 $('#zReset').onclick = ()=> panzoomInstance?.reset();
 $('#btnZoomFit').onclick = ()=> panzoomInstance?.reset();
+const _btnAutoTree = document.getElementById('btnAutoTree');
+if(_btnAutoTree) _btnAutoTree.onclick = ()=> autoArrange();
 
 // Susunan paparan mengikut header Google Sheet SALASILAH.
 // Tambah/ubah di sini sahaja apabila kolum baharu ditambah — paparan tidak akan lari.

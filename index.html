@@ -132,6 +132,18 @@
     .node.male { outline:2px solid color-mix(in oklab, #4b86c6 60%, transparent); }
     .node.female { outline:2px solid color-mix(in oklab, #c6679a 60%, transparent); }
     .node.deceased { filter:grayscale(.3) brightness(.95); }
+    /* Kepala Salasilah (root utama) — penanda mahkota & sempadan emas tebal */
+    .node.root-head {
+      outline:3px solid var(--gold) !important;
+      box-shadow:0 0 0 2px color-mix(in oklab, var(--gold-2) 70%, transparent), 0 10px 26px var(--shadow);
+    }
+    .node.root-head::before {
+      content:"👑"; position:absolute; top:-14px; left:50%; transform:translateX(-50%);
+      font-size:20px; filter:drop-shadow(0 2px 3px rgba(0,0,0,.45)); pointer-events:none;
+    }
+    .root-head-chip {
+      background:linear-gradient(180deg, var(--gold-2), var(--gold)); color:#241704;
+    }
     .node.tag-member {
       outline:3px solid var(--gold); box-shadow:0 0 0 4px color-mix(in oklab, var(--gold) 30%, transparent), 0 22px 40px -14px var(--shadow);
       background:linear-gradient(180deg, color-mix(in oklab, var(--gold-2) 18%, var(--card)), var(--card-2)); 
@@ -534,6 +546,7 @@
     </div>
 
     <div class="flex items-center gap-1">
+      <button id="btnAutoTree" class="btn btn-ghost" title="Auto Family Tree — susun salasilah automatik" style="display:none">🌳<span class="hidden sm:inline" style="margin-left:4px;font-size:12px">Auto</span></button>
       <button id="btnAddNote" class="btn btn-ghost" title="Tambah nota" style="display:none">📝</button>
       <button id="btnZoomFit" class="btn btn-ghost" title="Muat skrin">⛶</button>
       <button id="btnAdmin" class="btn btn-ghost relative" title="Pentadbir" style="display:none">🛡️<span id="pendingBadge" style="display:none">0</span></button>
