@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/PASTE_DEPLOY_ID_DI_SINI/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbz-AgLGfoA55OvnXULYtAnbg1e6AqQmGJ38JX-CymaedAkgG2tfOTHsDEYr8EoN94br/execc";
 
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
