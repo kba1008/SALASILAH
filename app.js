@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxs2y9ZwZ664XwmSFTQdypETVupzxpBC4Qi2nadTeIk62Kf78HFAvtUk4Ma6UbwlKC1/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbySnlDlLMvubSyGg9zrQ6KbGpH76gM38-HRk4z_GqX1rH6HK_fGQPVGNkRRUwBg7unn/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -592,10 +592,83 @@ function findHeadForMember(id){
 // 3 tahap jarak profesional — lebih lapang supaya kad draf, pasangan ramai
 // dan cabang besar tidak menghimpit atau menghasilkan garis bertindan.
 const AUTO_VARIANTS = [
-  { gapX: 96,  gapY: GAP_Y * 1.18, branchGap: 112, familyGap: 142, childGap: 82,  safeGap: 44, label: 'lapang' },
-  { gapX: 134, gapY: GAP_Y * 1.28, branchGap: 150, familyGap: 184, childGap: 104, safeGap: 58, label: 'lega'   },
-  { gapX: 178, gapY: GAP_Y * 1.42, branchGap: 192, familyGap: 232, childGap: 130, safeGap: 72, label: 'galeri' },
+  { gapX: 132, gapY: GAP_Y * 1.34, branchGap: 160, familyGap: 230, childGap: 126, safeGap: 92,  safeGapY: 58, lineGap: 28, label: 'lapang' },
+  { gapX: 176, gapY: GAP_Y * 1.50, branchGap: 210, familyGap: 302, childGap: 158, safeGap: 122, safeGapY: 72, lineGap: 34, label: 'lega'   },
+  { gapX: 224, gapY: GAP_Y * 1.68, branchGap: 270, familyGap: 386, childGap: 196, safeGap: 154, safeGapY: 88, lineGap: 42, label: 'galeri' },
 ];
+
+function cloneLayout(layout){
+  const out = {};
+  Object.keys(layout||{}).forEach(id=>{
+    const p = layout[id];
+    if(p && isFinite(p.x) && isFinite(p.y)) out[id] = { x:Number(p.x), y:Number(p.y) };
+  });
+  return out;
+}
+
+function layoutsOverlap(a, b, gapX, gapY){
+  return Math.abs((a.x + NODE_W/2) - (b.x + NODE_W/2)) < NODE_W + gapX &&
+    Math.abs((a.y + NODE_H/2) - (b.y + NODE_H/2)) < NODE_H + gapY;
+}
+
+// Penapis keselamatan: apa pun susunan asal, kad tidak dibenarkan bertindih.
+// Jika kad baharu menyelit di tengah, kad lain ditolak secara terkawal.
+function resolveCardCollisions(layout, options){
+  options = options || {};
+  const placed = cloneLayout(layout);
+  const gapX = Number(options.gapX ?? 100);
+  const gapY = Number(options.gapY ?? 56);
+  const anchorId = options.anchorId ? String(options.anchorId) : '';
+  const anchorBefore = anchorId && placed[anchorId] ? { ...placed[anchorId] } : null;
+  const ids = Object.keys(placed);
+  if(ids.length < 2) return placed;
+
+  for(let pass=0; pass<18; pass++){
+    let moved = false;
+    const rows = [];
+    ids.slice().sort((a,b)=> placed[a].y - placed[b].y || placed[a].x - placed[b].x).forEach(id=>{
+      let row = rows.find(r=> Math.abs(r.y - placed[id].y) <= Math.max(NODE_H * 0.62, gapY + 18));
+      if(!row){ row = { y:placed[id].y, ids:[] }; rows.push(row); }
+      row.ids.push(id);
+      row.y = (row.y * (row.ids.length-1) + placed[id].y) / row.ids.length;
+    });
+    rows.forEach(row=>{
+      row.ids.sort((a,b)=> placed[a].x - placed[b].x);
+      let next = -Infinity;
+      row.ids.forEach(id=>{
+        if(placed[id].x < next){ placed[id].x = next; moved = true; }
+        next = placed[id].x + NODE_W + gapX;
+      });
+    });
+
+    const sorted = ids.slice().sort((a,b)=> placed[a].y - placed[b].y || placed[a].x - placed[b].x);
+    for(let i=0; i<sorted.length; i++){
+      for(let j=i+1; j<sorted.length; j++){
+        const a = placed[sorted[i]], b = placed[sorted[j]];
+        if(b.y - a.y > NODE_H + gapY + 4) break;
+        if(!layoutsOverlap(a, b, gapX, gapY)) continue;
+        const ax = a.x + NODE_W/2, bx = b.x + NODE_W/2;
+        const ay = a.y + NODE_H/2, by = b.y + NODE_H/2;
+        const overlapX = NODE_W + gapX - Math.abs(ax-bx);
+        const overlapY = NODE_H + gapY - Math.abs(ay-by);
+        if(overlapX <= overlapY * 1.35 || Math.abs(ay-by) < NODE_H * 0.75){
+          b.x += (bx >= ax ? 1 : -1) * Math.ceil(overlapX + 8);
+        } else {
+          b.y += (by >= ay ? 1 : -1) * Math.ceil(overlapY + 8);
+        }
+        moved = true;
+      }
+    }
+    if(!moved) break;
+  }
+  if(anchorBefore && placed[anchorId]){
+    const dx = placed[anchorId].x - anchorBefore.x;
+    const dy = placed[anchorId].y - anchorBefore.y;
+    Object.keys(placed).forEach(id=>{ placed[id].x -= dx; placed[id].y -= dy; });
+  }
+  Object.keys(placed).forEach(id=>{ placed[id].x = Math.round(placed[id].x); placed[id].y = Math.round(placed[id].y); });
+  return placed;
+}
 
 // Kira tata letak HANYA untuk subtree Kepala Salasilah, mengikut variasi.
 function autoLayoutSubtree(headId, variantIdx){
@@ -664,7 +737,7 @@ function autoLayoutSubtree(headId, variantIdx){
     const unitWidth = desc.unit.length * NODE_W + Math.max(0, desc.unit.length-1) * cfg.gapX;
     const familyWidths = desc.familyGroups.map(g=>{
       const childWidths = g.kids.map(measure);
-      return Math.max(NODE_W, sumWidths(childWidths, cfg.childGap));
+      return Math.max(NODE_W, sumWidths(childWidths, cfg.childGap + cfg.branchGap));
     });
     const childrenWidth = sumWidths(familyWidths, cfg.familyGap);
     measuring.delete(id);
@@ -686,17 +759,17 @@ function autoLayoutSubtree(headId, variantIdx){
 
     const familyWidths = desc.familyGroups.map(g=>{
       const childWidths = g.kids.map(measure);
-      return Math.max(NODE_W, sumWidths(childWidths, cfg.childGap));
+      return Math.max(NODE_W, sumWidths(childWidths, cfg.childGap + cfg.branchGap));
     });
     const childrenWidth = sumWidths(familyWidths, cfg.familyGap);
     let familyLeft = boxLeft + (boxWidth-childrenWidth)/2;
     desc.familyGroups.forEach((group,gi)=>{
       const childWidths = group.kids.map(measure);
-      const childTotal = sumWidths(childWidths, cfg.childGap);
+      const childTotal = sumWidths(childWidths, cfg.childGap + cfg.branchGap);
       let childLeft = familyLeft + (familyWidths[gi]-childTotal)/2;
       group.kids.forEach((kid,i)=>{
         placeUnit(kid, depth+1, childLeft);
-        childLeft += childWidths[i] + cfg.childGap;
+        childLeft += childWidths[i] + cfg.childGap + cfg.branchGap;
       });
       familyLeft += familyWidths[gi] + cfg.familyGap;
     });
@@ -738,7 +811,7 @@ function autoLayoutSubtree(headId, variantIdx){
   });
   const anchorShift = placed[headId] ? placed[headId].x - anchorX : 0;
   if(anchorShift) Object.keys(placed).forEach(id=>{ placed[id].x = Math.round(placed[id].x - anchorShift); });
-  return placed;
+  return resolveCardCollisions(placed, { gapX: cfg.safeGap, gapY: cfg.safeGapY, anchorId: headId });
 }
 
 // Simpan kitaran variasi per-Kepala — berulang 3 variasi yang sama.
@@ -751,12 +824,20 @@ async function autoArrangeHead(headId){
   const v = (_autoVariant[headId] || 0) % 3;
   _autoVariant[headId] = (v + 1) % 3;
   const layout = autoLayoutSubtree(headId, v);
+  const mergedLayout = buildLayout();
+  Object.keys(layout).forEach(id=>{ mergedLayout[id] = layout[id]; });
+  const cleanLayout = resolveCardCollisions(mergedLayout, {
+    gapX: AUTO_VARIANTS[v].safeGap,
+    gapY: AUTO_VARIANTS[v].safeGapY,
+    anchorId: headId
+  });
   // Gunakan semua kad yang sedang dipapar — termasuk addMember yang masih
   // berstatus draf (kelabu), bukan ahli yang sudah diluluskan sahaja.
-  const positions = Object.keys(layout)
-    .map(id=> ({ id, x: layout[id].x, y: layout[id].y }));
+  const positions = getRenderMembers()
+    .filter(m=> cleanLayout[m.id])
+    .map(m=> ({ id:m.id, x: cleanLayout[m.id].x, y: cleanLayout[m.id].y }));
   if(!positions.length){ notify.info('Tiada cabang untuk disusun.'); return; }
-  const arrangedIds = new Set(Object.keys(layout).map(String));
+  const arrangedIds = new Set(positions.map(p=>String(p.id)));
   const junctions = (DATA.spouses||[])
     .filter(s=> arrangedIds.has(String(s.husbandId)) || arrangedIds.has(String(s.wifeId)))
     .map(s=> ({ id:s.id, dx:0, dy:0 }));
@@ -826,15 +907,7 @@ async function autoPlaceNew(hints, options){
     if(p && isFinite(p.x) && isFinite(p.y)) taken.add(`${Math.round(p.x)},${Math.round(p.y)}`);
   });
 
-  const positions = [];
-  if(baseLayout){
-    members.forEach(m=>{
-      const id = String(m.id);
-      if(!existingIds.has(id) || targetIds.has(id)) return;
-      const p = lay[id]; if(!p || !isFinite(p.x) || !isFinite(p.y)) return;
-      positions.push({ id:m.id, x:Math.round(p.x), y:Math.round(p.y) });
-    });
-  }
+  let positions = [];
 
   // Susun anak-anak (jika berbilang) supaya rapat & seimbang di bawah ibu bapa.
   members.filter(m=>targetIds.has(String(m.id))).forEach(m=>{
@@ -886,11 +959,15 @@ async function autoPlaceNew(hints, options){
     let x = Math.round(pos.x), y = Math.round(pos.y), guard = 0;
     while(taken.has(`${x},${y}`) && guard++ < 120){ x += COL_STEP; }
     taken.add(`${x},${y}`);
-    positions.push({ id:m.id, x, y });
     // kemas kini snapshot supaya kad baharu seterusnya pun ambil kira.
     lay[m.id] = { x, y };
   });
 
+  const anchorId = hintIds.map(id=>findHeadForMember(id)).find(Boolean) || Array.from(getHeadRoots())[0] || '';
+  const clean = resolveCardCollisions(lay, { gapX:112, gapY:68, anchorId });
+  positions = members
+    .filter(m=>clean[m.id])
+    .map(m=>({ id:m.id, x:clean[m.id].x, y:clean[m.id].y }));
   if(!positions.length) return;
   DATA.members = (DATA.members||[]).map(m=>{
     const f = positions.find(x=> String(x.id)===String(m.id));
@@ -1192,7 +1269,32 @@ function renderLinks(layout){
     if(!SPOUSES.find(s=>s.id===c.spouseId)) return;
     (childrenBySpouse[c.spouseId] = childrenBySpouse[c.spouseId] || []).push(c);
   });
-  const laneByRow = {};
+  const LINE_GAP = 32;
+  const LINE_PAD = 46;
+  const busLanesByRow = {};
+  const trunkSegments = [];
+  function allocateLane(rowKey, left, right){
+    const lanes = busLanesByRow[rowKey] || (busLanesByRow[rowKey] = []);
+    const pad = 44;
+    for(let i=0; i<lanes.length; i++){
+      if(!lanes[i].some(seg=> !(right + pad < seg.left || left - pad > seg.right))){
+        lanes[i].push({ left, right });
+        return i;
+      }
+    }
+    lanes.push([{ left, right }]);
+    return lanes.length - 1;
+  }
+  function trunkLaneFor(x, y1, y2){
+    let lane = 0;
+    trunkSegments.forEach(seg=>{
+      const overlap = !(Math.max(y1,y2) < Math.min(seg.y1,seg.y2) - 18 || Math.min(y1,y2) > Math.max(seg.y1,seg.y2) + 18);
+      if(overlap && Math.abs(seg.x - x) < 22) lane++;
+    });
+    const offset = lane ? (lane%2 ? 1 : -1) * Math.ceil(lane/2) * 24 : 0;
+    trunkSegments.push({ x:x+offset, y1, y2 });
+    return offset;
+  }
   Object.keys(childrenBySpouse).sort((sidA,sidB)=>{
     const ax = Math.min(...childrenBySpouse[sidA].map(c=> layout[c.childId].x));
     const bx = Math.min(...childrenBySpouse[sidB].map(c=> layout[c.childId].x));
@@ -1210,17 +1312,26 @@ function renderLinks(layout){
     kids.sort((c1,c2)=> (layout[c1.childId].x-layout[c2.childId].x) || String(c1.childId).localeCompare(String(c2.childId)));
     const kxs = kids.map(c=> layout[c.childId].x + NODE_W/2);
     const kyMin = Math.min(...kids.map(c=> layout[c.childId].y));
-    const laneKey = String(Math.round(kyMin));
-    const lane = laneByRow[laneKey] || 0;
-    laneByRow[laneKey] = lane + 1;
-    const busY = jy < kyMin - 4 ? Math.max(jy + 30, kyMin - 34 - lane*18) : kyMin - 28 - lane*18;
+    const leftX = Math.min(jx, ...kxs);
+    const rightX = Math.max(jx, ...kxs);
+    const laneKey = String(Math.round(kyMin / 12) * 12);
+    const lane = allocateLane(laneKey, leftX, rightX);
+    const parentBottom = Math.max(a?a.y+NODE_H:jy, b?b.y+NODE_H:jy, jy);
+    const upperBus = kyMin - LINE_PAD;
+    let busY = upperBus - lane * LINE_GAP;
+    if(busY < parentBottom + 34) busY = parentBottom + 34 + lane * LINE_GAP;
+    if(busY > kyMin - 28) busY = kyMin - 28;
     const isDraftGroup = kids.every(c=> c._draft);
     const cls = isDraftGroup ? 'draft-link' : '';
     const grpAttr = `class="child-group ${cls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
     // Laluan siku 90°: turun dari junction ke busbar, kemudian busbar bercabang.
-    paths += `<path ${grpAttr} d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
-    const leftX = Math.min(jx, ...kxs);
-    const rightX = Math.max(jx, ...kxs);
+    const trunkOffset = trunkLaneFor(jx, jy, busY);
+    if(trunkOffset){
+      const tx = jx + trunkOffset;
+      paths += `<path ${grpAttr} d="M ${jx} ${jy} L ${tx} ${jy} L ${tx} ${busY} L ${jx} ${busY}"/>`;
+    } else {
+      paths += `<path ${grpAttr} d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
+    }
     if(rightX - leftX > 0.5){
       paths += `<path ${grpAttr} d="M ${leftX} ${busY} L ${rightX} ${busY}"/>`;
     }

@@ -738,16 +738,6 @@ const HANDLERS = {
           updateRow('PENDING', 'id', row.id, { payload:JSON.stringify(payload), ts:now() });
           updated++;
         });
-        const rowsForSpouse = readAll('PENDING');
-        rowsForSpouse.forEach(function(row){
-          if (row.action !== 'addSpouse' || !isPendingRecord(row)) return;
-          if (!(u.role==='admin' || u.role==='master') && String(row.user)!==String(u.username)) return;
-          const payload = safeParse(row.payload) || {};
-          if (String(payload.id)!==String(j.id)) return;
-          payload.junctionDx = Number(j.dx) || 0;
-          payload.junctionDy = Number(j.dy) || 0;
-          updateRow('PENDING', 'id', row.id, { payload:JSON.stringify(payload), ts:now() });
-        });
       } catch(_){}
     });
     // Auto Susun menghantar junction pasangan sekali supaya offset seretan lama
@@ -760,6 +750,16 @@ const HANDLERS = {
           junctionDy: Number(j.dy) || 0,
           editedBy: u.username || '',
           editedAt: now()
+        });
+        const rowsForSpouse = readAll('PENDING');
+        rowsForSpouse.forEach(function(row){
+          if (row.action !== 'addSpouse' || !isPendingRecord(row)) return;
+          if (!(u.role==='admin' || u.role==='master') && String(row.user)!==String(u.username)) return;
+          const payload = safeParse(row.payload) || {};
+          if (String(payload.id)!==String(j.id)) return;
+          payload.junctionDx = Number(j.dx) || 0;
+          payload.junctionDy = Number(j.dy) || 0;
+          updateRow('PENDING', 'id', row.id, { payload:JSON.stringify(payload), ts:now() });
         });
       } catch(_){}
     });
