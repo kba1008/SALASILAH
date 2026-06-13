@@ -265,7 +265,7 @@ function savePhoto(b64, mime, name) {
 
 function queuePending(action, payload, username, before) {
   const existing = readAll('PENDING').find(p =>
-    p.status === 'pending' && String(p.user) === String(username) &&
+    isPendingRecord(p) && String(p.user) === String(username) &&
     String(p.action) === String(action) && pendingKey(action, safeParse(p.payload)) === pendingKey(action, payload)
   );
   if (existing) {
@@ -296,8 +296,15 @@ function pendingKey(action, payload) {
   return '';
 }
 
+// Rekod lama yang diwujudkan sebelum kolum `status` ditambah mempunyai nilai
+// kosong. Anggap ia masih pending supaya tidak tersembunyi daripada pentadbir.
+function isPendingRecord(p) {
+  const status = String((p && p.status) || '').trim().toLowerCase();
+  return status === '' || status === 'pending';
+}
+
 function pendingForUser(username) {
-  return readAll('PENDING').filter(p => p.status === 'pending' && String(p.user) === String(username));
+  return readAll('PENDING').filter(p => isPendingRecord(p) && String(p.user) === String(username));
 }
 
 function visibleMemberForUser(id, username) {
@@ -316,7 +323,7 @@ function visibleSpouseForUser(id, username) {
 
 function approveDraftMemberIfNeeded(memberId, owner, approver) {
   if (readAll('SALASILAH').some(m => String(m.id) === String(memberId))) return;
-  const draft = readAll('PENDING').find(p => p.status==='pending' && p.action==='addMember' && String(p.user)===String(owner) && String(safeParse(p.payload).id)===String(memberId));
+  const draft = readAll('PENDING').find(p => isPendingRecord(p) && p.action==='addMember' && String(p.user)===String(owner) && String(safeParse(p.payload).id)===String(memberId));
   if (!draft) throw new Error('Profil berkaitan belum tersedia untuk disahkan.');
   const member = safeParse(draft.payload);
   appendRow('SALASILAH', Object.assign({}, member, { approvedBy:approver, approvedAt:now() }));
@@ -325,7 +332,7 @@ function approveDraftMemberIfNeeded(memberId, owner, approver) {
 
 function approveDraftSpouseIfNeeded(spouseId, owner, approver) {
   if (readAll('PASANGAN').some(s => String(s.id) === String(spouseId))) return;
-  const draft = readAll('PENDING').find(p => p.status==='pending' && p.action==='addSpouse' && String(p.user)===String(owner) && String(safeParse(p.payload).id)===String(spouseId));
+  const draft = readAll('PENDING').find(p => isPendingRecord(p) && p.action==='addSpouse' && String(p.user)===String(owner) && String(safeParse(p.payload).id)===String(spouseId));
   if (!draft) throw new Error('Hubungan pasangan belum tersedia untuk disahkan.');
   const spouse = safeParse(draft.payload);
   approveDraftMemberIfNeeded(spouse.husbandId, owner, approver);
@@ -443,10 +450,11 @@ const HANDLERS = {
       }
       return out;
     }
+    const allPending = readAll('PENDING');
     const pending = isAdmin
-      ? readAll('PENDING').filter(p=>p.status==='pending').map(enrichPending)
-      : (u ? readAll('PENDING').filter(p=>p.user===u.username).map(enrichPending) : []);
-    const pendingLog = isAdmin ? readAll('PENDING').filter(p=>p.status!=='pending').slice(-50).map(p=>({ id:p.id, action:p.action, user:p.user, userFullName:p.userFullName, ts:p.ts, status:p.status, approvedBy:p.approvedBy, approvedAt:p.approvedAt })) : [];
+      ? allPending.filter(isPendingRecord).map(enrichPending)
+      : (u ? allPending.filter(p=>isPendingRecord(p) && String(p.user)===String(u.username)).map(enrichPending) : []);
+    const pendingLog = isAdmin ? allPending.filter(p=>!isPendingRecord(p)).slice(-50).map(p=>({ id:p.id, action:p.action, user:p.user, userFullName:p.userFullName, ts:p.ts, status:p.status, approvedBy:p.approvedBy, approvedAt:p.approvedAt })) : [];
     const pendingUsers = isAdmin ? allUsers.filter(x => !(x.approved===true||String(x.approved)==='true') && x.role!=='master') : [];
     // Senarai semua ahli yang telah diluluskan — untuk Master/Admin melantik admin.
     // Master nampak penuh; admin biasa nampak versi ringkas tanpa kata laluan.
@@ -552,7 +560,7 @@ const HANDLERS = {
     const lock = LockService.getScriptLock();
     lock.waitLock(10000);
     try {
-    const p = readAll('PENDING').find(x=>x.id===body.id && x.status==='pending');
+    const p = readAll('PENDING').find(x=>String(x.id)===String(body.id) && isPendingRecord(x));
     if (!p) throw new Error('Draf tidak dijumpai atau telah diproses.');
     const payload = safeParse(p.payload);
     // Terapkan terus sebagai keputusan pentadbir. Jangan panggil semula handler
@@ -582,7 +590,43 @@ const HANDLERS = {
       lock.releaseLock();
     }
   },
-  reject(body) { const u = requireAuth(body, ['admin','master']); updateRow('PENDING', 'id', body.id, { status:'rejected', approvedBy:u.username, approvedAt:now() }); return { ok: true }; },
+  reject(body) {
+    const u = requireAuth(body, ['admin','master']);
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      const p = readAll('PENDING').find(x=>String(x.id)===String(body.id) && isPendingRecord(x));
+      if (!p) throw new Error('Draf tidak dijumpai atau telah diproses.');
+      const rejectedAt = now();
+      updateRow('PENDING', 'id', p.id, { status:'rejected', approvedBy:u.username, approvedAt:rejectedAt });
+
+      // Batalkan juga draf bergantung yang tidak lagi mempunyai induk sah.
+      // Contoh: pasangan baharu menghasilkan addMember + addSpouse; jika hubungan
+      // ditolak, profil pasangan yatim tidak patut terus muncul pada pengguna.
+      const payload = safeParse(p.payload) || {};
+      const rows = readAll('PENDING');
+      const rejectIds = {};
+      if (p.action === 'addSpouse') {
+        [payload.husbandId, payload.wifeId].forEach(memberId => {
+          if (!memberId || readAll('SALASILAH').some(m=>String(m.id)===String(memberId))) return;
+          rows.filter(x=>isPendingRecord(x) && String(x.user)===String(p.user) && x.action==='addMember' && String(safeParse(x.payload).id)===String(memberId))
+            .forEach(x=>{ rejectIds[String(x.id)] = true; });
+        });
+        rows.filter(x=>isPendingRecord(x) && String(x.user)===String(p.user) && x.action==='addChild' && String(safeParse(x.payload).spouseId)===String(payload.id))
+          .forEach(x=>{ rejectIds[String(x.id)] = true; });
+      } else if (p.action === 'addChild') {
+        const childId = payload.childId;
+        if (childId && !readAll('SALASILAH').some(m=>String(m.id)===String(childId))) {
+          rows.filter(x=>isPendingRecord(x) && String(x.user)===String(p.user) && x.action==='addMember' && String(safeParse(x.payload).id)===String(childId))
+            .forEach(x=>{ rejectIds[String(x.id)] = true; });
+        }
+      }
+      Object.keys(rejectIds).forEach(id => updateRow('PENDING', 'id', id, { status:'rejected', approvedBy:u.username, approvedAt:rejectedAt }));
+      return { ok: true, rejectedDependents:Object.keys(rejectIds).length };
+    } finally {
+      lock.releaseLock();
+    }
+  },
   setRole(body) {
     const u = requireAuth(body, ['admin','master']);
     if (body.role==='master' && u.role!=='master') throw new Error('Hanya master boleh berikan peranan master.');

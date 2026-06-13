@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyRIuQikdDlTfWM_B5Ibx7e2kNiC5CW3RNJKJP3xV8rnDO-KwDbAetXsEB12rXZgzc/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyhqYPlvRg27o3tnLXdDVOwFLrVuH42bcs__eEkCHOaUyY5rx-3g9pOCh8yEscZ83nF/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -352,9 +352,22 @@ async function boot(){
     if (STORE.user && r?.data && !r.data.viewer) {
       if (await silentRelogin()) r = await api('bootstrap');
     }
-    DATA = { ...DATA, ...r.data }; STORE.cache = DATA;
+    DATA = { ...DATA, ...r.data };
+    // Pertahanan untuk backend/cache versi lama: hanya rekod yang benar-benar
+    // aktif boleh menghasilkan kad draf atau masuk ke panel pengesahan.
+    DATA.pending = (DATA.pending||[]).filter(p => {
+      const status = String(p?.status||'').trim().toLowerCase();
+      return status==='' || status==='pending';
+    });
+    STORE.cache = DATA;
   } catch(e) {
-    if (e.network) DATA = { ...DATA, ...(STORE.cache||{}) }; // fallback mode luartalian
+    if (e.network) {
+      DATA = { ...DATA, ...(STORE.cache||{}) }; // fallback mode luartalian
+      DATA.pending = (DATA.pending||[]).filter(p => {
+        const status = String(p?.status||'').trim().toLowerCase();
+        return status==='' || status==='pending';
+      });
+    }
     else notify.error(e.message);
   }
   renderAll(); updatePendingBadge();
