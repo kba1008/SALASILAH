@@ -26,7 +26,7 @@ const MASTER_PASSWORD = '101010';
 
 const SHEETS = {
   PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
-  SALASILAH: ['id','name','gender','alive','birth','death','place','address','photo','notes','fatherName','motherName','posX','posY','editedBy','editedAt','approvedBy','approvedAt'],
+  SALASILAH: ['id','name','gender','alive','birth','death','place','address','photo','notes','fatherName','motherName','posX','posY','isHead','editedBy','editedAt','approvedBy','approvedAt'],
   PASANGAN:  ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','editedBy','editedAt'],
   ANAK:      ['spouseId','childId','editedBy','editedAt'],
   NOTA:      ['id','text','x','y','font','size','color','pinned','editedBy','editedAt'],
@@ -725,6 +725,43 @@ const HANDLERS = {
       if (p.posX !== undefined) patch.posX = Number(p.posX) || 0;
       if (p.posY !== undefined) patch.posY = Number(p.posY) || 0;
       try { updateRow('SALASILAH', 'id', p.id, patch); updated++; } catch(_){}
+    });
+    return { ok: true, updated: updated };
+  },
+
+  // Admin menetapkan Kepala Salasilah (puncak family tree) untuk sesebuah keluarga.
+  // Hanya satu kepala bagi setiap keluarga: bersihkan isHead untuk seluruh subtree,
+  // kemudian tandakan ahli yang dipilih.
+  setHead(body) {
+    requireAuth(body, ['admin','master']);
+    const id = body.id;
+    if (!id) return { ok: false, error: 'id diperlukan' };
+    const spouses = readAll('PASANGAN');
+    const children = readAll('ANAK');
+    const set = {}; set[id] = true; const queue = [id];
+    while (queue.length) {
+      const cur = queue.shift();
+      spouses.forEach(function(s){
+        const partner = String(s.husbandId)===String(cur) ? s.wifeId
+                       : (String(s.wifeId)===String(cur) ? s.husbandId : null);
+        if (partner && !set[partner]) { set[partner] = true; queue.push(partner); }
+      });
+      spouses.filter(function(s){ return String(s.husbandId)===String(cur) || String(s.wifeId)===String(cur); })
+        .forEach(function(s){
+          children.filter(function(c){ return String(c.spouseId)===String(s.id); })
+            .forEach(function(c){
+              if (c.childId && !set[c.childId]) { set[c.childId] = true; queue.push(c.childId); }
+            });
+        });
+    }
+    const members = readAll('SALASILAH');
+    let updated = 0;
+    members.forEach(function(mm){
+      if (!set[mm.id]) return;
+      const want = String(mm.id)===String(id) ? 'TRUE' : '';
+      if (String(mm.isHead||'') !== want) {
+        try { updateRow('SALASILAH','id',mm.id,{ isHead: want }); updated++; } catch(_){}
+      }
     });
     return { ok: true, updated: updated };
   },

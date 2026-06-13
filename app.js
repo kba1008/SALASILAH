@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyRfaKHTOsWZYi6jvFklApiVDG6hj1FFFfEZqjYFgLv4a2bL8wj5cL62SRSB2A-HER0/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyA1ORvxar-f3wQ4C6yR6UehN4TrQ7gi-P8pjJT251GdWGw6jp2DedoebUxwHm2Dv8T/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -585,6 +585,54 @@ async function autoArrange(){
   }
 }
 
+// Auto-letak HANYA kad baharu (yang belum ada kedudukan tersimpan) pada tempat
+// yang kemas mengikut format standard — bersebelahan pasangan / di bawah ibu-bapa.
+// Kad sedia ada yang telah diatur manual TIDAK diusik. Dipanggil setiap kali
+// admin tambah ahli/pasangan/anak supaya tak perlu drag manual setiap kali.
+async function autoPlaceNew(){
+  const lay  = buildLayout();          // kedudukan semasa (termasuk manual)
+  const auto = autoLayout();           // kedudukan auto bersih (fallback)
+  const SP = getRenderSpouses();
+  const CH = getRenderChildren();
+  const hasPos = (m)=> m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY);
+  const taken = new Set(Object.values(lay).map(p=>`${Math.round(p.x)},${Math.round(p.y)}`));
+  const positions = [];
+  (DATA.members||[]).filter(m=>!hasPos(m)).forEach(m=>{
+    let pos = null;
+    // 1) Bersebelahan pasangan yang sudah ada kedudukan.
+    const partnerIds = SP.filter(s=>s.husbandId===m.id||s.wifeId===m.id)
+      .map(s=> s.husbandId===m.id ? s.wifeId : s.husbandId).filter(Boolean);
+    for(const pid of partnerIds){ if(lay[pid]){ pos = { x: lay[pid].x + COL_STEP, y: lay[pid].y }; break; } }
+    // 2) Di bawah ibu/bapa, bersusun di sebelah adik-beradik sedia ada.
+    if(!pos){
+      const parentSpouseIds = CH.filter(c=>c.childId===m.id).map(c=>c.spouseId);
+      for(const sid of parentSpouseIds){
+        const sp = SP.find(s=>s.id===sid); if(!sp) continue;
+        const pa = lay[sp.husbandId] || lay[sp.wifeId];
+        if(pa){
+          const sibs = CH.filter(c=>c.spouseId===sid).map(c=>c.childId).filter(id=>id!==m.id && lay[id]);
+          pos = { x: pa.x + sibs.length*COL_STEP, y: pa.y + ROW_STEP };
+          break;
+        }
+      }
+    }
+    // 3) Tiada kaitan berkedudukan — guna susunan auto bersih.
+    if(!pos) pos = auto[m.id];
+    if(!pos) return;
+    let x = Math.round(pos.x), y = Math.round(pos.y), guard = 0;
+    while(taken.has(`${x},${y}`) && guard++ < 80){ x += COL_STEP; }
+    taken.add(`${x},${y}`); lay[m.id] = { x, y };
+    positions.push({ id:m.id, x, y });
+  });
+  if(!positions.length) return;
+  DATA.members = (DATA.members||[]).map(m=>{
+    const f = positions.find(x=> String(x.id)===String(m.id));
+    return f ? { ...m, posX:f.x, posY:f.y } : m;
+  });
+  renderAll();
+  try{ await dispatchApi('setPositions', { positions }); }catch(_){}
+}
+
 let panzoomInstance = null;
 function renderAll(){
   const layout = buildLayout();
@@ -672,9 +720,16 @@ function isRootMember(id){
   const CHILDREN = getRenderChildren();
   return !CHILDREN.find(c=>c.childId===id);
 }
+// Adakah ahli ini ditetapkan sebagai Kepala Salasilah oleh admin?
+function isHeadFlag(m){
+  const v = m && m.isHead;
+  return v===true || v===1 || v==='1' || String(v).toLowerCase()==='true';
+}
 // "Kepala Root" = SATU ahli puncak bagi setiap keluarga (moyang teratas).
 // Hanya kepala root ini yang menggerakkan KESELURUHAN family tree apabila
 // diseret. Pasangan kepala, anak-anak, & menantu boleh digerakkan sendiri.
+// ADMIN yang menentukan kepala (m.isHead). Jika tiada yang ditetapkan untuk
+// sesebuah keluarga, sistem auto-pilih moyang teratas (ikut tahun lahir/nama).
 function getHeadRoots(){
   const MEMBERS = getRenderMembers();
   const CHILDREN = getRenderChildren();
@@ -684,6 +739,13 @@ function getHeadRoots(){
   });
   const heads = new Set();
   const claimed = new Set();
+  // 1) Utamakan kepala yang DITETAPKAN admin.
+  roots.forEach(r=>{
+    if(claimed.has(r.id) || !isHeadFlag(r)) return;
+    heads.add(r.id);
+    getSubtreeIds(r.id).forEach(id=>claimed.add(id));
+  });
+  // 2) Untuk keluarga yang belum ada kepala ditetapkan — auto-pilih.
   roots.forEach(r=>{
     if(claimed.has(r.id)) return;
     heads.add(r.id);
@@ -943,6 +1005,7 @@ function openMemberMenu(m){
       ${role&&!lockedByOther?'<button class="btn gold-edge justify-center" data-act="child">👶 '+(isAdmin?'Tambah':'Cadang')+' Anak</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="note">📝 Tambah Nota</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="move">🔀 Pindah Cabang</button>':''}
+      ${isAdmin&&isRootMember(m.id)&&!isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="sethead">👑 Jadikan Kepala</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
     </div>
     ${lockedByOther?`<div class="bevel-soft rounded-lg p-2 mt-2 text-sm ink-soft">🔒 Sedang diedit oleh <b>@${escapeHtml(lock.user)}</b>. Edit dibuka semula selepas pentadbir membuat keputusan.</div>`:''}
@@ -956,7 +1019,19 @@ function openMemberMenu(m){
     else if(act==='note') noteForm({x:300,y:300});
     else if(act==='del') deleteMember(m);
     else if(act==='move') moveBranch(m);
+    else if(act==='sethead') setHeadRoot(m);
   });
+}
+
+// Admin menetapkan ahli ini sebagai Kepala Salasilah (puncak family tree).
+async function setHeadRoot(m){
+  if(!isRootMember(m.id)){ toast('Hanya ahli tanpa ibu/bapa boleh jadi Kepala Salasilah.'); return; }
+  try{
+    await dispatchApi('setHead', { id:m.id });
+    notify.success('👑 ' + (m.name||'Ahli') + ' kini Kepala Salasilah.');
+    closeModal();
+    await refresh();
+  }catch(e){ toast(e.message); }
 }
 
 function fileToB64(file){ return new Promise((res,rej)=>{ const r = new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
@@ -1080,7 +1155,7 @@ function memberForm(m){
       payload.photoB64 = dataUrl.split(',')[1];
       payload.photoMime = 'image/jpeg';
     }
-    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success('Berjaya.'); } closeModal(); await refresh(); }catch(e){ toast("Gagal: "+e.message); }
+    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success('Berjaya.'); } closeModal(); await refresh(); if(!r.pending && isNew) await autoPlaceNew(); }catch(e){ toast("Gagal: "+e.message); }
   };
 }
 
@@ -1105,7 +1180,7 @@ function spouseForm(m){
     const pick = $('#sp_pick').value;
     const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:upperName($('#sp_name').value), gender:$('#sp_g').value, alive:true }, spouseId: uid(), reason:$('#sp_reason')?.value.trim()||'' };
     if(!pick && !payload.newPartner.name) return toast("Isi maklumat pasangan.");
-    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh(); }catch(e){ toast(e.message); }
+    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh(); if(!r.pending) await autoPlaceNew(); }catch(e){ toast(e.message); }
   };
 }
 
@@ -1131,7 +1206,7 @@ function childForm(m){
     const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:upperName($('#ch_name').value), gender:$('#ch_g').value, alive:true }, reason:$('#ch_reason')?.value.trim()||'' };
     payload.newChild.id = payload.childId;
     if(!payload.newChild.name) return toast("Nama anak wajib.");
-    try{ const r = await dispatchApi('addChild', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya."); } closeModal(); await refresh(); }catch(e){ toast(e.message); }
+    try{ const r = await dispatchApi('addChild', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya."); } closeModal(); await refresh(); if(!r.pending) await autoPlaceNew(); }catch(e){ toast(e.message); }
   };
 }
 
