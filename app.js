@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbz2Xxy4T79nFkVdsPYbuSmzfeworNJ2oAWOpbfoWG1IFkVjSDfqlpeHrOt9lTWwQH9e/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbySnlDlLMvubSyGg9zrQ6KbGpH76gM38-HRk4z_GqX1rH6HK_fGQPVGNkRRUwBg7unn/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -699,9 +699,9 @@ async function autoArrangeHead(headId){
   const v = (_autoVariant[headId] || 0) % 3;
   _autoVariant[headId] = (v + 1) % 3;
   const layout = autoLayoutSubtree(headId, v);
-  const knownIds = new Set((DATA.members||[]).map(m=> String(m.id)));
+  // Gunakan semua kad yang sedang dipapar — termasuk addMember yang masih
+  // berstatus draf (kelabu), bukan ahli yang sudah diluluskan sahaja.
   const positions = Object.keys(layout)
-    .filter(id=> knownIds.has(String(id)))
     .map(id=> ({ id, x: layout[id].x, y: layout[id].y }));
   if(!positions.length){ notify.info('Tiada cabang untuk disusun.'); return; }
   const arrangedIds = new Set(Object.keys(layout).map(String));
@@ -711,6 +711,11 @@ async function autoArrangeHead(headId){
   DATA.members = (DATA.members||[]).map(m=>{
     const f = positions.find(x=> String(x.id)===String(m.id));
     return f ? { ...m, posX:f.x, posY:f.y } : m;
+  });
+  DATA.pending = (DATA.pending||[]).map(p=>{
+    if(p.action!=='addMember' || !p.payload || !p.payload.id) return p;
+    const f = positions.find(x=> String(x.id)===String(p.payload.id));
+    return f ? { ...p, payload:{ ...p.payload, posX:f.x, posY:f.y } } : p;
   });
   DATA.spouses = (DATA.spouses||[]).map(s=> arrangedIds.has(String(s.husbandId)) || arrangedIds.has(String(s.wifeId))
     ? { ...s, junctionDx:0, junctionDy:0 } : s);
