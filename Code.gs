@@ -14,8 +14,8 @@
    8) Buka app → log masuk dengan: admin / 101010
    ===================================================================== */
 
-const SHEET_ID = 'PASTE_SPREADSHEET_ID_DI_SINI'; // ← ISI ID GOOGLE SHEET DI SINI
-const DRIVE_FOLDER_ID = ''; // ← BIARKAN KOSONG untuk auto-cipta folder di Drive anda sendiri
+const SHEET_ID = '1wqIc6971U96VXqOJ55pD-wzxQicC4RT4TBNoUrUVtig'; // ← ISI ID GOOGLE SHEET DI SINI
+const DRIVE_FOLDER_ID = '1tb1YIWlxbHkN-HzdAXtFlMWp136JXxN4'; // ← BIARKAN KOSONG untuk auto-cipta folder di Drive anda sendiri
 
 const TELEGRAM_BOT_TOKEN = ''; // [PILIHAN] Masukkan token bot telegram jika mahu (cth: 123456:ABC...)
 const TELEGRAM_CHAT_ID = '';   // [PILIHAN] Masukkan chat ID kumpulan/admin (cth: -1001234567)
