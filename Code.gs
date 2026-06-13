@@ -310,13 +310,14 @@ function pendingForUser(username) {
 }
 
 function pendingOwnerForMember(memberId) {
-  // Hanya kad DRAF (addMember yang belum lulus / belum wujud di SALASILAH) yang dikunci
-  // supaya tidak boleh diedit oleh lebih daripada seorang pengguna serentak.
-  // Kad yang telah DISAHKAN boleh diedit oleh sesiapa sahaja (tiada kunci).
-  const live = readAll('SALASILAH').some(m => String(m.id) === String(memberId));
-  if (live) return '';
+  // Kad dianggap "draf terkunci" selagi ada cadangan menunggu — sama ada addMember
+  // (ahli baharu belum lulus) atau editMember (cadangan edit terhadap kad sedia ada).
+  // Sebaik admin sah/batal, kunci dilepaskan dan kad boleh diedit semula oleh sesiapa.
   const pendingRows = readAll('PENDING').filter(isPendingRecord);
-  const row = pendingRows.find(p => p.action==='addMember' && String((safeParse(p.payload)||{}).id) === String(memberId));
+  const row = pendingRows.find(p =>
+    (p.action==='addMember' || p.action==='editMember') &&
+    String((safeParse(p.payload)||{}).id) === String(memberId)
+  );
   return row ? String(row.user) : '';
 }
 

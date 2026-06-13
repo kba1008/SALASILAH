@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxTG98cp3V9NFqbPv78odd6OxiDMsRrOt1UX661cifTCi2Cq8s-P3dE1kWkNHY_dT09/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbw46sLarmzDngmTDj53-3bSuIsTEdV1exj2lqXSfFSEo9FmYJN5WpwWWLtGsKpuiFuh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -500,13 +500,14 @@ function renderNodes(layout){
     const el = document.createElement('div');
     const tag = m._tag || 'none';
     const tagCls = tag==='admin' ? 'tag-admin' : (tag==='member' ? 'tag-member' : '');
-    // Draf = ahli BAHARU yang belum lulus (m._draft). Hanya kad draf sebenar (kelabu)
-    // yang dikunci daripada diedit oleh pengguna lain. Kad yang sudah disahkan tetapi
-    // mempunyai cadangan edit menunggu hanya dipaparkan dengan lencana kecil (untuk admin)
-    // dan kekal boleh diedit oleh sesiapa.
+    // Semua kad yang ada cadangan menunggu (addMember BAHARU atau editMember terhadap
+    // kad sedia ada) dianggap "draf" — dikelabukan dan dikunci daripada diedit oleh
+    // pengguna lain sehingga admin sah/batal. Hanya kad yang BERSIH (tiada pending)
+    // boleh diedit oleh sesiapa sahaja.
     const editPending = editMap[String(m.id)] || null;
-    const isDraft = !!m._draft;
-    const hasPendingEdit = !isDraft && !!editPending;
+    const isNewDraft = !!m._draft;                 // ahli baharu belum lulus
+    const hasPendingEdit = !isNewDraft && !!editPending; // kad sedia ada dengan cadangan edit
+    const isDraft = isNewDraft || hasPendingEdit;  // dianggap draf (kelabu + terkunci)
     const pendingRec = m._pending || editPending;
     const draftCls = isDraft ? 'tag-draft' : '';
     el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls}`;
@@ -517,9 +518,10 @@ function renderNodes(layout){
     const badge = tag==='admin'
       ? '<span class="chip" style="background:linear-gradient(180deg,#ff8a8a,#b71c1c);color:#fff">🛡️ Admin</span>'
       : (tag==='member' ? `<span class="chip" style="background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#241704">⭐ Ahli${m._memberId?' '+escapeHtml(m._memberId):''}</span>` : '');
-    const draftBadge = isDraft
-      ? `<span class="chip draft-chip">📝 ${pendingRec?.user===STORE.user?.username?'Draf Anda':'Draf @'+escapeHtml(pendingRec?.user||'pengguna')}</span>`
-      : (hasPendingEdit && isAdmin ? `<span class="chip draft-chip">📝 Cadangan Edit</span>` : '');
+    const draftLabel = isNewDraft
+      ? (pendingRec?.user===STORE.user?.username?'Draf Anda':'Draf @'+escapeHtml(pendingRec?.user||'pengguna'))
+      : (pendingRec?.user===STORE.user?.username?'Edit Anda — Menunggu':'Sedang Diedit @'+escapeHtml(pendingRec?.user||'pengguna'));
+    const draftBadge = isDraft ? `<span class="chip draft-chip">📝 ${draftLabel}</span>` : '';
     el.innerHTML = `
       <div class="avatar">${m.photo?`<img src="${m.photo}">`:(m.name||'?').slice(0,1).toUpperCase()}</div>
       <div class="nm">${escapeHtml(m.name||'Tanpa Nama')}</div>
@@ -532,11 +534,16 @@ function renderNodes(layout){
     `;
     el.addEventListener('click', e=>{
       e.stopPropagation();
-      // Kad DRAF kelabu → semakan draf (admin sah/batal; pengguna lain lihat sahaja).
-      if(isDraft && (isAdmin || pendingRec?.user!==STORE.user?.username)) openDraftReview(m, pendingRec);
-      // Kad disahkan dengan cadangan edit → admin nampak perbandingan Lama vs Baru.
-      else if(hasPendingEdit && isAdmin) openDraftReview(m, editPending);
-      else openMemberMenu(m);
+      // Kad kelabu (draf baharu / cadangan edit menunggu):
+      //  - Admin → semakan perbandingan untuk sah/batal.
+      //  - Pemilik draf sendiri → buka menu (boleh edit draf sendiri / profil sendiri).
+      //  - Pengguna lain → paparan baca sahaja (tidak boleh edit).
+      if(isDraft){
+        if(isAdmin) return openDraftReview(m, pendingRec);
+        if(pendingRec?.user===STORE.user?.username) return openMemberMenu(m);
+        return openDraftReview(m, pendingRec);
+      }
+      openMemberMenu(m);
     });
     frag.appendChild(el);
   });
@@ -717,9 +724,9 @@ const MEMBER_FIELDS = [
 function openMemberMenu(m){
   const role = STORE.user?.role;
   const isAdmin = ['admin','master'].includes(role);
-  // Hanya kad DRAF baharu (addMember belum lulus) yang dikunci kepada satu pengedit.
-  // Kad yang sudah disahkan boleh diedit oleh sesiapa, walaupun ada cadangan edit menunggu.
-  const lock = (DATA.pending||[]).find(p => p.action==='addMember' && String(p.payload?.id)===String(m.id));
+  // Kad dikunci kepada satu pengedit selagi ada cadangan menunggu (addMember BAHARU
+  // atau editMember terhadap kad sedia ada). Sebaik admin sah/batal, kunci dilepaskan.
+  const lock = (DATA.pending||[]).find(p => (p.action==='addMember' || p.action==='editMember') && String(p.payload?.id)===String(m.id));
   const lockedByOther = !!lock && !isAdmin && lock.user!==STORE.user?.username;
   const basic = `
     <div class="profile-head">
