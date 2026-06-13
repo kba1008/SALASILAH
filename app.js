@@ -465,27 +465,22 @@ function openMemberMenu(m){
   const role = STORE.user?.role;
   const isAdmin = ['admin','master'].includes(role);
   const basic = `
-    <div class="flex items-center gap-3 mb-3">
-      <div class="avatar" style="width:72px;height:72px;border-radius:50%;background:linear-gradient(180deg,var(--gold-2),var(--gold));display:grid;place-items:center;color:#241704;font-weight:800;font-size:24px;overflow:hidden">
-        ${m.photo?`<img style="width:100%;height:100%;object-fit:cover" src="${m.photo}">`:(m.name||'?').slice(0,1).toUpperCase()}
+    <div class="profile-head">
+      <div class="profile-avatar">
+        ${m.photo?`<img src="${m.photo}" alt="">`:(m.name||'?').slice(0,1).toUpperCase()}
       </div>
-      <div>
-        <div class="font-head text-xl">${escapeHtml(m.name||'Tanpa Nama')}</div>
-        <div class="text-xs ink-soft">${m.gender==='F'?'Perempuan':'Lelaki'} • ${m.alive===false?'Allahyarham':'Hidup'} • ${escapeHtml(m.birth||'?')}${m.alive===false?' – '+escapeHtml(m.death||'?'):''}</div>
+      <div class="profile-meta">
+        <div class="pn">${escapeHtml(m.name||'Tanpa Nama')}</div>
+        <div class="ps">${m.gender==='F'?'Perempuan':'Lelaki'} • ${m.alive===false?'Allahyarham':'Hidup'} • ${escapeHtml(m.birth||'?')}${m.alive===false?' – '+escapeHtml(m.death||'?'):''}</div>
       </div>
     </div>`;
-  const adminInfo = isAdmin ? `
-    <div class="bevel-soft rounded-lg p-3 mb-3 text-sm">
-      ${m.place?`<div><b>Tempat/Asal:</b> ${escapeHtml(m.place)}</div>`:''}
-      ${m.address?`<div><b>Alamat:</b> ${escapeHtml(m.address)}</div>`:''}
-      ${m.fatherName?`<div><b>Bapa:</b> ${escapeHtml(m.fatherName)}</div>`:''}
-      ${m.motherName?`<div><b>Ibu:</b> ${escapeHtml(m.motherName)}</div>`:''}
-      ${m.notes?`<div class="mt-1 text-xs ink-soft"><b>Catatan:</b> ${escapeHtml(m.notes)}</div>`:''}
-    </div>` : `
-    <div class="bevel-soft rounded-lg p-3 mb-3 text-sm">
-      ${m.fatherName?`<div><b>Bapa:</b> ${escapeHtml(m.fatherName)}</div>`:''}
-      ${m.motherName?`<div><b>Ibu:</b> ${escapeHtml(m.motherName)}</div>`:''}
-    </div>`;
+  const rows = [];
+  if(isAdmin && m.place) rows.push(`<div><b>Tempat/Asal:</b> ${escapeHtml(m.place)}</div>`);
+  if(isAdmin && m.address) rows.push(`<div><b>Alamat:</b> ${escapeHtml(m.address)}</div>`);
+  if(m.fatherName) rows.push(`<div><b>Bapa:</b> ${escapeHtml(m.fatherName)}</div>`);
+  if(m.motherName) rows.push(`<div><b>Ibu:</b> ${escapeHtml(m.motherName)}</div>`);
+  if(isAdmin && m.notes) rows.push(`<div><b>Catatan:</b> ${escapeHtml(m.notes)}</div>`);
+  const adminInfo = rows.length ? `<div class="profile-info bevel-soft">${rows.join('')}</div>` : '';
   
   openModal(basic + adminInfo + `
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -511,6 +506,62 @@ function openMemberMenu(m){
 
 function fileToB64(file){ return new Promise((res,rej)=>{ const r = new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
 
+function loadImage(src){ return new Promise((res,rej)=>{ const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>res(i); i.onerror=rej; i.src=src; }); }
+
+// Setup cropper bulat. Pulangkan fungsi getCropped() -> dataURL JPEG 400x400
+function setupCropper(boxEl, img, initial){
+  const BOX = 200, OUT = 400;
+  // Saiz dasar supaya gambar isi penuh kotak (cover)
+  const baseScale = Math.max(BOX / img.naturalWidth, BOX / img.naturalHeight);
+  const state = { scale: baseScale * (initial?.zoom || 1), x: 0, y: 0 };
+  const imgEl = document.createElement('img');
+  imgEl.src = img.src;
+  boxEl.appendChild(imgEl);
+  function clamp(){
+    const w = img.naturalWidth * state.scale;
+    const h = img.naturalHeight * state.scale;
+    state.x = Math.min(0, Math.max(BOX - w, state.x));
+    state.y = Math.min(0, Math.max(BOX - h, state.y));
+  }
+  function apply(){
+    clamp();
+    imgEl.style.width = (img.naturalWidth * state.scale)+'px';
+    imgEl.style.height = (img.naturalHeight * state.scale)+'px';
+    imgEl.style.transform = `translate(${state.x}px, ${state.y}px)`;
+  }
+  // center pada mula
+  state.x = (BOX - img.naturalWidth * state.scale)/2;
+  state.y = (BOX - img.naturalHeight * state.scale)/2;
+  apply();
+  // drag
+  let drag = null;
+  boxEl.addEventListener('pointerdown', e=>{ drag = { sx:e.clientX, sy:e.clientY, x:state.x, y:state.y }; boxEl.setPointerCapture(e.pointerId); });
+  boxEl.addEventListener('pointermove', e=>{ if(!drag) return; state.x = drag.x + (e.clientX - drag.sx); state.y = drag.y + (e.clientY - drag.sy); apply(); });
+  boxEl.addEventListener('pointerup', ()=> drag = null);
+  boxEl.addEventListener('pointercancel', ()=> drag = null);
+  return {
+    setZoom(z){
+      const cx = BOX/2, cy = BOX/2;
+      const px = (cx - state.x) / state.scale, py = (cy - state.y) / state.scale;
+      state.scale = baseScale * z;
+      state.x = cx - px * state.scale;
+      state.y = cy - py * state.scale;
+      apply();
+    },
+    getCropped(){
+      const cv = document.createElement('canvas');
+      cv.width = OUT; cv.height = OUT;
+      const ctx = cv.getContext('2d');
+      const ratio = OUT / BOX;
+      // sumber: (-state.x/scale, -state.y/scale) saiz BOX/scale
+      const sx = -state.x / state.scale, sy = -state.y / state.scale;
+      const sSize = BOX / state.scale;
+      ctx.drawImage(img, sx, sy, sSize, sSize, 0, 0, OUT, OUT);
+      return cv.toDataURL('image/jpeg', 0.88);
+    }
+  };
+}
+
 function memberForm(m){
   const isNew = !m;
   m = m || { id:uid(), gender:'M', alive:true };
@@ -531,21 +582,47 @@ function memberForm(m){
       <div class="field"><label>Nama ibu</label><input id="f_mo" value="${escapeHtml(m.motherName||'')}"/></div>
       <div class="field sm:col-span-2"><label>Alamat menetap</label><textarea id="f_ad" rows="2">${escapeHtml(m.address||'')}</textarea></div>
       <div class="field sm:col-span-2"><label>Catatan</label><textarea id="f_n" rows="2">${escapeHtml(m.notes||'')}</textarea></div>
-      <div class="field sm:col-span-2"><label>Gambar (Max 2MB)</label><input id="f_ph" type="file" accept="image/jpeg,image/png,image/webp"/></div>
+      <div class="field sm:col-span-2">
+        <label>Gambar profil (sebarang saiz — auto kecilkan)</label>
+        <input id="f_ph" type="file" accept="image/*"/>
+        <div id="cropArea" class="crop-wrap mt-2" style="display:none">
+          <div id="cropBox" class="crop-box"></div>
+          <div class="crop-hint">
+            Tarik gambar dalam bulatan untuk pilih sudut yang nak dipaparkan.
+            <div class="crop-controls">
+              <span style="font-size:.75rem">Zoom</span>
+              <input id="f_zoom" type="range" min="1" max="3" step="0.05" value="1"/>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="flex gap-2 justify-end mt-2">
       <button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button>
       <button class="btn gold-edge" id="saveMember">Simpan</button>
     </div>
   `);
+  let cropper = null;
+  $('#f_ph').addEventListener('change', async (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    if(!/^image\//.test(file.type)) return toast("Sila pilih fail gambar.");
+    const url = URL.createObjectURL(file);
+    try{
+      const img = await loadImage(url);
+      const box = $('#cropBox'); box.innerHTML = '';
+      $('#cropArea').style.display = 'flex';
+      cropper = setupCropper(box, img);
+      $('#f_zoom').value = 1;
+      $('#f_zoom').oninput = (ev)=> cropper.setZoom(parseFloat(ev.target.value));
+    }catch(err){ toast("Gagal baca gambar."); }
+  });
   $('#saveMember').onclick = async ()=>{
     const payload = { id:m.id, name:upperName($('#f_name').value), gender:$('#f_g').value, birth:$('#f_b').value.trim(), alive:$('#f_a').value==='true', death:$('#f_d').value.trim(), place:$('#f_p').value.trim(), address:$('#f_ad').value.trim(), fatherName:upperName($('#f_fa').value), motherName:upperName($('#f_mo').value), notes:$('#f_n').value.trim() };
     if(!payload.name) return toast("Nama wajib diisi.");
-    const file = $('#f_ph').files[0];
-    if(file){
-      if(file.size>2*1024*1024) return toast("Saiz maksimum 2MB.");
-      payload.photoB64 = await fileToB64(file);
-      payload.photoMime = file.type;
+    if(cropper){
+      const dataUrl = cropper.getCropped();
+      payload.photoB64 = dataUrl.split(',')[1];
+      payload.photoMime = 'image/jpeg';
     }
     try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); notify[r.pending?'warn':'success'](r.pending?'📝 Disimpan sebagai DRAF. Menunggu kelulusan pentadbir.':'Berjaya.'); closeModal(); await refresh(); }catch(e){ toast("Gagal: "+e.message); }
   };

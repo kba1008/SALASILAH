@@ -186,6 +186,53 @@
     svg.links { position:absolute; inset:0; width:100%; height:100%; pointer-events:none }
     svg.links path { stroke:var(--line); stroke-width:2.2; fill:none; filter: drop-shadow(0 2px 0 color-mix(in oklab, var(--shadow) 35%, transparent)); }
     svg.links path.spouse { stroke-dasharray:6 5; stroke:var(--gold); }
+    /* Label kecil pada cabang anak (ibu × bapa) */
+    svg.links .branch-lbl rect {
+      fill: var(--card);
+      stroke: var(--gold);
+      stroke-width: 1;
+      filter: drop-shadow(0 2px 4px color-mix(in oklab, var(--shadow) 50%, transparent));
+    }
+    svg.links .branch-lbl text {
+      fill: var(--ink);
+      font-family: var(--font-body);
+      font-size: 10px;
+      font-weight: 700;
+      paint-order: stroke;
+    }
+
+    /* ====== PROFIL HEADER (modal) ====== */
+    .profile-head { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
+    .profile-avatar {
+      width:84px; height:84px; flex-shrink:0;
+      border-radius:50%; overflow:hidden;
+      background:linear-gradient(180deg,var(--gold-2),var(--gold));
+      display:grid; place-items:center;
+      color:#241704; font-weight:800; font-size:30px;
+      border:2px solid color-mix(in oklab, var(--gold) 70%, var(--ink));
+      box-shadow:0 6px 14px -4px var(--shadow);
+    }
+    .profile-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+    .profile-meta { min-width:0; flex:1; }
+    .profile-meta .pn { font-family:var(--font-head); font-size:1.25rem; font-weight:800; line-height:1.15; word-break:break-word; }
+    .profile-meta .ps { font-size:.78rem; color:var(--ink-soft); margin-top:4px; }
+    .profile-info { display:grid; gap:6px; padding:12px 14px; border-radius:12px; font-size:.88rem; line-height:1.4; }
+    .profile-info > div { word-break:break-word; }
+    .profile-info b { color:var(--ink-soft); margin-right:4px; font-weight:700; }
+
+    /* ====== CROPPER ====== */
+    .crop-wrap { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+    .crop-box {
+      width:200px; height:200px; border-radius:50%;
+      overflow:hidden; position:relative; flex-shrink:0;
+      background:#222; border:2px solid var(--gold);
+      box-shadow:0 0 0 4px color-mix(in oklab, var(--gold) 25%, transparent);
+      cursor:move; touch-action:none; user-select:none;
+    }
+    .crop-box img { position:absolute; transform-origin:0 0; pointer-events:none; max-width:none; }
+    .crop-hint { font-size:.75rem; color:var(--ink-soft); flex:1; min-width:140px; }
+    .crop-controls { display:flex; gap:8px; align-items:center; margin-top:8px; }
+    .crop-controls input[type=range] { flex:1; }
 
     .note {
       position:absolute; padding:10px 14px; border-radius:10px;
