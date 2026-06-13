@@ -22,8 +22,8 @@
    9) Buka aplikasi → log masuk dengan: admin / 101010
    ===================================================================== */
 
-const SHEET_ID = '';        // ← isi di sini
-const DRIVE_FOLDER_ID = ''; // ← biar kosong jika mahu auto-cipta
+const SHEET_ID = '1wqIc6971U96VXqOJ55pD-wzxQicC4RT4TBNoUrUVtig';        // ← isi di sini
+const DRIVE_FOLDER_ID = '1tb1YIWlxbHkN-HzdAXtFlMWp136JXxN4'; // ← biar kosong jika mahu auto-cipta
 
 const MASTER_USERNAME = 'admin';
 const MASTER_PASSWORD = '101010';
