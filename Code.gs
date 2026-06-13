@@ -310,14 +310,19 @@ function pendingForUser(username) {
 }
 
 function pendingOwnerForMember(memberId) {
-  // Kad dianggap "draf terkunci" selagi ada cadangan menunggu — sama ada addMember
-  // (ahli baharu belum lulus) atau editMember (cadangan edit terhadap kad sedia ada).
-  // Sebaik admin sah/batal, kunci dilepaskan dan kad boleh diedit semula oleh sesiapa.
+  const liveSpouses = readAll('PASANGAN');
   const pendingRows = readAll('PENDING').filter(isPendingRecord);
-  const row = pendingRows.find(p =>
-    (p.action==='addMember' || p.action==='editMember') &&
-    String((safeParse(p.payload)||{}).id) === String(memberId)
-  );
+  const row = pendingRows.find(p => {
+    const payload = safeParse(p.payload) || {};
+    if ((p.action==='addMember' || p.action==='editMember') && String(payload.id)===String(memberId)) return true;
+    if (p.action==='addSpouse' && (String(payload.husbandId)===String(memberId) || String(payload.wifeId)===String(memberId))) return true;
+    if (p.action==='addChild') {
+      const spouse = liveSpouses.find(s=>String(s.id)===String(payload.spouseId)) ||
+        pendingRows.filter(x=>x.action==='addSpouse').map(x=>safeParse(x.payload)).find(s=>s && String(s.id)===String(payload.spouseId));
+      return !!spouse && (String(spouse.husbandId)===String(memberId) || String(spouse.wifeId)===String(memberId));
+    }
+    return false;
+  });
   return row ? String(row.user) : '';
 }
 

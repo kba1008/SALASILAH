@@ -469,6 +469,28 @@
       font-family:var(--font-head); font-weight:800; font-size:14px; letter-spacing:1px;
       color:#241704;
     }
+    .lb-img { cursor: zoom-in; }
+    #lightbox {
+      position: fixed; inset: 0; z-index: 70;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,.88); backdrop-filter: blur(6px);
+      padding: 16px;
+    }
+    #lightbox.show { display: flex; }
+    #lightbox img {
+      max-width: 100%; max-height: 100%;
+      border-radius: 14px; box-shadow: 0 28px 70px rgba(0,0,0,.55);
+      object-fit: contain;
+    }
+    #lightbox .lb-close {
+      position: absolute; top: 16px; right: 16px;
+      width: 48px; height: 48px; border-radius: 50%;
+      display: grid; place-items: center;
+      background: rgba(0,0,0,.55); color: #fff;
+      font-size: 24px; border: 1px solid rgba(255,255,255,.3);
+      cursor: pointer; backdrop-filter: blur(4px);
+    }
+    #lightbox .lb-close:hover { background: rgba(0,0,0,.8); }
   </style>
 </head>
 <body data-theme="royal">
@@ -538,6 +560,11 @@
 
   <div class="scrim" id="scrim">
     <div class="modal bevel niceScroll" id="modal"></div>
+  </div>
+
+  <div id="lightbox" onclick="if(event.target.id==='lightbox')closeImageLightbox()">
+    <button class="lb-close" onclick="closeImageLightbox()" aria-label="Tutup">✕</button>
+    <img id="lbImg" src="" alt="Gambar besar">
   </div>
 
   <script src="app.js" defer></script>
