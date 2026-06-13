@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbzvsE177XPFc3phhRCZfO0RXCljoHJeRC4qHvgc2hHhhBes_d9SnDKeFBZqCn3u7ZLl/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbycYAjCXDtZKQ1Pm5rOujMeKDHLIDYf9YqUydRiaj8iEzpSi0in_wMEHIYQjrO1cn9T/exec";
 
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
@@ -769,14 +769,21 @@ function adminPanel(tab='pending'){
   } else if(tab==='users'){
     const pu = DATA.pendingUsers || [];
     body.innerHTML = pu.length ? pu.map(u=>`
-      <div class="bevel-soft rounded-lg p-2 mb-2 text-sm">
-        <div><b>${escapeHtml(u.fullName)}</b> (@${escapeHtml(u.username)})</div>
-        <div class="flex gap-2 mt-2">
-          <button class="btn gold-edge" data-ap="${escapeHtml(u.username)}">Lulus & Beri No Ahli</button>
-          <button class="btn btn-ghost" style="color:var(--danger)" data-rj="${escapeHtml(u.username)}">Padam</button>
+      <div class="bevel-soft rounded-lg p-2 mb-2 text-sm flex items-center gap-3">
+        ${u.photo? `<img src="${escapeHtml(u.photo)}" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid var(--line)">` : `<div style="width:44px;height:44px;border-radius:50%;background:var(--bg-soft);display:flex;align-items:center;justify-content:center">👤</div>`}
+        <div class="flex-1 min-w-0">
+          <button class="text-left w-full" data-pv="${escapeHtml(u.username)}" style="background:none;border:0;padding:0;color:inherit;cursor:pointer">
+            <div class="truncate"><b style="text-decoration:underline">${escapeHtml(u.fullName||u.username)}</b></div>
+            <div class="text-xs ink-soft truncate">@${escapeHtml(u.username)} — tekan untuk semak maklumat</div>
+          </button>
+          <div class="flex gap-2 mt-2">
+            <button class="btn gold-edge" data-ap="${escapeHtml(u.username)}">Lulus & Beri No Ahli</button>
+            <button class="btn btn-ghost" style="color:var(--danger)" data-rj="${escapeHtml(u.username)}">Padam</button>
+          </div>
         </div>
       </div>
     `).join('') : '<p class="text-sm ink-soft">Tiada akaun menunggu kelulusan.</p>';
+    $$('button[data-pv]', body).forEach(b=> b.onclick = ()=> viewPendingUser(b.dataset.pv));
     $$('button[data-ap]', body).forEach(b=> b.onclick = async ()=>{ try{ await dispatchApi('approveUser', { target:b.dataset.ap }); notify.success("Diluluskan."); await refresh(); adminPanel('users'); }catch(e){ toast(e.message); } });
     $$('button[data-rj]', body).forEach(b=> b.onclick = async ()=>{ if(confirm('Tolak?')){ try{ await dispatchApi('rejectUser', { target:b.dataset.rj }); notify.success("Ditolak."); await refresh(); adminPanel('users'); }catch(e){ toast(e.message); } } });
   } else if(tab==='seed'){
@@ -819,6 +826,59 @@ function renderPendingCard(p, isAdmin){
       </div>`:'<div class="text-xs ink-soft mt-2">Menunggu kelulusan pentadbir…</div>'}
     </div>`;
 }
+
+// Popup semakan maklumat pendaftar baharu (admin sahaja)
+const PENDING_USER_FIELDS = [
+  { key:'fullName',   label:'Nama Penuh' },
+  { key:'username',   label:'Nama Pengguna' },
+  { key:'fatherName', label:'Nama Bapa' },
+  { key:'motherName', label:'Nama Ibu' },
+  { key:'address',    label:'Alamat' },
+  { key:'whatsapp',   label:'WhatsApp' },
+  { key:'phone',      label:'Telefon' },
+  { key:'email',      label:'E-mel' },
+  { key:'occupation', label:'Pekerjaan' },
+  { key:'createdAt',  label:'Tarikh Daftar' },
+];
+function viewPendingUser(username){
+  const u = (DATA.pendingUsers||[]).find(x=> String(x.username)===String(username));
+  if(!u){ toast('Maklumat tidak dijumpai.'); return; }
+  const rows = PENDING_USER_FIELDS
+    .filter(f => u[f.key])
+    .map(f => `<div class="mc-row"><span>${f.label}</span><b>${escapeHtml(u[f.key])}</b></div>`)
+    .join('');
+  openModal(`
+    <div class="modal-head"><b>Semak Permohonan Baharu</b><button class="btn btn-ghost" onclick="closeModal()">✕</button></div>
+    <div class="p-3">
+      <div class="flex flex-col items-center gap-2 mb-3">
+        ${u.photo
+          ? `<img src="${escapeHtml(u.photo)}" alt="${escapeHtml(u.fullName||'')}" style="width:140px;height:140px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">`
+          : `<div style="width:140px;height:140px;border-radius:50%;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:48px;border:2px solid var(--line)">👤</div>`}
+        <div class="text-center">
+          <div><b>${escapeHtml(u.fullName||u.username)}</b></div>
+          <div class="text-xs ink-soft">@${escapeHtml(u.username)}</div>
+        </div>
+      </div>
+      <div class="bevel-soft rounded-lg p-3">${rows || '<div class="ink-soft text-sm">Tiada maklumat tambahan.</div>'}</div>
+      <div class="flex gap-2 mt-3">
+        <button class="btn gold-edge flex-1" id="pvApprove">✅ Luluskan & Beri No Ahli</button>
+        <button class="btn btn-ghost" style="color:var(--danger)" id="pvReject">❌ Tolak</button>
+        <button class="btn btn-ghost" onclick="closeModal()">Tutup</button>
+      </div>
+    </div>
+  `);
+  $('#pvApprove').onclick = async ()=>{
+    try{ await dispatchApi('approveUser', { target:u.username }); notify.success('Diluluskan.'); closeModal(); await refresh(); adminPanel('users'); }
+    catch(e){ toast(e.message); }
+  };
+  $('#pvReject').onclick = async ()=>{
+    if(!confirm('Tolak permohonan ini?')) return;
+    try{ await dispatchApi('rejectUser', { target:u.username }); notify.success('Ditolak.'); closeModal(); await refresh(); adminPanel('users'); }
+    catch(e){ toast(e.message); }
+  };
+}
+
+
 
 // Akaun saya: papar draf saya jika ada
 function myDraftsButton(){
