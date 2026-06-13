@@ -218,6 +218,17 @@
     svg.links path.spouse { stroke-dasharray:6 5; stroke:var(--gold); }
     /* Hubungan DRAF (belum disahkan): garisan kelabu putus-putus */
     svg.links path.draft-link { stroke:#9a9a9a !important; stroke-dasharray:4 5; opacity:.8; filter:none; }
+    /* Pemegang junction — admin boleh seret untuk susun pertemuan cabang */
+    svg.links .junction-handle {
+      pointer-events: auto;
+      fill: var(--gold);
+      stroke: var(--card);
+      stroke-width: 2;
+      opacity: .85;
+      transition: transform .15s ease, opacity .15s ease;
+      transform-box: fill-box; transform-origin: center;
+    }
+    svg.links .junction-handle:hover { opacity: 1; transform: scale(1.25); }
     /* Label kecil pada cabang anak (ibu × bapa) */
     svg.links .branch-lbl rect {
       fill: var(--card);

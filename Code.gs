@@ -27,7 +27,7 @@ const MASTER_PASSWORD = '101010';
 const SHEETS = {
   PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
   SALASILAH: ['id','name','gender','alive','birth','death','place','address','photo','notes','fatherName','motherName','posX','posY','isHead','editedBy','editedAt','approvedBy','approvedAt'],
-  PASANGAN:  ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','editedBy','editedAt'],
+  PASANGAN:  ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','junctionDx','junctionDy','editedBy','editedAt'],
   ANAK:      ['spouseId','childId','editedBy','editedAt'],
   NOTA:      ['id','text','x','y','font','size','color','pinned','editedBy','editedAt'],
   PENDING:   ['id','action','payload','before','user','userFullName','reason','ts','status','approvedBy','approvedAt']
@@ -728,6 +728,19 @@ const HANDLERS = {
     });
     return { ok: true, updated: updated };
   },
+  setJunction(body) {
+    requireAuth(body, ['admin','master']);
+    const id = body.spouseId || body.id;
+    if (!id) throw new Error('spouseId diperlukan.');
+    const patch = {
+      junctionDx: Number(body.dx) || 0,
+      junctionDy: Number(body.dy) || 0,
+      editedBy: (body.username||''), editedAt: now()
+    };
+    const ok = updateRow('PASANGAN', 'id', id, patch);
+    return { ok: ok };
+  },
+
 
   // Admin menetapkan Kepala Salasilah. Pilihan admin adalah muktamad:
   // bersihkan semua isHead dalam keluarga yang bersambung, kemudian tandakan id pilihan.

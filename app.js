@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbzcUIfdouBTo4bAeoyMhpbPbVJWrL6WLqk1vmMMIc8dL2AZ4QVPqc9ILBr1F0doOsXo/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbySnlDlLMvubSyGg9zrQ6KbGpH76gM38-HRk4z_GqX1rH6HK_fGQPVGNkRRUwBg7unn/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -706,17 +706,19 @@ async function autoArrangeHead(headId){
 //    cabang tersebut menggunakan variasi 0 (tanpa kitar) — hasil paling kemas.
 // 2) Selainnya, letak bersebelahan pasangan / di bawah ibu-bapa supaya
 //    tidak ditinggalkan di penjuru kanvas.
-async function autoPlaceNew(){
+async function autoPlaceNew(hints){
   const hasPos = (m)=> m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY);
-  const newOnes = (DATA.members||[]).filter(m=> !hasPos(m));
-  if(!newOnes.length) return;
+  const hintIds = Array.isArray(hints) ? hints.filter(Boolean).map(String) : [];
+  const newOnes = (DATA.members||[]).filter(m=> !hasPos(m) || hintIds.includes(String(m.id)));
+  if(!newOnes.length && !hintIds.length) return;
 
   const positions = [];
   const placedIds = new Set();
 
-  // (1) Susun semula setiap cabang Kepala yang mempunyai kad baharu.
+  // (1) Susun semula setiap cabang Kepala yang mempunyai kad baharu / hint.
   const headsToFix = new Set();
   newOnes.forEach(m=>{ const h = findHeadForMember(m.id); if(h) headsToFix.add(h); });
+  hintIds.forEach(id=>{ const h = findHeadForMember(id); if(h) headsToFix.add(h); });
   headsToFix.forEach(h=>{
     const layout = autoLayoutSubtree(h, 0);
     Object.keys(layout).forEach(id=>{
@@ -1015,30 +1017,95 @@ function renderLinks(layout){
   const byId = Object.fromEntries(getRenderMembers().map(m=>[m.id, m]));
   const SPOUSES = getRenderSpouses();
   const CHILDREN = getRenderChildren();
+  const isAdmin = ['admin','master'].includes(STORE.user?.role);
   let paths = '';
   let labels = '';
+  let handles = '';
+  const junctions = {}; // spouseId -> {x,y}
   SPOUSES.forEach(s=>{
     const a = layout[s.husbandId], b = layout[s.wifeId];
     if(!a || !b) return;
     paths += `<path class="spouse${s._draft?' draft-link':''}" d="M ${a.x + NODE_W/2} ${a.y + NODE_H/2} L ${b.x + NODE_W/2} ${b.y + NODE_H/2}"/>`;
+    // Titik pertemuan cabang (junction) — di tengah garisan pasangan + offset manual.
+    const cx = (a.x + b.x)/2 + NODE_W/2;
+    const cy = (a.y + b.y)/2 + NODE_H/2;
+    const dx = Number(s.junctionDx) || 0;
+    const dy = Number(s.junctionDy) || 0;
+    junctions[s.id] = { x: cx + dx, y: cy + dy };
   });
   CHILDREN.forEach(c=>{
     const sp = SPOUSES.find(s=>s.id===c.spouseId); if(!sp) return;
+    const j = junctions[sp.id];
     const a = layout[sp.husbandId], b = layout[sp.wifeId], k = layout[c.childId];
     if(!k) return;
-    const px = a && b ? (a.x+b.x)/2 + NODE_W/2 : (a||b).x + NODE_W/2;
-    const py = (a||b).y + NODE_H;
-    const my = (py+k.y)/2, kx = k.x + NODE_W/2;
-    paths += `<path class="${c._draft?'draft-link':''}" d="M ${px} ${py} L ${px} ${my} L ${kx} ${my} L ${kx} ${k.y}"/>`;
+    let jx, jy;
+    if(j){ jx = j.x; jy = j.y; }
+    else { jx = a && b ? (a.x+b.x)/2 + NODE_W/2 : (a||b).x + NODE_W/2; jy = (a||b).y + NODE_H; }
+    const kx = k.x + NODE_W/2;
+    // Busbar pada paras junction; jika junction di atas anak guna jy, jika tidak turun dulu.
+    const busY = jy < k.y - 4 ? jy : k.y - 20;
+    paths += `<path class="${c._draft?'draft-link':''}" d="M ${jx} ${jy} L ${jx} ${busY} L ${kx} ${busY} L ${kx} ${k.y}"/>`;
     // Label kecil maklumat ibu/bapa pada cabang (untuk poligami / >1 perkahwinan)
     const dad = byId[sp.husbandId], mom = byId[sp.wifeId];
     const dn = (dad?.name||'?').split(' ')[0];
     const mn = (mom?.name||'?').split(' ')[0];
-    const lblY = my - 6;
+    const lblY = busY - 6;
     labels += `<g class="branch-lbl"><rect x="${kx-58}" y="${lblY-11}" width="116" height="14" rx="6"/><text x="${kx}" y="${lblY}" text-anchor="middle">${escapeHtml(dn)} × ${escapeHtml(mn)}</text></g>`;
   });
-  svg.innerHTML = paths + labels;
+  // Pemegang junction — hanya admin & jika pasangan punya anak.
+  if(isAdmin){
+    const hasKids = new Set(CHILDREN.map(c=>c.spouseId));
+    Object.keys(junctions).forEach(sid=>{
+      if(!hasKids.has(sid)) return;
+      const j = junctions[sid];
+      handles += `<circle class="junction-handle" data-spouseid="${sid}" cx="${j.x}" cy="${j.y}" r="7"/>`;
+    });
+  }
+  svg.innerHTML = paths + labels + handles;
+  if(isAdmin) wireJunctionHandles(svg);
 }
+
+let _junctionDrag = null;
+function wireJunctionHandles(svg){
+  svg.querySelectorAll('.junction-handle').forEach(h=>{
+    h.style.cursor = 'grab';
+    h.addEventListener('pointerdown', (e)=>{
+      e.stopPropagation(); e.preventDefault();
+      const sid = h.dataset.spouseid;
+      const sp = getRenderSpouses().find(s=>String(s.id)===String(sid)); if(!sp) return;
+      const scale = panzoomInstance ? panzoomInstance.getScale() : 1;
+      _junctionDrag = { sid, sx:e.clientX, sy:e.clientY, scale,
+        baseDx: Number(sp.junctionDx)||0, baseDy: Number(sp.junctionDy)||0, moved:false };
+      h.setPointerCapture(e.pointerId);
+      if(panzoomInstance) panzoomInstance.setOptions({ disablePan:true });
+      h.style.cursor = 'grabbing';
+    });
+    h.addEventListener('pointermove', (e)=>{
+      if(!_junctionDrag || _junctionDrag.sid !== h.dataset.spouseid) return;
+      const dx = (e.clientX - _junctionDrag.sx) / _junctionDrag.scale;
+      const dy = (e.clientY - _junctionDrag.sy) / _junctionDrag.scale;
+      if(Math.abs(dx)+Math.abs(dy) > 2) _junctionDrag.moved = true;
+      const sid = _junctionDrag.sid;
+      const sp = (DATA.spouses||[]).find(s=>String(s.id)===String(sid));
+      if(sp){ sp.junctionDx = _junctionDrag.baseDx + dx; sp.junctionDy = _junctionDrag.baseDy + dy; }
+      renderLinks(buildLayout());
+    });
+    const end = async (e)=>{
+      if(!_junctionDrag || _junctionDrag.sid !== h.dataset.spouseid) return;
+      const st = _junctionDrag; _junctionDrag = null;
+      if(panzoomInstance) panzoomInstance.setOptions({ disablePan:false });
+      h.style.cursor = 'grab';
+      if(!st.moved) return;
+      const sp = (DATA.spouses||[]).find(s=>String(s.id)===String(st.sid));
+      if(!sp) return;
+      try{ await dispatchApi('setJunction', { spouseId: st.sid, dx: Math.round(sp.junctionDx||0), dy: Math.round(sp.junctionDy||0) }); }
+      catch(err){ notify.warn('Junction tidak disimpan: ' + (err.message||err)); }
+    };
+    h.addEventListener('pointerup', end);
+    h.addEventListener('pointercancel', end);
+  });
+}
+
 
 // Sembunyi node luar viewport untuk skala besar (1000+ kad)
 function cullViewport(){
@@ -1291,7 +1358,7 @@ function memberForm(m){
       payload.photoB64 = dataUrl.split(',')[1];
       payload.photoMime = 'image/jpeg';
     }
-    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success('Berjaya.'); } closeModal(); await refresh(); if(!r.pending && isNew) await autoPlaceNew(); }catch(e){ toast("Gagal: "+e.message); }
+    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success('Berjaya.'); } closeModal(); await refresh(); if(!r.pending && isNew) await autoPlaceNew([payload.id]); }catch(e){ toast("Gagal: "+e.message); }
   };
 }
 
@@ -1316,7 +1383,7 @@ function spouseForm(m){
     const pick = $('#sp_pick').value;
     const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:upperName($('#sp_name').value), gender:$('#sp_g').value, alive:true }, spouseId: uid(), reason:$('#sp_reason')?.value.trim()||'' };
     if(!pick && !payload.newPartner.name) return toast("Isi maklumat pasangan.");
-    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh(); if(!r.pending) await autoPlaceNew(); }catch(e){ toast(e.message); }
+    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh(); if(!r.pending) await autoPlaceNew([m.id, pick || payload.newPartner?.id]); }catch(e){ toast(e.message); }
   };
 }
 
