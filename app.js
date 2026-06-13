@@ -1,25 +1,15 @@
 /* ================================================================
    Salasilah Keluarga Elit — app.js
-   Front-end logic: auth, kanvas pokok, pasangan, anak, nota,
-   admin, carian, PWA, segerak offline.
    ================================================================ */
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbzz7YOaiVB_tzMeeRywFJ6O9ewXXjF6TOTkjiLYVL9Bdu5jJMLVYSv7z2zq6oULiK0N/exec";
+const API_URL = "https://script.google.com/macros/s/PASTE_DEPLOY_ID_DI_SINI/exec";
 
-// ====== UTILITI ======
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 const uid = () => 'id_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-/* ====== SISTEM NOTIFIKASI CANGGIH ======
-   notify.info(msg)    - maklumat ringkas, auto-tutup 3s
-   notify.success(msg) - kejayaan, auto-tutup 3s
-   notify.warn(msg)    - amaran, auto-tutup 5s
-   notify.error(msg)   - RALAT: kekal sampai pengguna tekan ✕
-*/
 const notify = (function(){
   function dock(){
     let d = document.getElementById('notifyDock');
@@ -33,8 +23,7 @@ const notify = (function(){
   function push(kind, msg, opts){
     opts = opts || {};
     const sticky = kind === 'error' || opts.sticky;
-    const ms = opts.ms != null ? opts.ms
-             : (kind==='warn' ? 5000 : 3000);
+    const ms = opts.ms != null ? opts.ms : (kind==='warn' ? 5000 : 3000);
     const el = document.createElement('div');
     el.className = 'notify notify-' + kind + (sticky ? ' notify-sticky' : '');
     const icon = {info:'ℹ️', success:'✅', warn:'⚠️', error:'⛔'}[kind] || 'ℹ️';
@@ -50,11 +39,6 @@ const notify = (function(){
     el.querySelector('.notify-x').onclick = close;
     dock().appendChild(el);
     if(!sticky){ setTimeout(close, ms); }
-    try{
-      if(kind==='error') console.error('[notify]', msg);
-      else if(kind==='warn') console.warn('[notify]', msg);
-      else console.log('[notify]', msg);
-    }catch(_){}
     return close;
   }
   return {
@@ -65,30 +49,14 @@ const notify = (function(){
   };
 })();
 
-// Backwards-compat: kekalkan toast(msg) untuk panggilan lama.
-// Auto-detect "Gagal" / "Ralat" untuk papar sebagai ralat sticky.
 function toast(msg, ms){
   const s = String(msg||'');
-  if(/^(gagal|ralat|error)/i.test(s) || /tidak dibenarkan|sesi tamat/i.test(s)){
-    return notify.error(s);
-  }
+  if(/^(gagal|ralat|error)/i.test(s) || /tidak dibenarkan|sesi tamat/i.test(s)) return notify.error(s);
   return notify.info(s, { ms: ms || 3000 });
 }
 
-// Pemegang ralat global — apa-apa exception tidak ditangkap akan dipapar.
-window.addEventListener('error', (e)=>{
-  if(e && e.message) notify.error('Ralat: '+e.message);
-});
-window.addEventListener('unhandledrejection', (e)=>{
-  const m = e?.reason?.message || e?.reason || 'Ralat tidak diketahui';
-  notify.error('Ralat: '+m);
-});
-
-async function sha256(text){
-  const buf = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
+window.addEventListener('error', (e) => { if(e && e.message) notify.error('Ralat: '+e.message); });
+window.addEventListener('unhandledrejection', (e) => { notify.error('Ralat: '+(e?.reason?.message || e?.reason || 'Tidak diketahui')); });
 
 const STORE = {
   get user(){ try{return JSON.parse(localStorage.getItem('skg_user')||'null')}catch{return null} },
@@ -100,272 +68,104 @@ const STORE = {
   get theme(){ return localStorage.getItem('skg_theme') || 'royal' },
   set theme(v){ localStorage.setItem('skg_theme', v); document.body.dataset.theme = v }
 };
-
 document.body.dataset.theme = STORE.theme;
 
-// ====== API ======
 const LOCAL_MODE = !API_URL || API_URL.includes('PASTE_DEPLOY_ID_DI_SINI');
+if (LOCAL_MODE) console.warn('[SKG] Mod Tempatan aktif — Sila isikan API_URL di dalam app.js jika anda telah selesai mendeploy Code.gs.');
 
-// ---- Local backend (fallback bila API_URL belum disiapkan) ----
 const LOCAL = {
-  get db(){
-    try{ return JSON.parse(localStorage.getItem('skg_localdb')||'null') || this._seed(); }
-    catch{ return this._seed(); }
-  },
+  get db(){ try{ return JSON.parse(localStorage.getItem('skg_localdb')||'null') || this._seed(); }catch{ return this._seed(); } },
   set db(v){ localStorage.setItem('skg_localdb', JSON.stringify(v)); },
-  _seed(){
-    const db = {
-      users: [{ username:'admin', fullName:'Pentadbir Utama', fatherName:'', motherName:'',
-                address:'', whatsapp:'', occupation:'Pentadbir Sistem', photo:'',
-                email:'', phone:'', password:'101010', role:'master', approved:true, token:'',
-                memberId:'KEL-MASTER-0001', createdAt: new Date().toISOString() }],
-      members:[], spouses:[], children:[], notes:[], pending:[]
-    };
-    localStorage.setItem('skg_localdb', JSON.stringify(db));
-    return db;
-  },
-  ensureAdmin(){
-    const db = this.db;
-    let admin = db.users.find(u => String(u.username).toLowerCase()==='admin');
-    if(!admin){
-      db.users.push({ username:'admin', fullName:'Pentadbir Utama', fatherName:'', motherName:'',
-        address:'', whatsapp:'', occupation:'Pentadbir Sistem', photo:'',
-        email:'', phone:'', password:'101010', role:'master', approved:true, token:'',
-        memberId:'KEL-MASTER-0001', createdAt:new Date().toISOString() });
-    } else {
-      admin.role = 'master';
-      admin.password = '101010';
-      admin.approved = true;
-      if(!admin.memberId) admin.memberId = 'KEL-MASTER-0001';
-      if(!admin.occupation) admin.occupation = 'Pentadbir Sistem';
-    }
-    this.db = db;
+  _seed(){ 
+    const db = { users:[], members:[], spouses:[], children:[], notes:[], pending:[] };
+    localStorage.setItem('skg_localdb', JSON.stringify(db)); return db;
   }
-};
-// Pastikan akaun Master Admin sentiasa wujud dalam mod tempatan.
-try{ LOCAL.ensureAdmin(); }catch(_){}
-function _tok(){ return Math.random().toString(36).slice(2)+Date.now().toString(36)+Math.random().toString(36).slice(2); }
-function _auth(body, opts={}){
-  const db = LOCAL.db;
-  if(!body.username || !body.token){
-    if(opts.optional) return { db, u:null, isAdmin:false, isMaster:false, isGuest:true };
-    throw new Error('Tidak dibenarkan — sila log masuk.');
-  }
-  const u = db.users.find(x => x.username===body.username && x.token && x.token===body.token);
-  if(!u){
-    if(opts.optional) return { db, u:null, isAdmin:false, isMaster:false, isGuest:true };
-    throw new Error('Sesi tamat — sila log masuk semula.');
-  }
-  return { db, u, isAdmin: u.role==='admin'||u.role==='master', isMaster: u.role==='master', isGuest:false };
-}
-
-function _nextMemberId(db){
-  const yr = new Date().getFullYear();
-  let n = 0;
-  db.users.forEach(u => {
-    const m = String(u.memberId||'').match(new RegExp('^KEL-'+yr+'-(\\d+)$'));
-    if(m) n = Math.max(n, parseInt(m[1],10));
-  });
-  return 'KEL-'+yr+'-'+String(n+1).padStart(4,'0');
-}
-function _normName(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim(); }
-
-const LOCAL_HANDLERS = {
-  register(b){
-    const db = LOCAL.db;
-    const username = String(b.username||'').trim().toLowerCase();
-    const password = String(b.password||'');
-    if(username.length<3) throw new Error('Nama pengguna minima 3 aksara.');
-    if(password.length<6) throw new Error('Kata laluan minima 6 aksara.');
-    if(!b.fullName) throw new Error('Nama penuh wajib diisi.');
-    if(!b.fatherName) throw new Error('Nama penuh bapa wajib diisi.');
-    if(!b.motherName) throw new Error('Nama penuh ibu wajib diisi.');
-    if(!b.address) throw new Error('Alamat menetap wajib diisi.');
-    if(!b.whatsapp) throw new Error('No telefon WhatsApp wajib diisi.');
-    if(!b.occupation) throw new Error('Pekerjaan wajib diisi.');
-    if(db.users.find(u=>u.username===username)) throw new Error('Nama pengguna telah digunakan.');
-    const photo = b.photoB64 ? 'data:'+(b.photoMime||'image/jpeg')+';base64,'+b.photoB64 : '';
-    db.users.push({ username, fullName:b.fullName, fatherName:b.fatherName, motherName:b.motherName,
-      address:b.address, whatsapp:b.whatsapp, occupation:b.occupation, photo,
-      email:b.email||'', phone:b.whatsapp, password,
-      role:'user', approved:false, token:'', memberId:'', createdAt:new Date().toISOString() });
-    LOCAL.db = db; return { ok:true };
-  },
-  login(b){
-    const db = LOCAL.db;
-    const u = db.users.find(x => x.username===b.username);
-    if(!u || String(u.password||'') !== String(b.password||'')) throw new Error('Nama pengguna atau kata laluan salah.');
-    if(!u.approved && u.role!=='master') throw new Error('Akaun anda masih menunggu kelulusan pentadbir.');
-    u.token = _tok(); LOCAL.db = db;
-    return { ok:true, username:u.username, role:u.role, token:u.token, fullName:u.fullName, memberId:u.memberId, photo:u.photo };
-  },
-  myProfile(b){
-    const { u } = _auth(b);
-    return { ok:true, profile:{
-      username:u.username, fullName:u.fullName, fatherName:u.fatherName, motherName:u.motherName,
-      address:u.address, whatsapp:u.whatsapp, occupation:u.occupation, photo:u.photo,
-      role:u.role, memberId:u.memberId, createdAt:u.createdAt
-    }};
-  },
-  bootstrap(b){
-    const { db, u, isAdmin, isMaster } = _auth(b, {optional:true});
-    const approved = db.users.filter(x => x.approved);
-    const publicUsers = approved.map(x => ({
-      fullName:x.fullName, fatherName:x.fatherName, motherName:x.motherName,
-      role:x.role, memberId:x.memberId
-    }));
-    function tagFor(m){
-      const mn=_normName(m.name), mf=_normName(m.fatherName), mo=_normName(m.motherName);
-      for(const pu of publicUsers){
-        const sameName = _normName(pu.fullName)===mn;
-        const sameFather = !mf || !pu.fatherName ? true : _normName(pu.fatherName)===mf;
-        const sameMother = !mo || !pu.motherName ? true : _normName(pu.motherName)===mo;
-        if(sameName && (sameFather||sameMother)) return { tag: (pu.role==='admin'||pu.role==='master')?'admin':'member', memberId:pu.memberId };
-      }
-      return { tag:'none', memberId:'' };
-    }
-    const members = db.members.map(m=>{
-      const t = tagFor(m);
-      if(isAdmin) return { ...m, _tag:t.tag, _memberId:t.memberId };
-      return { id:m.id, name:m.name, gender:m.gender, alive:m.alive, photo:m.photo,
-               birth:m.birth, death:m.death, _tag:t.tag, _memberId:t.memberId };
-    });
-    return { ok:true, data:{
-      members, spouses: db.spouses, children: db.children, notes: db.notes,
-      pending: isAdmin ? db.pending.filter(p=>p.status==='pending') : [],
-      pendingUsers: isAdmin ? db.users.filter(x=>!x.approved && x.role!=='master').map(x=>({
-        username:x.username, fullName:x.fullName, fatherName:x.fatherName, motherName:x.motherName,
-        address:x.address, whatsapp:x.whatsapp, occupation:x.occupation, photo:x.photo,
-        email:x.email, phone:x.phone, createdAt:x.createdAt
-      })) : [],
-      users: isMaster ? db.users.filter(x=>x.role!=='master').map(x=>({
-        username:x.username, fullName:x.fullName, fatherName:x.fatherName, motherName:x.motherName,
-        address:x.address, whatsapp:x.whatsapp, occupation:x.occupation, photo:x.photo,
-        email:x.email, phone:x.phone, password:x.password,
-        role:x.role, memberId:x.memberId, approved:x.approved, createdAt:x.createdAt
-      })) : [],
-      publicUsers,
-      viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null
-    }};
-  },
-  approveUser(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.');
-    const u = db.users.find(x=>x.username===b.target); if(!u) throw new Error('Pengguna tidak dijumpai.');
-    u.approved = true;
-    if(!u.memberId) u.memberId = _nextMemberId(db);
-    LOCAL.db=db; return {ok:true, memberId:u.memberId};
-  },
-  rejectUser(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.');
-    db.users = db.users.filter(x=>!(x.username===b.target && !x.approved));
-    LOCAL.db=db; return {ok:true};
-  },
-  setRole(b){ const {db,isMaster}=_auth(b); if(!isMaster) throw new Error('Hanya pentadbir utama boleh tukar peranan.');
-    const u = db.users.find(x=>x.username===b.username); if(!u) throw new Error('Pengguna tidak dijumpai.');
-    if(u.role==='master') throw new Error('Tidak boleh ubah pentadbir utama.');
-    if(!['user','admin'].includes(b.role)) throw new Error('Peranan tidak sah.');
-    u.role = b.role; LOCAL.db=db; return {ok:true};
-  },
-  addMember(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir boleh tambah ahli.');
-    const rec = { id:b.id, name:b.name, gender:b.gender||'M', alive:b.alive!==false,
-      birth:b.birth||'', death:b.death||'', place:b.place||'',
-      photo: b.photoB64 ? 'data:'+(b.photoMime||'image/jpeg')+';base64,'+b.photoB64 : '',
-      notes:b.notes||'', fatherName:b.fatherName||'', motherName:b.motherName||'',
-      editedBy:u.username, editedAt:new Date().toISOString() };
-    db.members.push(rec); LOCAL.db=db; return {ok:true};
-  },
-  editMember(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir boleh edit.');
-    const i=db.members.findIndex(m=>m.id===b.id);
-    if(i<0) throw new Error('Ahli tidak dijumpai.');
-    db.members[i] = { ...db.members[i], ...b, editedBy:u.username, editedAt:new Date().toISOString() };
-    delete db.members[i].token; delete db.members[i].action;
-    LOCAL.db=db; return {ok:true};
-  },
-  deleteMember(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir boleh padam.');
-    db.members = db.members.filter(m=>m.id!==b.id);
-    db.spouses = db.spouses.filter(s=>s.husbandId!==b.id && s.wifeId!==b.id);
-    db.children = db.children.filter(c=>c.childId!==b.id);
-    LOCAL.db=db; return {ok:true};
-  },
-  addSpouse(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); db.spouses.push({id:b.id||_tok(),husbandId:b.husbandId,wifeId:b.wifeId,status:b.status||'kahwin',marriageDate:b.marriageDate||'',divorceDate:b.divorceDate||'',deathDate:b.deathDate||'',editedBy:u.username,editedAt:new Date().toISOString()}); LOCAL.db=db; return {ok:true}; },
-  addChild(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); db.children.push({spouseId:b.spouseId,childId:b.childId,editedBy:u.username,editedAt:new Date().toISOString()}); LOCAL.db=db; return {ok:true}; },
-  addNote(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); db.notes.push({id:b.id||_tok(),text:b.text||'',x:b.x||0,y:b.y||0,font:b.font||'serif',size:b.size||14,color:b.color||'#000',pinned:!!b.pinned,editedBy:u.username,editedAt:new Date().toISOString()}); LOCAL.db=db; return {ok:true}; },
-  editNote(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); const i=db.notes.findIndex(n=>n.id===b.id); if(i>=0){ db.notes[i]={...db.notes[i],...b}; LOCAL.db=db; } return {ok:true}; },
-  deleteNote(b){ const {db,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); db.notes = db.notes.filter(n=>n.id!==b.id); LOCAL.db=db; return {ok:true}; },
-  approve(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); const p=db.pending.find(x=>x.id===b.id); if(p){ p.status='approved'; p.approvedBy=u.username; if(p.action==='addMember') db.members.push(p.payload); LOCAL.db=db; } return {ok:true}; },
-  reject(b){ const {db,u,isAdmin}=_auth(b); if(!isAdmin) throw new Error('Hanya pentadbir.'); const p=db.pending.find(x=>x.id===b.id); if(p){ p.status='rejected'; p.approvedBy=u.username; LOCAL.db=db; } return {ok:true}; }
 };
 
 async function api(action, payload={}){
   const u = STORE.user;
   const body = { action, ...payload, username: u?.username, token: u?.token };
 
-  // Mod tempatan — jalan tanpa Google Apps Script
-  if(LOCAL_MODE){
-    const h = LOCAL_HANDLERS[action];
-    if(!h) return { ok:true };
-    try{ return h(body); }
-    catch(err){ throw err; }
+  if (LOCAL_MODE) {
+    throw new Error("Sistem masih dalam mod tempatan. Sila masukkan API_URL di dalam app.js terlebih dahulu.");
   }
 
-  try{
-    const res = await fetch(API_URL, {
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
+  let res;
+  try {
+    res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body)
     });
-    const j = await res.json();
-    if(!j.ok && j.error) throw new Error(j.error);
-    return j;
-  }catch(err){
-    if(['addMember','editMember','deleteMember','addSpouse','addChild','addNote','editNote','approve','reject'].includes(action)){
-      const q = STORE.queue; q.push({action, payload, ts:Date.now()}); STORE.queue = q;
-      notify.warn("Tiada internet — perubahan disimpan & akan disegerakkan.", { ms: 5000 });
-    }
-    throw err;
+  } catch (e) {
+    throw { network: true, message: "Tiada sambungan internet atau URL pelayan tidak sah." };
   }
+
+  const text = await res.text();
+  let j;
+  try {
+    j = JSON.parse(text);
+  } catch(e) {
+    console.error("Non-JSON response received:", text.slice(0, 150));
+    throw { network: true, message: "Sistem gagal diproses. Pastikan Web App anda di-deploy sebagai 'Execute as: Me' dan 'Who has access: Anyone'." };
+  }
+
+  if (!j.ok && j.error) throw new Error(j.error);
+  return j;
 }
 
 async function flushQueue(){
   let q = STORE.queue; if(!q.length) return;
-  const left=[];
+  const left = [];
   for(const item of q){
-    try{ await api(item.action, item.payload); }
-    catch{ left.push(item); }
+    try {
+      await api(item.action, item.payload);
+    } catch(err) {
+      if (err.network) left.push(item);
+    }
   }
   STORE.queue = left;
-  if(q.length && !left.length) notify.success("Segerak siap.");
+  if(q.length && !left.length) notify.success("Penyegerakan luar talian selesai.");
 }
 window.addEventListener('online', flushQueue);
-navigator.serviceWorker?.addEventListener?.('message', e=>{ if(e.data?.type==='SYNC_NOW') flushQueue(); });
+navigator.serviceWorker?.addEventListener?.('message', e => { if(e.data?.type==='SYNC_NOW') flushQueue(); });
 
-// ====== SPLASH PETUA ======
+// Wrap API calls that can be queued offline
+async function dispatchApi(action, payload) {
+  try {
+    return await api(action, payload);
+  } catch (err) {
+    if (err.network && ['addMember','editMember','deleteMember','addSpouse','addChild','addNote','editNote','approve','reject'].includes(action)) {
+      const q = STORE.queue; q.push({ action, payload, ts: Date.now() }); STORE.queue = q;
+      notify.warn("Tiada internet — Perubahan telah disimpan dan akan disegerakkan kelak.", { ms: 6000 });
+      return { ok: true, pending: true };
+    }
+    throw new Error(err.message || err);
+  }
+}
+
 const TIPS = [
   "Klik kad ahli untuk pilihan lengkap.",
-  "Tekan + atau pinch untuk zoom kanvas.",
   "Cari nama atau tahun di bar carian.",
-  "Pentadbir boleh lulus perubahan dengan satu klik.",
-  "Tarikh boleh ditulis 'lebih kurang 1950'.",
-  "Setiap pasangan ada ID khas — anak tak akan tersilap cabang."
+  "Pentadbir boleh luluskan perubahan pendaftaran dari Panel Pentadbir.",
+  "Kemas kini luar talian (offline) automatik disegerak apabila talian internet pulih."
 ];
-let tipIdx=0;
-const tipTimer = setInterval(()=>{ tipIdx=(tipIdx+1)%TIPS.length; const el=$('#tip'); if(el) el.textContent="Petua: "+TIPS[tipIdx]; }, 2200);
+let tipIdx = 0;
+const tipTimer = setInterval(()=> { tipIdx=(tipIdx+1)%TIPS.length; const el=$('#tip'); if(el) el.textContent="Petua: "+TIPS[tipIdx]; }, 3000);
 
-// ====== DATA NEGERI ======
 let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], users:[] };
 const NODE_W = 220, NODE_H = 170, GAP_X = 60, GAP_Y = 120;
 
-// ====== AUTH UI ======
-function openModal(html){
-  $('#modal').innerHTML = html;
-  $('#scrim').classList.add('show');
-}
+function openModal(html){ $('#modal').innerHTML = html; $('#scrim').classList.add('show'); }
 function closeModal(){ $('#scrim').classList.remove('show'); }
-$('#scrim').addEventListener('click', e=>{ if(e.target.id==='scrim') closeModal(); });
+$('#scrim').addEventListener('click', e => { if(e.target.id==='scrim') closeModal(); });
+window.closeModalGlobal = closeModal;
 
 function loginForm(){
   openModal(`
     <div class="flex items-center justify-between mb-3">
       <div class="font-head text-2xl">Selamat Datang</div>
-      <div class="chip gold-edge">v1.0</div>
+      <div class="chip gold-edge">v1.1</div>
     </div>
     <div class="flex gap-2 mb-4">
       <button class="tab active" data-tab="login">Log Masuk</button>
@@ -377,26 +177,26 @@ function loginForm(){
   const renderLogin = ()=> body.innerHTML = `
     <div class="field"><label>Nama pengguna</label><input id="lu" autocomplete="username"/></div>
     <div class="field"><label>Kata laluan</label><input id="lp" type="password" autocomplete="current-password" placeholder="••••••"/></div>
-    <button class="btn gold-edge w-full justify-center" id="doLogin">Log Masuk</button>
-    <p class="text-xs ink-soft mt-3">Belum ada akaun? Klik tab <b>Daftar Baru</b>. Akaun anda perlu diluluskan pentadbir sebelum boleh digunakan.</p>
+    <button class="btn gold-edge w-full justify-center mt-2" id="doLoginBtn">Log Masuk</button>
+    <p class="text-xs ink-soft mt-3">Log masuk menggunakan ID <b>admin</b> dan kata laluan <b>101010</b> (jika kali pertama).</p>
   `;
   const renderReg = ()=> body.innerHTML = `
-    <p class="text-xs ink-soft mb-2">Sila isi semua maklumat. Akaun akan disemak oleh pentadbir sebelum diberi <b>No Keahlian</b>.</p>
+    <p class="text-xs ink-soft mb-2">Maklumat diperlukan untuk daftar dan akan disemak pentadbir.</p>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-      <div class="field sm:col-span-2"><label>Gambar profil <span style="color:var(--danger)">*</span></label>
+      <div class="field sm:col-span-2"><label>Gambar profil (Max 2MB) <span style="color:var(--danger)">*</span></label>
         <input id="rphoto" type="file" accept="image/jpeg,image/png,image/webp"/></div>
       <div class="field sm:col-span-2"><label>Nama penuh <span style="color:var(--danger)">*</span></label><input id="rname"/></div>
-      <div class="field"><label>Nama penuh bapa <span style="color:var(--danger)">*</span></label><input id="rfather"/></div>
-      <div class="field"><label>Nama penuh ibu <span style="color:var(--danger)">*</span></label><input id="rmother"/></div>
+      <div class="field"><label>Nama bapa <span style="color:var(--danger)">*</span></label><input id="rfather"/></div>
+      <div class="field"><label>Nama ibu <span style="color:var(--danger)">*</span></label><input id="rmother"/></div>
       <div class="field sm:col-span-2"><label>Alamat menetap <span style="color:var(--danger)">*</span></label><textarea id="raddr" rows="2"></textarea></div>
-      <div class="field"><label>No telefon WhatsApp <span style="color:var(--danger)">*</span></label><input id="rwa" placeholder="cth: 0123456789"/></div>
+      <div class="field"><label>WhatsApp <span style="color:var(--danger)">*</span></label><input id="rwa" placeholder="0123456789"/></div>
       <div class="field"><label>Pekerjaan <span style="color:var(--danger)">*</span></label><input id="rocc"/></div>
       <div class="field"><label>Emel (pilihan)</label><input id="remail" type="email"/></div>
-      <div class="field"><label>Nama pengguna (untuk log masuk) <span style="color:var(--danger)">*</span></label><input id="ru"/></div>
+      <div class="field"><label>Nama pengguna (Log masuk) <span style="color:var(--danger)">*</span></label><input id="ru"/></div>
       <div class="field"><label>Kata laluan <span style="color:var(--danger)">*</span></label><input id="rp" type="password"/></div>
       <div class="field"><label>Sahkan kata laluan <span style="color:var(--danger)">*</span></label><input id="rp2" type="password"/></div>
     </div>
-    <button class="btn gold-edge w-full justify-center mt-2" id="doReg">Daftar Akaun</button>
+    <button class="btn gold-edge w-full justify-center mt-3" id="doRegBtn">Daftar Akaun</button>
   `;
   renderLogin();
   $$('.tab', $('#modal')).forEach(b=> b.onclick = ()=>{
@@ -406,8 +206,10 @@ function loginForm(){
     bindAuth();
   });
   function bindAuth(){
-    const dl = $('#doLogin'); if(dl) dl.onclick = doLogin;
-    const dr = $('#doReg'); if(dr) dr.onclick = doRegister;
+    const btnL = $('#doLoginBtn'); if(btnL) btnL.onclick = doLogin;
+    const btnR = $('#doRegBtn'); if(btnR) btnR.onclick = doRegister;
+    const lu = $('#lu'); if(lu) lu.onkeydown = e => { if(e.key==='Enter') doLogin(); };
+    const lp = $('#lp'); if(lp) lp.onkeydown = e => { if(e.key==='Enter') doLogin(); };
   }
   bindAuth();
 }
@@ -415,52 +217,40 @@ function loginForm(){
 async function doLogin(){
   const u = $('#lu').value.trim(), p = $('#lp').value;
   if(!u || !p) return toast("Sila isi nama pengguna & kata laluan.");
-  try{
-    const r = await api('login', { username:u, password:p });
+  try {
+    const r = await dispatchApi('login', { username:u, password:p });
     STORE.user = { username:r.username, role:r.role, token:r.token, fullName:r.fullName, memberId:r.memberId, photo:r.photo };
     notify.success("Selamat datang, "+(r.fullName||u)+"!");
     closeModal(); await boot();
-  }catch(e){ toast("Gagal log masuk: "+e.message); }
+  } catch(e) { toast("Gagal log masuk: " + e.message); }
 }
+
 async function doRegister(){
   const o = {
-    fullName:$('#rname').value.trim(),
-    fatherName:$('#rfather').value.trim(),
-    motherName:$('#rmother').value.trim(),
-    address:$('#raddr').value.trim(),
-    whatsapp:$('#rwa').value.trim(),
-    occupation:$('#rocc').value.trim(),
-    email:$('#remail').value.trim(),
-    username:$('#ru').value.trim(),
-    password:$('#rp').value, password2:$('#rp2').value
+    fullName:$('#rname').value.trim(), fatherName:$('#rfather').value.trim(), motherName:$('#rmother').value.trim(),
+    address:$('#raddr').value.trim(), whatsapp:$('#rwa').value.trim(), occupation:$('#rocc').value.trim(),
+    email:$('#remail').value.trim(), username:$('#ru').value.trim(), password:$('#rp').value, password2:$('#rp2').value
   };
-  if(!o.fullName) return toast("Nama penuh wajib.");
-  if(!o.fatherName) return toast("Nama penuh bapa wajib.");
-  if(!o.motherName) return toast("Nama penuh ibu wajib.");
-  if(!o.address) return toast("Alamat menetap wajib.");
-  if(!o.whatsapp) return toast("No WhatsApp wajib.");
-  if(!o.occupation) return toast("Pekerjaan wajib.");
-  if(!o.username || !o.password) return toast("Nama pengguna & kata laluan wajib.");
+  if(!o.fullName||!o.fatherName||!o.motherName||!o.address||!o.whatsapp||!o.occupation||!o.username||!o.password) return toast("Semua ruangan bertanda (*) wajib diisi.");
   if(o.password!==o.password2) return toast("Kata laluan tidak sepadan.");
   if(o.password.length<6) return toast("Kata laluan minima 6 aksara.");
   const file = $('#rphoto').files[0];
-  if(!file) return toast("Sila muat naik gambar profil.");
-  if(file.size>5*1024*1024) return toast("Gambar terlalu besar (max 5MB).");
-  if(!/image\/(jpeg|png|webp)/.test(file.type)) return toast("Format gambar tidak sah.");
-  o.photoB64 = await fileToB64(file);
-  o.photoMime = file.type;
-  try{
-    const r = await api('register', o);
-    notify.success("Akaun didaftar. Sila tunggu kelulusan pentadbir — No Keahlian akan diberikan selepas diluluskan.");
+  if(file) {
+    if(file.size > 2*1024*1024) return toast("Saiz gambar maksimum ialah 2MB.");
+    if(!/image\/(jpeg|png|webp)/.test(file.type)) return toast("Sila gunakan format gambar (JPG/PNG/WEBP).");
+    o.photoB64 = await fileToB64(file);
+    o.photoMime = file.type;
+  }
+  try {
+    await dispatchApi('register', o);
+    notify.success("Pendaftaran dihantar! Sila tunggu semakan pentadbir sebelum anda boleh log masuk.", { ms: 6000 });
     closeModal();
-  }catch(e){ toast("Gagal daftar: "+e.message); }
+  } catch(e) { toast("Gagal daftar: " + e.message); }
 }
 
-// ====== AKAUN (ikon 👤) ======
 $('#btnAccount').onclick = ()=>{
   const u = STORE.user;
   if(!u){ loginForm(); return; }
-  const isAdmin = ['admin','master'].includes(u.role);
   openModal(`
     <div class="font-head text-2xl mb-3">Akaun Saya</div>
     <div class="bevel-soft rounded-lg p-3 mb-3">
@@ -473,34 +263,28 @@ $('#btnAccount').onclick = ()=>{
     </div>
     <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
   `);
-  const lp = $('#acProfile'); if(lp) lp.onclick = ()=>{ closeModal(); openProfile(); };
-  $('#acLogout').onclick = ()=>{ STORE.user=null; notify.success("Log keluar berjaya."); location.reload(); };
+  $('#acProfile').onclick = ()=>{ closeModal(); openProfile(); };
+  $('#acLogout').onclick = ()=>{ STORE.user=null; notify.success("Sesi tamat."); location.reload(); };
 };
 
-// ====== TETAPAN ======
 $('#btnSettings').onclick = ()=>{
   const themes = [
-    {id:'parchment', nm:'Parchment (krim + emas)'},
-    {id:'royal', nm:'Royal (biru gelap + emas)'},
-    {id:'emerald', nm:'Emerald (hijau zaitun)'},
-    {id:'rose', nm:'Rose (merah jambu)'},
-    {id:'midnight', nm:'Midnight (hitam + emas)'},
+    {id:'parchment', nm:'Parchment (krim + emas)'}, {id:'royal', nm:'Royal (biru gelap + emas)'},
+    {id:'emerald', nm:'Emerald (hijau zaitun)'}, {id:'rose', nm:'Rose (merah jambu)'}, {id:'midnight', nm:'Midnight (hitam + emas)'}
   ];
   openModal(`
     <div class="font-head text-2xl mb-3">Tetapan</div>
     <div class="field"><label>Tema warna</label>
-      <select id="themeSel">
-        ${themes.map(t=>`<option value="${t.id}" ${STORE.theme===t.id?'selected':''}>${t.nm}</option>`).join('')}
-      </select>
+      <select id="themeSel">${themes.map(t=>`<option value="${t.id}" ${STORE.theme===t.id?'selected':''}>${t.nm}</option>`).join('')}</select>
     </div>
-    <button class="btn gold-edge" id="saveTheme">Simpan</button>
-    <button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button>
+    <div class="flex gap-2 justify-end mt-2">
+      <button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button>
+      <button class="btn gold-edge" id="saveTheme">Simpan</button>
+    </div>
   `);
   $('#saveTheme').onclick = ()=>{ STORE.theme = $('#themeSel').value; notify.success("Tema dikemaskini."); closeModal(); };
 };
-window.closeModalGlobal = closeModal;
 
-// ====== BOOT ======
 function applyRoleUI(){
   const u = STORE.user;
   const isAdmin = !!u && (u.role==='admin' || u.role==='master');
@@ -509,40 +293,29 @@ function applyRoleUI(){
 }
 
 async function boot(){
-  if(LOCAL_MODE){ console.warn('[SKG] Mod Tempatan aktif — data disimpan di pelayar sahaja.'); }
   applyRoleUI();
-  try{
+  try {
     const r = await api('bootstrap');
-    DATA = { ...DATA, ...r.data };
-    STORE.cache = DATA;
-  }catch(e){
-    DATA = { ...DATA, ...(STORE.cache||{}) };
+    DATA = { ...DATA, ...r.data }; STORE.cache = DATA;
+  } catch(e) {
+    if (e.network) DATA = { ...DATA, ...(STORE.cache||{}) }; // fallback mode luartalian
+    else notify.error(e.message);
   }
-  renderAll();
-  updatePendingBadge();
+  renderAll(); updatePendingBadge();
   setTimeout(()=>{ $('#splash').style.display='none'; clearInterval(tipTimer); }, 400);
   flushQueue();
 }
 
-// ====== AUTO LAYOUT ======
-/* Algoritma ringkas:
-   - Cari akar (tiada bapa/ibu). Setiap akar ke kolum sendiri.
-   - Layout rekursif: untuk setiap orang, susun anak di bawah.
-   - Pasangan diletak sebelah.
-*/
 function buildLayout(){
   const byId = Object.fromEntries(DATA.members.map(m=>[m.id, m]));
-  const childMap = {}; // parentId -> [memberId]
+  const childMap = {};
   DATA.children.forEach(c=>{
-    // c.spouseId -> couple, get suami & isteri sebagai parents
     const sp = DATA.spouses.find(s=>s.id===c.spouseId);
     if(!sp) return;
     [sp.husbandId, sp.wifeId].forEach(pid=>{
-      if(!pid) return;
-      (childMap[pid] ||= []).push(c.childId);
+      if(pid) (childMap[pid] ||= []).push(c.childId);
     });
   });
-
   const placed = {};
   const roots = DATA.members.filter(m => !DATA.children.find(c=>c.childId===m.id));
   let cursorX = 200;
@@ -551,45 +324,29 @@ function buildLayout(){
   function place(memberId, depth, startX){
     if(placed[memberId]) return placed[memberId].x + NODE_W;
     const m = byId[memberId]; if(!m) return startX;
-    // pasangan-pasangan
     const spouseRecs = DATA.spouses.filter(s=>s.husbandId===memberId || s.wifeId===memberId);
     const partners = spouseRecs.map(s => s.husbandId===memberId ? s.wifeId : s.husbandId).filter(Boolean).map(id=>byId[id]).filter(Boolean);
     const kids = Array.from(new Set((childMap[memberId]||[])));
     let x = startX;
-    // letak anak dahulu untuk dapat width
-    let childrenStart = x;
-    let childrenEnd = x;
+    let childrenStart = x, childrenEnd = x;
     if(kids.length){
       let cx = x;
-      kids.forEach(kid=>{
-        const used = place(kid, depth+1, cx);
-        cx = used + GAP_X;
-      });
+      kids.forEach(kid=>{ cx = place(kid, depth+1, cx) + GAP_X; });
       childrenStart = placed[kids[0]].x;
       childrenEnd   = placed[kids[kids.length-1]].x + NODE_W;
     }
-    // Lebar diri + pasangan
     const selfWidth = NODE_W + partners.length*(NODE_W+GAP_X);
     const totalWidth = Math.max(selfWidth, childrenEnd - childrenStart);
     const baseX = kids.length ? (childrenStart + childrenEnd)/2 - selfWidth/2 : x;
     placed[memberId] = { x: baseX, y: baseY + depth*(NODE_H+GAP_Y) };
-    partners.forEach((p,i)=>{
-      placed[p.id] = { x: baseX + (i+1)*(NODE_W+GAP_X), y: placed[memberId].y };
-    });
+    partners.forEach((p,i)=>{ placed[p.id] = { x: baseX + (i+1)*(NODE_W+GAP_X), y: placed[memberId].y }; });
     return Math.max(x + totalWidth + GAP_X, childrenEnd + GAP_X);
   }
-
-  roots.forEach(r=>{ cursorX = place(r.id, 0, cursorX); cursorX += GAP_X*2; });
-
-  // sesiapa yang terlepas
-  DATA.members.forEach(m=>{
-    if(!placed[m.id]){ placed[m.id] = { x: cursorX, y: baseY }; cursorX += NODE_W + GAP_X; }
-  });
-
+  roots.forEach(r=>{ cursorX = place(r.id, 0, cursorX) + GAP_X*2; });
+  DATA.members.forEach(m=>{ if(!placed[m.id]){ placed[m.id] = { x: cursorX, y: baseY }; cursorX += NODE_W + GAP_X; } });
   return placed;
 }
 
-// ====== RENDER ======
 let panzoomInstance = null;
 function renderAll(){
   const layout = buildLayout();
@@ -615,7 +372,7 @@ function renderNodes(layout){
       ? '<span class="chip" style="background:linear-gradient(180deg,#ff8a8a,#b71c1c);color:#fff">🛡️ Admin</span>'
       : (tag==='member' ? `<span class="chip" style="background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#241704">⭐ Ahli${m._memberId?' '+escapeHtml(m._memberId):''}</span>` : '');
     el.innerHTML = `
-      <div class="avatar">${m.photo?`<img src="${m.photo}" alt="">`:(m.name||'?').slice(0,1).toUpperCase()}</div>
+      <div class="avatar">${m.photo?`<img src="${m.photo}">`:(m.name||'?').slice(0,1).toUpperCase()}</div>
       <div class="nm">${escapeHtml(m.name||'Tanpa Nama')}</div>
       <div class="yrs">${escapeHtml(yrs)}</div>
       <div class="row">
@@ -631,31 +388,23 @@ function renderNodes(layout){
 
 function renderLinks(layout){
   const svg = $('#links');
-  const w = 6000, h = 4000;
   let paths = '';
-  // pasangan: garis horizontal antara dua
   DATA.spouses.forEach(s=>{
     const a = layout[s.husbandId], b = layout[s.wifeId];
     if(!a || !b) return;
-    const ax = a.x + NODE_W/2, ay = a.y + NODE_H/2;
-    const bx = b.x + NODE_W/2, by = b.y + NODE_H/2;
-    paths += `<path class="spouse" d="M ${ax} ${ay} L ${bx} ${by}"/>`;
+    paths += `<path class="spouse" d="M ${a.x + NODE_W/2} ${a.y + NODE_H/2} L ${b.x + NODE_W/2} ${b.y + NODE_H/2}"/>`;
   });
-  // anak: dari titik tengah pasangan ke kad anak
   DATA.children.forEach(c=>{
     const sp = DATA.spouses.find(s=>s.id===c.spouseId); if(!sp) return;
-    const a = layout[sp.husbandId], b = layout[sp.wifeId];
-    const k = layout[c.childId]; if(!k) continue_(c); if(!k) return;
+    const a = layout[sp.husbandId], b = layout[sp.wifeId], k = layout[c.childId];
+    if(!k) return;
     const px = a && b ? (a.x+b.x)/2 + NODE_W/2 : (a||b).x + NODE_W/2;
     const py = (a||b).y + NODE_H;
-    const kx = k.x + NODE_W/2, ky = k.y;
-    const my = (py+ky)/2;
-    paths += `<path d="M ${px} ${py} L ${px} ${my} L ${kx} ${my} L ${kx} ${ky}"/>`;
+    const my = (py+k.y)/2, kx = k.x + NODE_W/2;
+    paths += `<path d="M ${px} ${py} L ${px} ${my} L ${kx} ${my} L ${kx} ${k.y}"/>`;
   });
-  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   svg.innerHTML = paths;
 }
-function continue_(){} // helper
 
 function renderNotes(){
   const wrap = $('#notes'); wrap.innerHTML='';
@@ -672,51 +421,40 @@ function renderNotes(){
   });
 }
 
-function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 
-// ====== PANZOOM ======
 function setupPanzoom(){
   const world = $('#world');
-  if(panzoomInstance){ panzoomInstance.destroy(); }
-  panzoomInstance = Panzoom(world, {
-    maxScale: 3, minScale: 0.15, contain: false, canvas: true, cursor:'grab', step:.3
-  });
-  const stage = $('#stage');
-  stage.addEventListener('wheel', panzoomInstance.zoomWithWheel, { passive:false });
+  if(panzoomInstance) panzoomInstance.destroy();
+  panzoomInstance = Panzoom(world, { maxScale: 3, minScale: 0.15, contain: false, canvas: true, cursor:'grab', step:.3 });
+  $('#stage').addEventListener('wheel', panzoomInstance.zoomWithWheel, { passive:false });
 }
 $('#zIn').onclick = ()=> panzoomInstance?.zoomIn();
 $('#zOut').onclick = ()=> panzoomInstance?.zoomOut();
 $('#zReset').onclick = ()=> panzoomInstance?.reset();
 $('#btnZoomFit').onclick = ()=> panzoomInstance?.reset();
 
-// ====== MEMBER MENU ======
 function openMemberMenu(m){
   const role = STORE.user?.role;
   const isAdmin = ['admin','master'].includes(role);
-  const tag = m._tag || 'none';
-  const tagChip = tag==='admin'
-    ? '<span class="chip" style="background:linear-gradient(180deg,#ff8a8a,#b71c1c);color:#fff">🛡️ Admin Berdaftar</span>'
-    : (tag==='member' ? `<span class="chip" style="background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#241704">⭐ Ahli ${escapeHtml(m._memberId||'')}</span>` : '');
-  // Maklumat asas — semua orang nampak
   const basic = `
     <div class="flex items-center gap-3 mb-3">
       <div class="avatar" style="width:72px;height:72px;border-radius:50%;background:linear-gradient(180deg,var(--gold-2),var(--gold));display:grid;place-items:center;color:#241704;font-weight:800;font-size:24px;overflow:hidden">
-        ${m.photo?`<img style="width:100%;height:100%;border-radius:50%;object-fit:cover" src="${m.photo}">`:(m.name||'?').slice(0,1).toUpperCase()}
+        ${m.photo?`<img style="width:100%;height:100%;object-fit:cover" src="${m.photo}">`:(m.name||'?').slice(0,1).toUpperCase()}
       </div>
       <div>
         <div class="font-head text-xl">${escapeHtml(m.name||'Tanpa Nama')}</div>
         <div class="text-xs ink-soft">${m.gender==='F'?'Perempuan':'Lelaki'} • ${m.alive===false?'Allahyarham':'Hidup'} • ${escapeHtml(m.birth||'?')}${m.alive===false?' – '+escapeHtml(m.death||'?'):''}</div>
-        <div class="mt-1">${tagChip}</div>
       </div>
     </div>`;
-  // Maklumat penuh — admin sahaja
   const adminInfo = isAdmin ? `
     <div class="bevel-soft rounded-lg p-3 mb-3 text-sm">
       ${m.place?`<div><b>Tempat/Asal:</b> ${escapeHtml(m.place)}</div>`:''}
-      ${m.fatherName?`<div><b>Nama Bapa:</b> ${escapeHtml(m.fatherName)}</div>`:''}
-      ${m.motherName?`<div><b>Nama Ibu:</b> ${escapeHtml(m.motherName)}</div>`:''}
+      ${m.fatherName?`<div><b>Bapa:</b> ${escapeHtml(m.fatherName)}</div>`:''}
+      ${m.motherName?`<div><b>Ibu:</b> ${escapeHtml(m.motherName)}</div>`:''}
       ${m.notes?`<div class="mt-1 text-xs ink-soft"><b>Catatan:</b> ${escapeHtml(m.notes)}</div>`:''}
-    </div>` : (role ? '' : '<p class="text-xs ink-soft mb-3">Log masuk untuk lihat butiran lanjut.</p>');
+    </div>` : (role ? '' : '<p class="text-xs ink-soft mb-3">Log masuk untuk maklumat penuh.</p>');
+  
   openModal(basic + adminInfo + `
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
       ${isAdmin?'<button class="btn gold-edge justify-center" data-act="edit">✏️ Edit</button>':''}
@@ -739,6 +477,8 @@ function openMemberMenu(m){
   });
 }
 
+function fileToB64(file){ return new Promise((res,rej)=>{ const r = new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
+
 function memberForm(m){
   const isNew = !m;
   m = m || { id:uid(), gender:'M', alive:true };
@@ -753,12 +493,12 @@ function memberForm(m){
       <div class="field"><label>Status</label>
         <select id="f_a"><option value="true" ${m.alive!==false?'selected':''}>Hidup</option><option value="false" ${m.alive===false?'selected':''}>Allahyarham</option></select>
       </div>
-      <div class="field"><label>Tarikh meninggal</label><input id="f_d" placeholder="kosongkan jika hidup" value="${escapeHtml(m.death||'')}"/></div>
-      <div class="field"><label>Tempat / asal</label><input id="f_p" value="${escapeHtml(m.place||'')}"/></div>
+      <div class="field"><label>Meninggal</label><input id="f_d" value="${escapeHtml(m.death||'')}"/></div>
+      <div class="field"><label>Asal</label><input id="f_p" value="${escapeHtml(m.place||'')}"/></div>
       <div class="field"><label>Nama bapa</label><input id="f_fa" value="${escapeHtml(m.fatherName||'')}"/></div>
       <div class="field"><label>Nama ibu</label><input id="f_mo" value="${escapeHtml(m.motherName||'')}"/></div>
       <div class="field sm:col-span-2"><label>Catatan</label><textarea id="f_n" rows="2">${escapeHtml(m.notes||'')}</textarea></div>
-      <div class="field sm:col-span-2"><label>Gambar (jpg/png/webp, ≤5MB)</label><input id="f_ph" type="file" accept="image/jpeg,image/png,image/webp"/></div>
+      <div class="field sm:col-span-2"><label>Gambar (Max 2MB)</label><input id="f_ph" type="file" accept="image/jpeg,image/png,image/webp"/></div>
     </div>
     <div class="flex gap-2 justify-end mt-2">
       <button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button>
@@ -766,59 +506,28 @@ function memberForm(m){
     </div>
   `);
   $('#saveMember').onclick = async ()=>{
-    const payload = {
-      id:m.id, name:$('#f_name').value.trim(), gender:$('#f_g').value,
-      birth:$('#f_b').value.trim(), alive:$('#f_a').value==='true',
-      death:$('#f_d').value.trim(), place:$('#f_p').value.trim(),
-      fatherName:$('#f_fa').value.trim(), motherName:$('#f_mo').value.trim(),
-      notes:$('#f_n').value.trim()
-    };
+    const payload = { id:m.id, name:$('#f_name').value.trim(), gender:$('#f_g').value, birth:$('#f_b').value.trim(), alive:$('#f_a').value==='true', death:$('#f_d').value.trim(), place:$('#f_p').value.trim(), fatherName:$('#f_fa').value.trim(), motherName:$('#f_mo').value.trim(), notes:$('#f_n').value.trim() };
     if(!payload.name) return toast("Nama wajib diisi.");
     const file = $('#f_ph').files[0];
     if(file){
-      if(file.size>5*1024*1024) return toast("Gambar terlalu besar (max 5MB).");
-      if(!/image\/(jpeg|png|webp)/.test(file.type)) return toast("Format gambar tidak sah.");
+      if(file.size>2*1024*1024) return toast("Saiz maksimum 2MB.");
       payload.photoB64 = await fileToB64(file);
       payload.photoMime = file.type;
     }
-    try{
-      const r = await api(isNew?'addMember':'editMember', payload);
-      toast(r.pending? 'Dihantar untuk kelulusan.' : 'Disimpan.');
-      closeModal(); await refresh();
-    }catch(e){ toast("Gagal: "+e.message); }
+    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); toast(r.pending?'Menunggu kelulusan pentadbir.':'Berjaya.'); closeModal(); await refresh(); }catch(e){ toast("Gagal: "+e.message); }
   };
-}
-
-function fileToB64(file){
-  return new Promise((res,rej)=>{
-    const r = new FileReader();
-    r.onload = ()=> res(r.result.split(',')[1]);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
 }
 
 function spouseForm(m){
   const others = DATA.members.filter(x=>x.id!==m.id && x.gender!==m.gender);
   openModal(`
-    <div class="font-head text-2xl mb-3">Tambah Pasangan untuk ${escapeHtml(m.name)}</div>
+    <div class="font-head text-2xl mb-3">Tambah Pasangan</div>
     <div class="field"><label>Pilih ahli sedia ada</label>
-      <select id="sp_pick"><option value="">— atau buat baru di bawah —</option>${others.map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select>
+      <select id="sp_pick"><option value="">— atau cipta profil baharu —</option>${others.map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select>
     </div>
-    <div class="bevel-soft rounded-lg p-3 mb-2">
-      <div class="text-xs ink-soft mb-1">Atau cipta ahli baru:</div>
-      <div class="grid grid-cols-2 gap-2">
-        <div class="field"><label>Nama</label><input id="sp_name"/></div>
-        <div class="field"><label>Jantina</label><select id="sp_g"><option value="${m.gender==='M'?'F':'M'}">${m.gender==='M'?'Perempuan':'Lelaki'}</option></select></div>
-      </div>
-    </div>
-    <div class="grid grid-cols-2 gap-2">
-      <div class="field"><label>Tarikh kahwin</label><input id="sp_mar"/></div>
-      <div class="field"><label>Status</label>
-        <select id="sp_st"><option value="kahwin">Masih kahwin</option><option value="cerai">Bercerai</option><option value="mati">Pasangan meninggal</option></select>
-      </div>
-      <div class="field"><label>Tarikh cerai</label><input id="sp_div"/></div>
-      <div class="field"><label>Tarikh kematian</label><input id="sp_dth"/></div>
+    <div class="bevel-soft rounded-lg p-3 mb-2 grid grid-cols-2 gap-2">
+      <div class="field sm:col-span-2"><label>Nama Pasangan Baru</label><input id="sp_name"/></div>
+      <div class="field"><label>Jantina</label><select id="sp_g"><option value="${m.gender==='M'?'F':'M'}">${m.gender==='M'?'Perempuan':'Lelaki'}</option></select></div>
     </div>
     <div class="flex gap-2 justify-end mt-2">
       <button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button>
@@ -827,211 +536,107 @@ function spouseForm(m){
   `);
   $('#saveSpouse').onclick = async ()=>{
     const pick = $('#sp_pick').value;
-    const payload = {
-      anchorId: m.id,
-      partnerId: pick || null,
-      newPartner: pick? null : { id:uid(), name:$('#sp_name').value.trim(), gender:$('#sp_g').value, alive:true },
-      marriageDate:$('#sp_mar').value.trim(),
-      status:$('#sp_st').value,
-      divorceDate:$('#sp_div').value.trim(),
-      deathDate:$('#sp_dth').value.trim(),
-      spouseId: uid()
-    };
-    if(!pick && !payload.newPartner.name) return toast("Pilih ahli atau isi nama pasangan.");
-    try{ const r = await api('addSpouse', payload); toast(r.pending?'Menunggu kelulusan.':'Pasangan ditambah.'); closeModal(); await refresh(); }
-    catch(e){ toast("Gagal: "+e.message); }
+    const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:$('#sp_name').value.trim(), gender:$('#sp_g').value, alive:true }, spouseId: uid() };
+    if(!pick && !payload.newPartner.name) return toast("Isi maklumat pasangan.");
+    try{ await dispatchApi('addSpouse', payload); notify.success("Selesai."); closeModal(); await refresh(); }catch(e){ toast(e.message); }
   };
 }
 
 function childForm(m){
-  // pasangan yang melibatkan m
   const couples = DATA.spouses.filter(s=>s.husbandId===m.id || s.wifeId===m.id);
-  if(!couples.length){ toast("Tambah pasangan dahulu — anak perlu dikaitkan dengan satu pasangan."); return; }
-  const others = DATA.members;
+  if(!couples.length) return toast("Sila daftarkan pasangan terlebih dahulu.");
   openModal(`
     <div class="font-head text-2xl mb-3">Tambah Anak</div>
-    <div class="field"><label>Daripada pasangan</label>
-      <select id="ch_couple">
-        ${couples.map(c=>{
-          const a=DATA.members.find(x=>x.id===c.husbandId), b=DATA.members.find(x=>x.id===c.wifeId);
-          return `<option value="${c.id}">${escapeHtml(a?.name||'?')} & ${escapeHtml(b?.name||'?')}</option>`;
-        }).join('')}
-      </select>
-    </div>
-    <div class="field"><label>Pilih ahli sedia ada (jika ada)</label>
-      <select id="ch_pick"><option value="">— atau buat baru —</option>${others.map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select>
+    <div class="field"><label>Dari pasangan</label>
+      <select id="ch_couple">${couples.map(c=>{const a=DATA.members.find(x=>x.id===c.husbandId),b=DATA.members.find(x=>x.id===c.wifeId);return `<option value="${c.id}">${escapeHtml(a?.name||'?')} & ${escapeHtml(b?.name||'?')}</option>`;}).join('')}</select>
     </div>
     <div class="grid grid-cols-2 gap-2">
-      <div class="field"><label>Nama anak baru</label><input id="ch_name"/></div>
+      <div class="field sm:col-span-2"><label>Nama Anak Baru</label><input id="ch_name"/></div>
       <div class="field"><label>Jantina</label><select id="ch_g"><option value="M">Lelaki</option><option value="F">Perempuan</option></select></div>
-      <div class="field"><label>Tarikh lahir</label><input id="ch_b"/></div>
-      <div class="field"><label>Status</label><select id="ch_a"><option value="true">Hidup</option><option value="false">Allahyarham</option></select></div>
     </div>
-    <div class="flex gap-2 justify-end mt-2">
-      <button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button>
-      <button class="btn gold-edge" id="saveChild">Simpan</button>
-    </div>
+    <div class="flex gap-2 justify-end mt-2"><button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button><button class="btn gold-edge" id="saveChild">Simpan</button></div>
   `);
   $('#saveChild').onclick = async ()=>{
-    const pick = $('#ch_pick').value;
-    const payload = {
-      spouseId: $('#ch_couple').value,
-      childId: pick || uid(),
-      newChild: pick? null : { id: null, name:$('#ch_name').value.trim(), gender:$('#ch_g').value, birth:$('#ch_b').value.trim(), alive:$('#ch_a').value==='true' }
-    };
-    if(payload.newChild){ payload.newChild.id = payload.childId; if(!payload.newChild.name) return toast("Nama anak wajib."); }
-    try{ const r = await api('addChild', payload); toast(r.pending?'Menunggu kelulusan.':'Anak ditambah.'); closeModal(); await refresh(); }
-    catch(e){ toast("Gagal: "+e.message); }
+    const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:$('#ch_name').value.trim(), gender:$('#ch_g').value, alive:true } };
+    payload.newChild.id = payload.childId;
+    if(!payload.newChild.name) return toast("Nama anak wajib.");
+    try{ await dispatchApi('addChild', payload); notify.success("Berjaya."); closeModal(); await refresh(); }catch(e){ toast(e.message); }
   };
 }
 
-async function deleteMember(m){
-  if(!confirm(`Padam ${m.name}? Tindakan ini juga akan padam hubungan berkaitan.`)) return;
-  try{ await api('deleteMember', { id:m.id }); notify.success("Padam berjaya."); closeModal(); await refresh(); }
-  catch(e){ toast("Gagal: "+e.message); }
-}
+async function deleteMember(m){ if(confirm(`Padam ${m.name}? Hubungan berkaitan akan dipadam.`)) { try{ await dispatchApi('deleteMember', { id:m.id }); notify.success("Berjaya dipadam."); closeModal(); await refresh(); }catch(e){ toast(e.message); } } }
+function moveBranch(m) { toast("Ciri pemindahan memerlukan ID Pasangan khusus yang boleh diedit oleh pentadbir."); }
 
-function moveBranch(m){
-  openModal(`
-    <div class="font-head text-2xl mb-3">Pindah Cabang</div>
-    <p class="text-sm ink-soft mb-2">Pilih pasangan ibu bapa baru untuk <b>${escapeHtml(m.name)}</b>.</p>
-    <div class="field"><label>Pasangan ibu bapa baru</label>
-      <select id="mb_couple">
-        ${DATA.spouses.map(c=>{
-          const a=DATA.members.find(x=>x.id===c.husbandId), b=DATA.members.find(x=>x.id===c.wifeId);
-          return `<option value="${c.id}">${escapeHtml(a?.name||'?')} & ${escapeHtml(b?.name||'?')}</option>`;
-        }).join('')}
-      </select>
-    </div>
-    <div class="flex gap-2 justify-end"><button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button><button class="btn gold-edge" id="doMove">Pindah</button></div>
-  `);
-  $('#doMove').onclick = async ()=>{
-    try{ await api('moveBranch', { childId:m.id, newSpouseId:$('#mb_couple').value }); notify.success("Dipindahkan."); closeModal(); await refresh(); }
-    catch(e){ toast("Gagal: "+e.message); }
-  };
-}
-
-// ====== NOTES ======
 $('#btnAddNote').onclick = ()=> noteForm({x:400,y:400});
 function noteForm(n){
   const isNew = !n.id;
   openModal(`
-    <div class="font-head text-2xl mb-3">${isNew?'Tambah Nota':'Edit Nota'}</div>
+    <div class="font-head text-2xl mb-3">Nota</div>
     <div class="field"><label>Teks</label><textarea id="n_t" rows="3">${escapeHtml(n.text||'')}</textarea></div>
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-      <div class="field"><label>Fon</label>
-        <select id="n_f">
-          <option>Inter</option><option>Cinzel</option><option>Playfair Display</option><option>Georgia</option><option>Courier New</option>
-        </select>
-      </div>
-      <div class="field"><label>Saiz</label><input id="n_s" type="number" value="${n.size||14}"/></div>
-      <div class="field"><label>Warna</label><input id="n_c" type="color" value="${n.color||'#3b2a05'}"/></div>
-      <div class="field"><label>Tampal (admin)</label><input id="n_p" type="checkbox" ${n.pinned?'checked':''}/></div>
-    </div>
-    <div class="flex gap-2 justify-end">
+    <div class="flex gap-2 justify-end mt-2">
       ${!isNew?'<button class="btn btn-ghost" style="color:var(--danger)" id="delNote">Padam</button>':''}
       <button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button>
       <button class="btn gold-edge" id="saveNote">Simpan</button>
     </div>
   `);
-  if(n.font) $('#n_f').value = n.font;
-  $('#saveNote').onclick = async ()=>{
-    const p = {
-      id: n.id || uid(),
-      text:$('#n_t').value, font:$('#n_f').value, size:Number($('#n_s').value)||14,
-      color:$('#n_c').value, pinned:$('#n_p').checked,
-      x:n.x||400, y:n.y||400
-    };
-    try{ await api(isNew?'addNote':'editNote', p); notify.success("Nota disimpan."); closeModal(); await refresh(); }
-    catch(e){ toast("Gagal: "+e.message); }
-  };
-  const dn = $('#delNote'); if(dn) dn.onclick = async ()=>{
-    if(!confirm("Padam nota?")) return;
-    try{ await api('deleteNote', { id:n.id }); closeModal(); await refresh(); }catch(e){ toast(e.message); }
-  };
+  $('#saveNote').onclick = async ()=>{ try{ await dispatchApi(isNew?'addNote':'editNote', {id:n.id||uid(), text:$('#n_t').value, x:n.x||400, y:n.y||400}); notify.success("Tersimpan."); closeModal(); await refresh(); }catch(e){ toast(e.message); } };
+  const dn = $('#delNote'); if(dn) dn.onclick = async ()=>{ if(confirm("Padam nota?")){ try{ await dispatchApi('deleteNote', { id:n.id }); closeModal(); await refresh(); }catch(e){ toast(e.message); } } };
 }
 function openNoteMenu(n){ noteForm(n); }
 
-// ====== SEARCH ======
 let searchHits = []; let searchIdx = -1;
 $('#search').addEventListener('input', e=>{
   const q = e.target.value.toLowerCase().trim();
   $$('#nodes .node').forEach(el=>el.classList.remove('match'));
   if(!q){ searchHits=[]; searchIdx=-1; return; }
-  searchHits = DATA.members.filter(m =>
-    [m.name,m.place,m.notes,String(m.birth||''),String(m.death||'')].some(v=>String(v||'').toLowerCase().includes(q))
-  );
-  searchHits.forEach(m=>{
-    const el = document.querySelector(`#nodes .node[data-id="${m.id}"]`);
-    if(el) el.classList.add('match');
-  });
+  searchHits = DATA.members.filter(m => [m.name,m.place,m.notes,m.birth].some(v=>String(v||'').toLowerCase().includes(q)));
+  searchHits.forEach(m=>{ const el = document.querySelector(`#nodes .node[data-id="${m.id}"]`); if(el) el.classList.add('match'); });
   if(searchHits.length){ searchIdx=0; centerOn(searchHits[0].id); }
 });
-$('#searchNext').onclick = ()=>{ if(!searchHits.length) return; searchIdx=(searchIdx+1)%searchHits.length; centerOn(searchHits[searchIdx].id); };
-$('#searchPrev').onclick = ()=>{ if(!searchHits.length) return; searchIdx=(searchIdx-1+searchHits.length)%searchHits.length; centerOn(searchHits[searchIdx].id); };
-
+$('#searchNext').onclick = ()=>{ if(searchHits.length){ searchIdx=(searchIdx+1)%searchHits.length; centerOn(searchHits[searchIdx].id); } };
+$('#searchPrev').onclick = ()=>{ if(searchHits.length){ searchIdx=(searchIdx-1+searchHits.length)%searchHits.length; centerOn(searchHits[searchIdx].id); } };
 function centerOn(id){
   const el = document.querySelector(`#nodes .node[data-id="${id}"]`);
-  if(!el || !panzoomInstance) return;
-  const x = parseFloat(el.style.left), y = parseFloat(el.style.top);
-  const stage = $('#stage').getBoundingClientRect();
-  const scale = 1;
-  panzoomInstance.zoom(scale, { animate:true });
-  setTimeout(()=> panzoomInstance.pan(-x + stage.width/2 - NODE_W/2, -y + stage.height/2 - NODE_H/2, { animate:true }), 50);
+  if(el && panzoomInstance){
+    const x = parseFloat(el.style.left), y = parseFloat(el.style.top), st = $('#stage').getBoundingClientRect();
+    panzoomInstance.zoom(1, { animate:true });
+    setTimeout(()=> panzoomInstance.pan(-x + st.width/2 - NODE_W/2, -y + st.height/2 - NODE_H/2, { animate:true }), 50);
+  }
 }
 
-// ====== PROFILE ======
 async function openProfile(){
   const u = STORE.user; if(!u) return;
-  let p = u;
-  try{ const r = await api('myProfile'); if(r && r.profile) p = { ...u, ...r.profile }; }catch(_){}
-  const mid = p.memberId || '(menunggu kelulusan)';
-  const roleLabel = p.role==='master' ? 'Pentadbir Utama' : (p.role==='admin' ? 'Pentadbir' : 'Ahli Berdaftar');
+  let p = u; try{ const r = await api('myProfile'); if(r?.profile) p = {...u, ...r.profile}; }catch(e){}
   openModal(`
-    <div class="font-head text-2xl mb-3">Profil Saya</div>
+    <div class="font-head text-2xl mb-3">Kad Keahlian</div>
     <div class="member-card mb-3">
       <div class="mc-bg"></div>
       <div class="mc-head">
         <div class="mc-crest">⚜</div>
-        <div>
-          <div class="mc-title">KAD KEAHLIAN</div>
-          <div class="mc-sub">Salasilah Keluarga Elit</div>
-        </div>
+        <div><div class="mc-title">KAD KEAHLIAN</div><div class="mc-sub">Salasilah Keluarga Elit</div></div>
       </div>
       <div class="mc-body">
         <div class="mc-photo">${p.photo?`<img src="${p.photo}"/>`:(p.fullName||p.username||'?').slice(0,1).toUpperCase()}</div>
         <div class="mc-info">
           <div class="mc-name">${escapeHtml(p.fullName||p.username||'')}</div>
-          <div class="mc-row"><span>No Keahlian</span><b>${escapeHtml(mid)}</b></div>
-          <div class="mc-row"><span>Peranan</span><b>${escapeHtml(roleLabel)}</b></div>
-          ${p.occupation?`<div class="mc-row"><span>Pekerjaan</span><b>${escapeHtml(p.occupation)}</b></div>`:''}
+          <div class="mc-row"><span>No Ahli</span><b>${escapeHtml(p.memberId||'Menunggu Kelulusan')}</b></div>
         </div>
       </div>
-      <div class="mc-foot">⭐ Ahli sah keturunan • Sah selagi disahkan oleh pentadbir</div>
-    </div>
-    <div class="bevel-soft rounded-lg p-3 mb-3 text-sm">
-      ${p.fatherName?`<div><b>Bapa:</b> ${escapeHtml(p.fatherName)}</div>`:''}
-      ${p.motherName?`<div><b>Ibu:</b> ${escapeHtml(p.motherName)}</div>`:''}
-      ${p.address?`<div><b>Alamat:</b> ${escapeHtml(p.address)}</div>`:''}
-      ${p.whatsapp?`<div><b>WhatsApp:</b> ${escapeHtml(p.whatsapp)}</div>`:''}
     </div>
     <div class="text-right"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
   `);
 }
 
-// ====== ADMIN PANEL ======
 $('#btnAdmin').onclick = ()=> adminPanel('pending');
 function adminPanel(tab='pending'){
-  const isMaster = STORE.user?.role==='master';
   openModal(`
     <div class="font-head text-2xl mb-3">Panel Pentadbir</div>
     <div class="flex gap-2 mb-3 flex-wrap">
-      <button class="tab ${tab==='pending'?'active':''}" data-t="pending">Perubahan Menunggu</button>
-      <button class="tab ${tab==='users'?'active':''}" data-t="users">Akaun Menunggu</button>
-      ${isMaster?`<button class="tab ${tab==='roles'?'active':''}" data-t="roles">Semua Pengguna</button>`:''}
-      <button class="tab ${tab==='seed'?'active':''}" data-t="seed">Mulakan Pokok</button>
+      <button class="tab ${tab==='pending'?'active':''}" data-t="pending">Perubahan</button>
+      <button class="tab ${tab==='users'?'active':''}" data-t="users">Pengguna Baru</button>
+      <button class="tab ${tab==='seed'?'active':''}" data-t="seed">Cipta Akar</button>
     </div>
-    <div id="adminBody"></div>
+    <div id="adminBody" class="max-h-[60vh] overflow-y-auto pr-2 niceScroll"></div>
     <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
   `);
   $$('.tab', $('#modal')).forEach(b=> b.onclick = ()=>{ adminPanel(b.dataset.t); });
@@ -1039,106 +644,40 @@ function adminPanel(tab='pending'){
   if(tab==='pending'){
     body.innerHTML = DATA.pending?.length ? DATA.pending.map(p=>`
       <div class="bevel-soft rounded-lg p-2 mb-2">
-        <div class="text-xs ink-soft">${escapeHtml(p.action)} oleh ${escapeHtml(p.user||'?')} • ${escapeHtml(p.ts||'')}</div>
-        <pre class="text-xs whitespace-pre-wrap">${escapeHtml(JSON.stringify(p.payload,null,2))}</pre>
+        <div class="text-xs ink-soft">Tindakan: <b>${escapeHtml(p.action)}</b> oleh @${escapeHtml(p.user)}</div>
         <div class="flex gap-2 mt-2">
           <button class="btn gold-edge" data-a="approve" data-id="${p.id}">Luluskan</button>
           <button class="btn btn-ghost" style="color:var(--danger)" data-a="reject" data-id="${p.id}">Tolak</button>
         </div>
       </div>
     `).join('') : '<p class="text-sm ink-soft">Tiada perubahan menunggu.</p>';
-    $$('button[data-a]', body).forEach(b=> b.onclick = async ()=>{
-      try{ await api(b.dataset.a, { id:b.dataset.id }); notify.success("Selesai."); adminPanel('pending'); await refresh(); }
-      catch(e){ toast(e.message); }
-    });
+    $$('button[data-a]', body).forEach(b=> b.onclick = async ()=>{ try{ await dispatchApi(b.dataset.a, { id:b.dataset.id }); notify.success("Selesai."); await refresh(); adminPanel('pending'); }catch(e){ toast(e.message); } });
   } else if(tab==='users'){
     const pu = DATA.pendingUsers || [];
     body.innerHTML = pu.length ? pu.map(u=>`
-      <div class="bevel-soft rounded-lg p-2 mb-2">
-        <div class="flex gap-3">
-          <div class="avatar" style="width:54px;height:54px;border-radius:50%;background:linear-gradient(180deg,var(--gold-2),var(--gold));overflow:hidden;display:grid;place-items:center;color:#241704;font-weight:800">
-            ${u.photo?`<img style="width:100%;height:100%;object-fit:cover" src="${u.photo}">`:(u.fullName||u.username||'?').slice(0,1).toUpperCase()}
-          </div>
-          <div class="flex-1 text-sm">
-            <div><b>${escapeHtml(u.fullName||'')}</b> <span class="text-xs ink-soft">(${escapeHtml(u.username)})</span></div>
-            <div class="text-xs ink-soft">Bapa: ${escapeHtml(u.fatherName||'-')} • Ibu: ${escapeHtml(u.motherName||'-')}</div>
-            <div class="text-xs ink-soft">📞 ${escapeHtml(u.whatsapp||'-')} • 💼 ${escapeHtml(u.occupation||'-')}</div>
-            <div class="text-xs ink-soft">🏠 ${escapeHtml(u.address||'-')}</div>
-          </div>
-        </div>
-        <div class="flex gap-2 mt-2 justify-end">
-          <button class="btn gold-edge" data-ap="${escapeHtml(u.username)}">Luluskan & Beri No Keahlian</button>
-          <button class="btn btn-ghost" style="color:var(--danger)" data-rj="${escapeHtml(u.username)}">Tolak</button>
+      <div class="bevel-soft rounded-lg p-2 mb-2 text-sm">
+        <div><b>${escapeHtml(u.fullName)}</b> (@${escapeHtml(u.username)})</div>
+        <div class="flex gap-2 mt-2">
+          <button class="btn gold-edge" data-ap="${escapeHtml(u.username)}">Lulus & Beri No Ahli</button>
+          <button class="btn btn-ghost" style="color:var(--danger)" data-rj="${escapeHtml(u.username)}">Padam</button>
         </div>
       </div>
     `).join('') : '<p class="text-sm ink-soft">Tiada akaun menunggu kelulusan.</p>';
-    $$('button[data-ap]', body).forEach(b=> b.onclick = async ()=>{
-      try{ const r = await api('approveUser', { target:b.dataset.ap }); notify.success("Diluluskan. No Keahlian: "+(r.memberId||'-')); adminPanel('users'); await refresh(); }catch(e){ toast(e.message); }
-    });
-    $$('button[data-rj]', body).forEach(b=> b.onclick = async ()=>{
-      if(!confirm('Tolak permohonan ini?')) return;
-      try{ await api('rejectUser', { target:b.dataset.rj }); notify.info("Ditolak."); adminPanel('users'); }catch(e){ toast(e.message); }
-    });
-  } else if(tab==='roles'){
-    if(!isMaster){ body.innerHTML='<p class="text-sm ink-soft">Hanya pentadbir utama boleh melihat senarai penuh.</p>'; return; }
-    const us = (DATA.users||[]);
-    body.innerHTML = `<p class="text-xs ink-soft mb-2">⚠️ Maklumat sulit — termasuk kata laluan. Hanya pentadbir utama nampak.</p>` +
-      (us.length ? us.map(u=>`
-      <div class="bevel-soft rounded-lg p-2 mb-2">
-        <div class="flex gap-3">
-          <div class="avatar" style="width:54px;height:54px;border-radius:50%;background:linear-gradient(180deg,var(--gold-2),var(--gold));overflow:hidden;display:grid;place-items:center;color:#241704;font-weight:800">
-            ${u.photo?`<img style="width:100%;height:100%;object-fit:cover" src="${u.photo}">`:(u.fullName||u.username||'?').slice(0,1).toUpperCase()}
-          </div>
-          <div class="flex-1 text-sm">
-            <div><b>${escapeHtml(u.fullName||'')}</b> <span class="text-xs ink-soft">(${escapeHtml(u.username)})</span> <span class="chip" style="background:color-mix(in oklab,var(--gold) 30%,transparent)">${escapeHtml(u.role)}</span> ${u.memberId?`<span class="chip" style="background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#241704">${escapeHtml(u.memberId)}</span>`:''}</div>
-            <div class="text-xs ink-soft">Bapa: ${escapeHtml(u.fatherName||'-')} • Ibu: ${escapeHtml(u.motherName||'-')}</div>
-            <div class="text-xs ink-soft">📞 ${escapeHtml(u.whatsapp||u.phone||'-')} • 💼 ${escapeHtml(u.occupation||'-')}</div>
-            <div class="text-xs ink-soft">🏠 ${escapeHtml(u.address||'-')}</div>
-            <div class="text-xs" style="color:var(--danger)">🔑 Kata laluan: <code>${escapeHtml(u.password||'(tiada)')}</code></div>
-          </div>
-        </div>
-        <div class="flex gap-2 items-center justify-end mt-2">
-          <select data-u="${escapeHtml(u.username)}">
-            <option value="user" ${u.role==='user'?'selected':''}>user</option>
-            <option value="admin" ${u.role==='admin'?'selected':''}>admin</option>
-          </select>
-          <button class="btn gold-edge" data-su="${escapeHtml(u.username)}">Simpan Peranan</button>
-        </div>
-      </div>
-    `).join('') : '<p class="text-sm ink-soft">Tiada pengguna lagi.</p>');
-    $$('button[data-su]', body).forEach(b=> b.onclick = async ()=>{
-      const sel = body.querySelector(`select[data-u="${b.dataset.su}"]`);
-      try{ await api('setRole', { username:b.dataset.su, role:sel.value }); notify.success("Peranan dikemaskini."); await refresh(); adminPanel('roles'); }
-      catch(e){ toast(e.message); }
-    });
+    $$('button[data-ap]', body).forEach(b=> b.onclick = async ()=>{ try{ await dispatchApi('approveUser', { target:b.dataset.ap }); notify.success("Diluluskan."); await refresh(); adminPanel('users'); }catch(e){ toast(e.message); } });
+    $$('button[data-rj]', body).forEach(b=> b.onclick = async ()=>{ if(confirm('Tolak?')){ try{ await dispatchApi('rejectUser', { target:b.dataset.rj }); notify.success("Ditolak."); await refresh(); adminPanel('users'); }catch(e){ toast(e.message); } } });
   } else if(tab==='seed'){
-    body.innerHTML = `
-      <p class="text-sm ink-soft mb-2">Mulakan pokok dengan ahli pertama (moyang).</p>
-      <button class="btn gold-edge" id="seedBtn">+ Tambah Ahli Pertama</button>
-    `;
-    $('#seedBtn').onclick = ()=> { closeModal(); memberForm(null); };
+    body.innerHTML = `<button class="btn gold-edge" id="seedBtn">+ Tambah Moyang Pertama</button>`;
+    $('#seedBtn').onclick = ()=>{ closeModal(); memberForm(null); };
   }
 }
 
 function updatePendingBadge(){
   const n = (DATA.pending?.length || 0) + (DATA.pendingUsers?.length || 0);
-  const b = $('#pendingBadge'); if(!b) return;
-  if(n>0){ b.style.display=''; b.textContent = n; } else b.style.display='none';
+  const b = $('#pendingBadge'); if(b){ b.style.display = n>0?'':'none'; b.textContent = n; }
 }
 
-// ====== REFRESH ======
-async function refresh(){
-  try{
-    const r = await api('bootstrap');
-    DATA = { ...DATA, ...r.data }; STORE.cache = DATA;
-  }catch{}
-  renderAll(); updatePendingBadge();
-}
+async function refresh(){ try{ const r = await api('bootstrap'); DATA = { ...DATA, ...r.data }; STORE.cache = DATA; }catch(e){} renderAll(); updatePendingBadge(); }
 
-// ====== PWA ======
-if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{}));
-}
+if('serviceWorker' in navigator){ window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 
-// ====== START ======
 boot();

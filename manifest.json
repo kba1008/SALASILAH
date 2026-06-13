@@ -1,7 +1,7 @@
 {
   "name": "Salasilah Keluarga Elit",
   "short_name": "Salasilah",
-  "description": "Pengurusan salasilah keluarga elit dengan kanvas 3D, pasangan, anak, nota & pentadbir.",
+  "description": "Pengurusan salasilah keluarga elit dengan kanvas interaktif, keahlian dan logik PWA luar talian.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

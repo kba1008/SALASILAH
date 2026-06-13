@@ -1,365 +1,356 @@
 <!doctype html>
 <html lang="ms">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes" />
-<meta name="theme-color" content="#0b1a3a" id="metaTheme" />
-<title>Salasilah Keluarga Elit</title>
-<link rel="manifest" href="manifest.json" />
-<link rel="icon" href="https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b" />
-<link rel="apple-touch-icon" href="https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b" />
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js" defer></script>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;800&family=Cinzel:wght@600;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
-<style>
-  :root{
-    --bg:#f7efd9; --bg2:#efe2bf; --ink:#2c2210; --ink-soft:#5b4a26;
-    --gold:#b08a3e; --gold-2:#d9b96b; --line:#b89a5a;
-    --card:#fffaf0; --card-2:#f0e4c2; --shadow:rgba(60,40,10,.35);
-    --accent:#7a5a1e; --danger:#8b1d1d; --ok:#1f6b3a;
-    --font-head:'Cinzel', serif; --font-body:'Inter', system-ui, sans-serif;
-  }
-  [data-theme="royal"]{
-    --bg:#0b1a3a; --bg2:#142a55; --ink:#fff7df; --ink-soft:#e9d9a5;
-    --gold:#e9c66b; --gold-2:#ffe39a; --line:#caa353;
-    --card:#142a55; --card-2:#1d3a72; --shadow:rgba(0,0,0,.55);
-    --accent:#ffd97a; --danger:#ff8a8a; --ok:#a6e9b8;
-  }
-  [data-theme="emerald"]{
-    --bg:#0f2a1f; --bg2:#16402e; --ink:#f4ffe9; --ink-soft:#d8ecc1;
-    --gold:#e2c96a; --gold-2:#fde79a; --line:#9bb86a;
-    --card:#1a4231; --card-2:#235b41; --shadow:rgba(0,0,0,.5);
-    --accent:#ffe88f; --danger:#ffb0a0; --ok:#bff0c2;
-  }
-  [data-theme="rose"]{
-    --bg:#fde8ee; --bg2:#fbd0dc; --ink:#3b0d1e; --ink-soft:#7a2440;
-    --gold:#b8336a; --gold-2:#e26a99; --line:#c46086;
-    --card:#fff5f8; --card-2:#fcd9e3; --shadow:rgba(120,30,60,.3);
-    --accent:#a02458; --danger:#7a1b1b; --ok:#1f6b3a;
-  }
-  [data-theme="midnight"]{
-    --bg:#08070a; --bg2:#161217; --ink:#fff3c8; --ink-soft:#e6d28a;
-    --gold:#f1c75b; --gold-2:#ffe18a; --line:#a78232;
-    --card:#181318; --card-2:#221a22; --shadow:rgba(0,0,0,.7);
-    --accent:#ffd76a; --danger:#ff9a9a; --ok:#a6e9b8;
-  }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes" />
+  <meta name="theme-color" content="#0b1a3a" id="metaTheme" />
+  <title>Salasilah Keluarga Elit</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b" />
+  <link rel="apple-touch-icon" href="https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js" defer></script>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;800&family=Cinzel:wght@600;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:#f7efd9; --bg2:#efe2bf; --ink:#2c2210; --ink-soft:#5b4a26;
+      --gold:#b08a3e; --gold-2:#d9b96b; --line:#b89a5a;
+      --card:#fffaf0; --card-2:#f0e4c2; --shadow:rgba(60,40,10,.35);
+      --accent:#7a5a1e; --danger:#8b1d1d; --ok:#1f6b3a;
+      --font-head:'Cinzel', serif; --font-body:'Inter', system-ui, sans-serif;
+    }
+    [data-theme="royal"] {
+      --bg:#0b1a3a; --bg2:#142a55; --ink:#fff7df; --ink-soft:#e9d9a5;
+      --gold:#e9c66b; --gold-2:#ffe39a; --line:#caa353;
+      --card:#142a55; --card-2:#1d3a72; --shadow:rgba(0,0,0,.55);
+      --accent:#ffd97a; --danger:#ff8a8a; --ok:#a6e9b8;
+    }
+    [data-theme="emerald"] {
+      --bg:#0f2a1f; --bg2:#16402e; --ink:#f4ffe9; --ink-soft:#d8ecc1;
+      --gold:#e2c96a; --gold-2:#fde79a; --line:#9bb86a;
+      --card:#1a4231; --card-2:#235b41; --shadow:rgba(0,0,0,.5);
+      --accent:#ffe88f; --danger:#ffb0a0; --ok:#bff0c2;
+    }
+    [data-theme="rose"] {
+      --bg:#fde8ee; --bg2:#fbd0dc; --ink:#3b0d1e; --ink-soft:#7a2440;
+      --gold:#b8336a; --gold-2:#e26a99; --line:#c46086;
+      --card:#fff5f8; --card-2:#fcd9e3; --shadow:rgba(120,30,60,.3);
+      --accent:#a02458; --danger:#7a1b1b; --ok:#1f6b3a;
+    }
+    [data-theme="midnight"] {
+      --bg:#08070a; --bg2:#161217; --ink:#fff3c8; --ink-soft:#e6d28a;
+      --gold:#f1c75b; --gold-2:#ffe18a; --line:#a78232;
+      --card:#181318; --card-2:#221a22; --shadow:rgba(0,0,0,.7);
+      --accent:#ffd76a; --danger:#ff9a9a; --ok:#a6e9b8;
+    }
 
-  html,body{height:100%;}
-  body{
-    margin:0; color:var(--ink);
-    font-family:var(--font-body);
-    background:
-      radial-gradient(1200px 800px at 20% 10%, color-mix(in oklab, var(--gold) 18%, transparent), transparent 60%),
-      radial-gradient(1000px 700px at 80% 90%, color-mix(in oklab, var(--gold-2) 14%, transparent), transparent 60%),
-      linear-gradient(135deg, var(--bg), var(--bg2));
-    overflow:hidden;
-  }
-  .font-head{font-family:var(--font-head); letter-spacing:.5px;}
-  .ink{color:var(--ink)} .ink-soft{color:var(--ink-soft)}
+    html, body { height:100%; }
+    body {
+      margin:0; color:var(--ink);
+      font-family:var(--font-body);
+      background:
+        radial-gradient(1200px 800px at 20% 10%, color-mix(in oklab, var(--gold) 18%, transparent), transparent 60%),
+        radial-gradient(1000px 700px at 80% 90%, color-mix(in oklab, var(--gold-2) 14%, transparent), transparent 60%),
+        linear-gradient(135deg, var(--bg), var(--bg2));
+      overflow:hidden;
+    }
+    .font-head { font-family:var(--font-head); letter-spacing:.5px; }
+    .ink { color:var(--ink) } .ink-soft { color:var(--ink-soft) }
 
-  /* 3D bevel utilities */
-  .bevel{
-    background:linear-gradient(180deg, color-mix(in oklab, var(--card) 92%, white 8%), var(--card-2));
-    border:1px solid color-mix(in oklab, var(--line) 60%, transparent);
-    box-shadow:
-      0 1px 0 rgba(255,255,255,.35) inset,
-      0 -2px 0 color-mix(in oklab, var(--shadow) 50%, transparent) inset,
-      0 14px 30px -10px var(--shadow),
-      0 6px 12px -6px var(--shadow);
-  }
-  .bevel-soft{
-    background:linear-gradient(180deg, var(--card), var(--card-2));
-    border:1px solid color-mix(in oklab, var(--line) 40%, transparent);
-    box-shadow:
-      0 1px 0 rgba(255,255,255,.25) inset,
-      0 8px 22px -10px var(--shadow);
-  }
-  .gold-edge{
-    background:linear-gradient(180deg, var(--gold-2), var(--gold));
-    color:#241704; text-shadow:0 1px 0 rgba(255,255,255,.4);
-    box-shadow:
-      0 1px 0 rgba(255,255,255,.6) inset,
-      0 -2px 0 rgba(80,50,10,.35) inset,
-      0 10px 22px -8px var(--shadow);
-    border:1px solid color-mix(in oklab, var(--line) 70%, black 0%);
-  }
-  .gold-edge:hover{filter:brightness(1.05);}
-  .gold-edge:active{transform:translateY(1px); filter:brightness(.97);}
+    .bevel {
+      background:linear-gradient(180deg, color-mix(in oklab, var(--card) 92%, white 8%), var(--card-2));
+      border:1px solid color-mix(in oklab, var(--line) 60%, transparent);
+      box-shadow:
+        0 1px 0 rgba(255,255,255,.35) inset,
+        0 -2px 0 color-mix(in oklab, var(--shadow) 50%, transparent) inset,
+        0 14px 30px -10px var(--shadow),
+        0 6px 12px -6px var(--shadow);
+    }
+    .bevel-soft {
+      background:linear-gradient(180deg, var(--card), var(--card-2));
+      border:1px solid color-mix(in oklab, var(--line) 40%, transparent);
+      box-shadow:
+        0 1px 0 rgba(255,255,255,.25) inset,
+        0 8px 22px -10px var(--shadow);
+    }
+    .gold-edge {
+      background:linear-gradient(180deg, var(--gold-2), var(--gold));
+      color:#241704; text-shadow:0 1px 0 rgba(255,255,255,.4);
+      box-shadow:
+        0 1px 0 rgba(255,255,255,.6) inset,
+        0 -2px 0 rgba(80,50,10,.35) inset,
+        0 10px 22px -8px var(--shadow);
+      border:1px solid color-mix(in oklab, var(--line) 70%, black 0%);
+    }
+    .gold-edge:hover { filter:brightness(1.05); }
+    .gold-edge:active { transform:translateY(1px); filter:brightness(.97); }
 
-  .btn{
-    display:inline-flex; align-items:center; gap:.5rem;
-    padding:.55rem .9rem; border-radius:.7rem; font-weight:600; font-size:.9rem;
-    cursor:pointer; user-select:none; transition:transform .08s ease, filter .15s ease;
-  }
-  .btn-ghost{background:transparent; color:var(--ink); border:1px solid color-mix(in oklab, var(--line) 50%, transparent)}
-  .btn-ghost:hover{background:color-mix(in oklab, var(--gold) 12%, transparent)}
-  .chip{padding:.2rem .55rem; border-radius:999px; font-size:.7rem; font-weight:700;}
+    .btn {
+      display:inline-flex; align-items:center; gap:.5rem;
+      padding:.55rem .9rem; border-radius:.7rem; font-weight:600; font-size:.9rem;
+      cursor:pointer; user-select:none; transition:transform .08s ease, filter .15s ease;
+    }
+    .btn-ghost { background:transparent; color:var(--ink); border:1px solid color-mix(in oklab, var(--line) 50%, transparent) }
+    .btn-ghost:hover { background:color-mix(in oklab, var(--gold) 12%, transparent) }
+    .chip { padding:.2rem .55rem; border-radius:999px; font-size:.7rem; font-weight:700; }
 
-  /* Top bar */
-  .topbar{
-    position:fixed; top:0; left:0; right:0; z-index:40;
-    backdrop-filter: blur(10px);
-    background:linear-gradient(180deg, color-mix(in oklab, var(--bg) 88%, transparent), color-mix(in oklab, var(--bg) 60%, transparent));
-    border-bottom:1px solid color-mix(in oklab, var(--line) 40%, transparent);
-  }
+    .topbar {
+      position:fixed; top:0; left:0; right:0; z-index:40;
+      backdrop-filter: blur(10px);
+      background:linear-gradient(180deg, color-mix(in oklab, var(--bg) 88%, transparent), color-mix(in oklab, var(--bg) 60%, transparent));
+      border-bottom:1px solid color-mix(in oklab, var(--line) 40%, transparent);
+    }
 
-  /* Canvas */
-  #stage{
-    position:absolute; inset:0; top:60px; overflow:hidden;
-    background-image:
-      radial-gradient(color-mix(in oklab, var(--ink) 10%, transparent) 1px, transparent 1px);
-    background-size: 28px 28px;
-    background-position: 0 0;
-  }
-  #world{
-    position:relative; width:6000px; height:4000px;
-    transform-origin:0 0;
-  }
+    #stage {
+      position:absolute; inset:0; top:60px; overflow:hidden;
+      background-image:
+        radial-gradient(color-mix(in oklab, var(--ink) 10%, transparent) 1px, transparent 1px);
+      background-size: 28px 28px;
+      background-position: 0 0;
+    }
+    #world {
+      position:relative; width:6000px; height:4000px;
+      transform-origin:0 0;
+    }
 
-  /* Node card 3D */
-  .node{
-    position:absolute; width:220px;
-    border-radius:18px; padding:14px;
-    background:linear-gradient(180deg, color-mix(in oklab, var(--card) 96%, white 4%), var(--card-2));
-    border:1px solid color-mix(in oklab, var(--line) 65%, transparent);
-    box-shadow:
-      0 1px 0 rgba(255,255,255,.45) inset,
-      0 -3px 0 color-mix(in oklab, var(--shadow) 60%, transparent) inset,
-      0 22px 40px -14px var(--shadow),
-      0 10px 18px -8px var(--shadow);
-    transform-style:preserve-3d;
-    transition:transform .15s ease, box-shadow .15s ease;
-    cursor:pointer;
-  }
-  .node:hover{ transform:translateY(-2px) rotateX(2deg); }
-  .node.male{ outline:2px solid color-mix(in oklab, #4b86c6 60%, transparent); }
-  .node.female{ outline:2px solid color-mix(in oklab, #c6679a 60%, transparent); }
-  .node.deceased{ filter:grayscale(.3) brightness(.95); }
-  .node.tag-member{ outline:3px solid var(--gold); box-shadow:0 0 0 4px color-mix(in oklab, var(--gold) 30%, transparent), 0 22px 40px -14px var(--shadow);
-    background:linear-gradient(180deg, color-mix(in oklab, var(--gold-2) 18%, var(--card)), var(--card-2)); }
-  .node.tag-admin{ outline:3px solid #e74c3c; box-shadow:0 0 0 4px rgba(231,76,60,.35), 0 22px 40px -14px var(--shadow);
-    background:linear-gradient(180deg, color-mix(in oklab, #ff8a8a 18%, var(--card)), var(--card-2)); }
+    .node {
+      position:absolute; width:220px;
+      border-radius:18px; padding:14px;
+      background:linear-gradient(180deg, color-mix(in oklab, var(--card) 96%, white 4%), var(--card-2));
+      border:1px solid color-mix(in oklab, var(--line) 65%, transparent);
+      box-shadow:
+        0 1px 0 rgba(255,255,255,.45) inset,
+        0 -3px 0 color-mix(in oklab, var(--shadow) 60%, transparent) inset,
+        0 22px 40px -14px var(--shadow),
+        0 10px 18px -8px var(--shadow);
+      transform-style:preserve-3d;
+      transition:transform .15s ease, box-shadow .15s ease;
+      cursor:pointer;
+    }
+    .node:hover { transform:translateY(-2px) rotateX(2deg); }
+    .node.male { outline:2px solid color-mix(in oklab, #4b86c6 60%, transparent); }
+    .node.female { outline:2px solid color-mix(in oklab, #c6679a 60%, transparent); }
+    .node.deceased { filter:grayscale(.3) brightness(.95); }
+    .node.tag-member {
+      outline:3px solid var(--gold); box-shadow:0 0 0 4px color-mix(in oklab, var(--gold) 30%, transparent), 0 22px 40px -14px var(--shadow);
+      background:linear-gradient(180deg, color-mix(in oklab, var(--gold-2) 18%, var(--card)), var(--card-2)); 
+    }
+    .node.tag-admin {
+      outline:3px solid #e74c3c; box-shadow:0 0 0 4px rgba(231,76,60,.35), 0 22px 40px -14px var(--shadow);
+      background:linear-gradient(180deg, color-mix(in oklab, #ff8a8a 18%, var(--card)), var(--card-2)); 
+    }
 
-  /* Membership card */
-  .member-card{ position:relative; border-radius:18px; padding:16px; color:#1a1208;
-    background:linear-gradient(135deg,#fff3c4 0%, #e9c66b 45%, #b08a3e 100%);
-    box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 -3px 0 rgba(80,50,10,.3) inset, 0 24px 50px -16px rgba(0,0,0,.45);
-    overflow:hidden; border:1px solid #8a6a2a; }
-  .member-card .mc-bg{ position:absolute; inset:0; opacity:.15; pointer-events:none;
-    background:repeating-linear-gradient(45deg, transparent 0 14px, rgba(255,255,255,.4) 14px 15px),
-               radial-gradient(circle at 80% 20%, rgba(255,255,255,.6), transparent 50%); }
-  .member-card .mc-head{ position:relative; display:flex; align-items:center; gap:10px; margin-bottom:10px; }
-  .member-card .mc-crest{ width:46px;height:46px; border-radius:50%; display:grid;place-items:center;
-    background:radial-gradient(circle, #fff7d8, #c79c3a); border:2px solid #6b4f1f; font-size:24px; color:#3b260a; }
-  .member-card .mc-title{ font-family:var(--font-head); font-weight:800; letter-spacing:2px; font-size:14px; }
-  .member-card .mc-sub{ font-size:11px; opacity:.8; }
-  .member-card .mc-body{ position:relative; display:flex; gap:14px; align-items:center; }
-  .member-card .mc-photo{ width:84px; height:84px; border-radius:12px; overflow:hidden; flex-shrink:0;
-    background:#fff; border:2px solid #6b4f1f; display:grid; place-items:center; font-weight:800; font-size:28px; color:#3b260a; }
-  .member-card .mc-photo img{ width:100%;height:100%; object-fit:cover; }
-  .member-card .mc-info{ flex:1; min-width:0; }
-  .member-card .mc-name{ font-family:var(--font-head); font-size:18px; font-weight:800; margin-bottom:4px; }
-  .member-card .mc-row{ display:flex; justify-content:space-between; gap:8px; font-size:12px; padding:2px 0; border-bottom:1px dashed rgba(60,40,10,.3); }
-  .member-card .mc-row span{ opacity:.8; }
-  .member-card .mc-foot{ position:relative; margin-top:10px; font-size:11px; text-align:center; opacity:.85; font-style:italic; }
-  .node .avatar{
-    width:64px; height:64px; border-radius:50%;
-    background:linear-gradient(180deg, var(--gold-2), var(--gold));
-    display:grid; place-items:center; color:#241704;
-    box-shadow:0 1px 0 rgba(255,255,255,.5) inset, 0 6px 12px -4px var(--shadow);
-    margin:0 auto 8px;
-    overflow:hidden; font-weight:800;
-  }
-  .node .avatar img{width:100%;height:100%;object-fit:cover}
-  .node .nm{font-family:var(--font-head); text-align:center; font-weight:800; line-height:1.1}
-  .node .yrs{text-align:center; font-size:.78rem; color:var(--ink-soft); margin-top:2px}
-  .node .row{display:flex; justify-content:center; gap:.4rem; margin-top:6px}
-  .node.hi{ box-shadow:0 0 0 3px var(--accent), 0 22px 40px -14px var(--shadow); }
+    .member-card {
+      position:relative; border-radius:18px; padding:16px; color:#1a1208;
+      background:linear-gradient(135deg,#fff3c4 0%, #e9c66b 45%, #b08a3e 100%);
+      box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 -3px 0 rgba(80,50,10,.3) inset, 0 24px 50px -16px rgba(0,0,0,.45);
+      overflow:hidden; border:1px solid #8a6a2a; 
+    }
+    .member-card .mc-bg {
+      position:absolute; inset:0; opacity:.15; pointer-events:none;
+      background:repeating-linear-gradient(45deg, transparent 0 14px, rgba(255,255,255,.4) 14px 15px),
+                 radial-gradient(circle at 80% 20%, rgba(255,255,255,.6), transparent 50%); 
+    }
+    .member-card .mc-head { position:relative; display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+    .member-card .mc-crest {
+      width:46px;height:46px; border-radius:50%; display:grid;place-items:center;
+      background:radial-gradient(circle, #fff7d8, #c79c3a); border:2px solid #6b4f1f; font-size:24px; color:#3b260a; 
+    }
+    .member-card .mc-title { font-family:var(--font-head); font-weight:800; letter-spacing:2px; font-size:14px; }
+    .member-card .mc-sub { font-size:11px; opacity:.8; }
+    .member-card .mc-body { position:relative; display:flex; gap:14px; align-items:center; }
+    .member-card .mc-photo {
+      width:84px; height:84px; border-radius:12px; overflow:hidden; flex-shrink:0;
+      background:#fff; border:2px solid #6b4f1f; display:grid; place-items:center; font-weight:800; font-size:28px; color:#3b260a; 
+    }
+    .member-card .mc-photo img { width:100%;height:100%; object-fit:cover; }
+    .member-card .mc-info { flex:1; min-width:0; }
+    .member-card .mc-name { font-family:var(--font-head); font-size:18px; font-weight:800; margin-bottom:4px; }
+    .member-card .mc-row { display:flex; justify-content:space-between; gap:8px; font-size:12px; padding:2px 0; border-bottom:1px dashed rgba(60,40,10,.3); }
+    .member-card .mc-row span { opacity:.8; }
+    .member-card .mc-foot { position:relative; margin-top:10px; font-size:11px; text-align:center; opacity:.85; font-style:italic; }
+    
+    .node .avatar {
+      width:64px; height:64px; border-radius:50%;
+      background:linear-gradient(180deg, var(--gold-2), var(--gold));
+      display:grid; place-items:center; color:#241704;
+      box-shadow:0 1px 0 rgba(255,255,255,.5) inset, 0 6px 12px -4px var(--shadow);
+      margin:0 auto 8px;
+      overflow:hidden; font-weight:800;
+    }
+    .node .avatar img { width:100%; height:100%; object-fit:cover }
+    .node .nm { font-family:var(--font-head); text-align:center; font-weight:800; line-height:1.1 }
+    .node .yrs { text-align:center; font-size:.78rem; color:var(--ink-soft); margin-top:2px }
+    .node .row { display:flex; justify-content:center; gap:.4rem; margin-top:6px }
 
-  /* Connection lines layer */
-  svg.links{position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
-  svg.links path{stroke:var(--line); stroke-width:2.2; fill:none; filter: drop-shadow(0 2px 0 color-mix(in oklab, var(--shadow) 35%, transparent));}
-  svg.links path.spouse{stroke-dasharray:6 5; stroke:var(--gold);}
+    svg.links { position:absolute; inset:0; width:100%; height:100%; pointer-events:none }
+    svg.links path { stroke:var(--line); stroke-width:2.2; fill:none; filter: drop-shadow(0 2px 0 color-mix(in oklab, var(--shadow) 35%, transparent)); }
+    svg.links path.spouse { stroke-dasharray:6 5; stroke:var(--gold); }
 
-  /* Notes */
-  .note{
-    position:absolute; padding:10px 14px; border-radius:10px;
-    background:linear-gradient(180deg, #fff7c2, #ffe98a);
-    color:#3b2a05; box-shadow:0 10px 22px -8px rgba(0,0,0,.35);
-    border:1px solid #c9a23b; max-width:280px;
-  }
-  .note.pinned::after{content:"📌"; position:absolute; top:-10px; right:-6px;}
+    .note {
+      position:absolute; padding:10px 14px; border-radius:10px;
+      background:linear-gradient(180deg, #fff7c2, #ffe98a);
+      color:#3b2a05; box-shadow:0 10px 22px -8px rgba(0,0,0,.35);
+      border:1px solid #c9a23b; max-width:280px;
+    }
+    .note.pinned::after { content:"📌"; position:absolute; top:-10px; right:-6px; }
 
-  /* Modal */
-  .scrim{position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:60; display:none; align-items:center; justify-content:center; padding:16px;}
-  .scrim.show{display:flex}
-  .modal{ width:min(680px, 96vw); max-height:92vh; overflow:auto; border-radius:18px; padding:18px;}
-  .field{display:flex; flex-direction:column; gap:.25rem; margin-bottom:.6rem}
-  .field label{font-size:.78rem; color:var(--ink-soft); font-weight:700}
-  .field input, .field select, .field textarea{
-    background:color-mix(in oklab, var(--card) 90%, white 10%);
-    color:var(--ink);
-    border:1px solid color-mix(in oklab, var(--line) 60%, transparent);
-    border-radius:.6rem; padding:.5rem .65rem; font-size:.95rem; outline:none;
-  }
-  .field input:focus, .field select:focus, .field textarea:focus{ border-color:var(--gold); box-shadow:0 0 0 3px color-mix(in oklab, var(--gold) 30%, transparent);}
+    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:60; display:none; align-items:center; justify-content:center; padding:16px; }
+    .scrim.show { display:flex }
+    .modal { width:min(680px, 96vw); max-height:92vh; overflow:auto; border-radius:18px; padding:18px; }
+    .field { display:flex; flex-direction:column; gap:.25rem; margin-bottom:.6rem }
+    .field label { font-size:.78rem; color:var(--ink-soft); font-weight:700 }
+    .field input, .field select, .field textarea {
+      background:color-mix(in oklab, var(--card) 90%, white 10%);
+      color:var(--ink);
+      border:1px solid color-mix(in oklab, var(--line) 60%, transparent);
+      border-radius:.6rem; padding:.5rem .65rem; font-size:.95rem; outline:none;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color:var(--gold); box-shadow:0 0 0 3px color-mix(in oklab, var(--gold) 30%, transparent); }
 
-  /* Notifikasi (info/success/warn/error) — bertindan di bawah skrin */
-  #notifyDock{
-    position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
-    z-index:90; display:flex; flex-direction:column; gap:8px;
-    width:min(440px, 94vw); pointer-events:none;
-  }
-  .notify{
-    pointer-events:auto;
-    display:grid; grid-template-columns:auto 1fr auto; align-items:flex-start;
-    gap:.6rem; padding:.7rem .9rem; border-radius:.85rem;
-    background:linear-gradient(180deg, var(--card), var(--card-2));
-    color:var(--ink); border:1px solid var(--line);
-    box-shadow:0 14px 36px -12px var(--shadow), 0 4px 10px -4px var(--shadow);
-    font-size:.9rem; line-height:1.35;
-    transform:translateY(10px); opacity:0;
-    animation:notifyIn .22s cubic-bezier(.2,.7,.2,1) forwards;
-  }
-  .notify-out{ animation:notifyOut .2s ease forwards; }
-  @keyframes notifyIn{ to{ transform:translateY(0); opacity:1; } }
-  @keyframes notifyOut{ to{ transform:translateY(6px); opacity:0; } }
-  .notify-ic{ font-size:1.1rem; line-height:1.2; }
-  .notify-msg{ word-break:break-word; }
-  .notify-x{
-    background:transparent; border:0; color:var(--ink-soft);
-    cursor:pointer; font-size:1rem; padding:.05rem .35rem; border-radius:.4rem;
-  }
-  .notify-x:hover{ background:color-mix(in oklab, var(--ink) 10%, transparent); color:var(--ink); }
-  .notify-info    { border-color: color-mix(in oklab, var(--line) 60%, transparent); }
-  .notify-success { border-color: color-mix(in oklab, var(--ok) 65%, transparent);
-                    box-shadow:0 14px 36px -12px var(--shadow), 0 0 0 1px color-mix(in oklab, var(--ok) 35%, transparent) inset; }
-  .notify-warn    { border-color: color-mix(in oklab, var(--gold) 75%, transparent);
-                    background:linear-gradient(180deg, color-mix(in oklab, var(--gold-2) 25%, var(--card)), var(--card-2)); }
-  .notify-error   { border-color: color-mix(in oklab, var(--danger) 75%, transparent);
-                    background:linear-gradient(180deg, color-mix(in oklab, var(--danger) 14%, var(--card)), var(--card-2));
-                    box-shadow:0 18px 40px -10px color-mix(in oklab, var(--danger) 40%, var(--shadow)),
-                               0 0 0 1px color-mix(in oklab, var(--danger) 45%, transparent) inset; }
-  .notify-sticky .notify-x{ color:var(--danger); font-weight:800; }
-  .notify-sticky .notify-x:hover{ background:color-mix(in oklab, var(--danger) 18%, transparent); }
+    #notifyDock {
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      z-index:90; display:flex; flex-direction:column; gap:8px;
+      width:min(440px, 94vw); pointer-events:none;
+    }
+    .notify {
+      pointer-events:auto;
+      display:grid; grid-template-columns:auto 1fr auto; align-items:flex-start;
+      gap:.6rem; padding:.7rem .9rem; border-radius:.85rem;
+      background:linear-gradient(180deg, var(--card), var(--card-2));
+      color:var(--ink); border:1px solid var(--line);
+      box-shadow:0 14px 36px -12px var(--shadow), 0 4px 10px -4px var(--shadow);
+      font-size:.9rem; line-height:1.35;
+      transform:translateY(10px); opacity:0;
+      animation:notifyIn .22s cubic-bezier(.2,.7,.2,1) forwards;
+    }
+    .notify-out { animation:notifyOut .2s ease forwards; }
+    @keyframes notifyIn { to{ transform:translateY(0); opacity:1; } }
+    @keyframes notifyOut { to{ transform:translateY(6px); opacity:0; } }
+    .notify-ic { font-size:1.1rem; line-height:1.2; }
+    .notify-msg { word-break:break-word; }
+    .notify-x {
+      background:transparent; border:0; color:var(--ink-soft);
+      cursor:pointer; font-size:1rem; padding:.05rem .35rem; border-radius:.4rem;
+    }
+    .notify-x:hover { background:color-mix(in oklab, var(--ink) 10%, transparent); color:var(--ink); }
+    .notify-info    { border-color: color-mix(in oklab, var(--line) 60%, transparent); }
+    .notify-success { border-color: color-mix(in oklab, var(--ok) 65%, transparent);
+                      box-shadow:0 14px 36px -12px var(--shadow), 0 0 0 1px color-mix(in oklab, var(--ok) 35%, transparent) inset; }
+    .notify-warn    { border-color: color-mix(in oklab, var(--gold) 75%, transparent);
+                      background:linear-gradient(180deg, color-mix(in oklab, var(--gold-2) 25%, var(--card)), var(--card-2)); }
+    .notify-error   { border-color: color-mix(in oklab, var(--danger) 75%, transparent);
+                      background:linear-gradient(180deg, color-mix(in oklab, var(--danger) 14%, var(--card)), var(--card-2));
+                      box-shadow:0 18px 40px -10px color-mix(in oklab, var(--danger) 40%, var(--shadow)),
+                                 0 0 0 1px color-mix(in oklab, var(--danger) 45%, transparent) inset; }
+    .notify-sticky .notify-x { color:var(--danger); font-weight:800; }
+    .notify-sticky .notify-x:hover { background:color-mix(in oklab, var(--danger) 18%, transparent); }
 
-  /* Splash */
-  #splash{
-    position:fixed; inset:0; z-index:100;
-    display:grid; place-items:center;
-    background:
-      radial-gradient(800px 500px at 50% 30%, color-mix(in oklab, var(--gold) 35%, transparent), transparent 70%),
-      linear-gradient(135deg, var(--bg), var(--bg2));
-  }
-  #splash .logo{
-    width:120px; height:120px; border-radius:30px;
-    display:grid; place-items:center; font-size:60px;
-    background:linear-gradient(180deg, var(--gold-2), var(--gold));
-    color:#241704; box-shadow:0 1px 0 rgba(255,255,255,.5) inset, 0 30px 60px -10px var(--shadow);
-    margin-bottom:18px;
-  }
-  .spinner{width:34px;height:34px;border-radius:50%;border:3px solid color-mix(in oklab, var(--gold) 40%, transparent); border-top-color:var(--gold); animation:spin 1s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
+    #splash {
+      position:fixed; inset:0; z-index:100;
+      display:grid; place-items:center;
+      background:
+        radial-gradient(800px 500px at 50% 30%, color-mix(in oklab, var(--gold) 35%, transparent), transparent 70%),
+        linear-gradient(135deg, var(--bg), var(--bg2));
+    }
+    #splash .logo {
+      width:120px; height:120px; border-radius:30px;
+      display:grid; place-items:center; font-size:60px;
+      background:linear-gradient(180deg, var(--gold-2), var(--gold));
+      color:#241704; box-shadow:0 1px 0 rgba(255,255,255,.5) inset, 0 30px 60px -10px var(--shadow);
+      margin-bottom:18px;
+    }
+    .spinner { width:34px; height:34px; border-radius:50%; border:3px solid color-mix(in oklab, var(--gold) 40%, transparent); border-top-color:var(--gold); animation:spin 1s linear infinite }
+    @keyframes spin { to { transform:rotate(360deg) } }
 
-  /* Search highlight */
-  .node.match{ box-shadow:0 0 0 3px var(--accent), 0 22px 40px -14px var(--shadow); animation:pulse 1.2s ease-in-out infinite alternate;}
-  @keyframes pulse{ to{ box-shadow:0 0 0 6px color-mix(in oklab, var(--accent) 60%, transparent), 0 22px 40px -14px var(--shadow);} }
+    .node.match { box-shadow:0 0 0 3px var(--accent), 0 22px 40px -14px var(--shadow); animation:pulse 1.2s ease-in-out infinite alternate; }
+    @keyframes pulse { to { box-shadow:0 0 0 6px color-mix(in oklab, var(--accent) 60%, transparent), 0 22px 40px -14px var(--shadow); } }
 
-  /* Tab buttons */
-  .tab{padding:.5rem .9rem; border-radius:.6rem; cursor:pointer; font-weight:700; color:var(--ink-soft)}
-  .tab.active{background:color-mix(in oklab, var(--gold) 25%, transparent); color:var(--ink)}
+    .tab { padding:.5rem .9rem; border-radius:.6rem; cursor:pointer; font-weight:700; color:var(--ink-soft) }
+    .tab.active { background:color-mix(in oklab, var(--gold) 25%, transparent); color:var(--ink) }
 
-  /* Hide scrollbar for clean look */
-  .niceScroll::-webkit-scrollbar{width:10px;height:10px}
-  .niceScroll::-webkit-scrollbar-thumb{background:color-mix(in oklab, var(--gold) 60%, transparent); border-radius:8px}
+    .niceScroll::-webkit-scrollbar { width:10px; height:10px }
+    .niceScroll::-webkit-scrollbar-thumb { background:color-mix(in oklab, var(--gold) 60%, transparent); border-radius:8px }
 
-  /* Floating action: zoom controls */
-  .zoomDock{
-    position:fixed; right:14px; bottom:14px; z-index:35;
-    display:flex; flex-direction:column; gap:8px;
-  }
-  .zoomDock button{
-    width:46px; height:46px; border-radius:14px;
-    display:grid; place-items:center; font-size:20px;
-  }
+    .zoomDock {
+      position:fixed; right:14px; bottom:14px; z-index:35;
+      display:flex; flex-direction:column; gap:8px;
+    }
+    .zoomDock button {
+      width:46px; height:46px; border-radius:14px;
+      display:grid; place-items:center; font-size:20px;
+    }
 
-  /* Pending badge */
-  #pendingBadge{
-    position:absolute; top:-6px; right:-6px; background:var(--danger); color:#fff;
-    border-radius:999px; font-size:10px; padding:2px 6px; font-weight:800;
-  }
+    #pendingBadge {
+      position:absolute; top:-6px; right:-6px; background:var(--danger); color:#fff;
+      border-radius:999px; font-size:10px; padding:2px 6px; font-weight:800;
+    }
 
-  @media (max-width: 640px){
-    .node{width:180px; padding:10px}
-    .node .avatar{width:54px;height:54px}
-  }
-</style>
+    @media (max-width: 640px){
+      .node { width:180px; padding:10px }
+      .node .avatar { width:54px; height:54px }
+    }
+  </style>
 </head>
 <body data-theme="royal">
 
-<!-- SPLASH -->
-<div id="splash">
-  <div class="text-center px-6">
-    <div class="logo">🌳</div>
-    <div class="font-head text-3xl mb-1" style="color:var(--ink)">Salasilah Keluarga Elit</div>
-    <div class="text-sm ink-soft mb-5">Memuatkan warisan keluarga anda…</div>
-    <div class="flex justify-center mb-4"><div class="spinner"></div></div>
-    <div id="tip" class="text-xs ink-soft italic max-w-xs mx-auto">Petua: Klik kad ahli untuk pilihan lengkap.</div>
-  </div>
-</div>
-
-<!-- TOP BAR -->
-<header class="topbar h-[60px] px-3 flex items-center gap-2">
-  <div class="flex items-center gap-2 mr-2">
-    <div class="w-9 h-9 rounded-xl grid place-items-center gold-edge text-lg">🌳</div>
-    <div class="font-head font-extrabold text-[15px] sm:text-lg leading-none ink">Salasilah <span class="hidden sm:inline">Keluarga Elit</span></div>
-  </div>
-
-  <div class="flex-1 flex items-center justify-center gap-2">
-    <div class="relative w-full max-w-md">
-      <input id="search" type="text" placeholder="Cari nama, tempat, tahun, catatan…"
-        class="w-full bevel-soft rounded-xl pl-9 pr-20 py-2 outline-none text-sm" style="color:var(--ink)"/>
-      <span class="absolute left-3 top-1/2 -translate-y-1/2 ink-soft">🔍</span>
-      <div class="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1">
-        <button id="searchPrev" class="btn btn-ghost !py-1 !px-2" title="Sebelumnya">↑</button>
-        <button id="searchNext" class="btn btn-ghost !py-1 !px-2" title="Seterusnya">↓</button>
-      </div>
+  <div id="splash">
+    <div class="text-center px-6">
+      <div class="logo">🌳</div>
+      <div class="font-head text-3xl mb-1" style="color:var(--ink)">Salasilah Keluarga Elit</div>
+      <div class="text-sm ink-soft mb-5">Memuatkan warisan keluarga anda…</div>
+      <div class="flex justify-center mb-4"><div class="spinner"></div></div>
+      <div id="tip" class="text-xs ink-soft italic max-w-xs mx-auto">Petua: Klik kad ahli untuk pilihan lengkap.</div>
     </div>
   </div>
 
-  <div class="flex items-center gap-1">
-    <button id="btnAddNote" class="btn btn-ghost" title="Tambah nota" style="display:none">📝</button>
-    <button id="btnZoomFit" class="btn btn-ghost" title="Muat skrin">⛶</button>
-    <button id="btnAdmin" class="btn btn-ghost relative" title="Pentadbir" style="display:none">🛡️<span id="pendingBadge" style="display:none">0</span></button>
-    <button id="btnSettings" class="btn btn-ghost" title="Tetapan">⚙️</button>
-    <button id="btnAccount" class="btn btn-ghost relative" title="Akaun / Log Masuk">👤</button>
+  <header class="topbar h-[60px] px-3 flex items-center gap-2">
+    <div class="flex items-center gap-2 mr-2">
+      <div class="w-9 h-9 rounded-xl grid place-items-center gold-edge text-lg">🌳</div>
+      <div class="font-head font-extrabold text-[15px] sm:text-lg leading-none ink">Salasilah <span class="hidden sm:inline">Keluarga Elit</span></div>
+    </div>
+
+    <div class="flex-1 flex items-center justify-center gap-2">
+      <div class="relative w-full max-w-md">
+        <input id="search" type="text" placeholder="Cari nama, tempat, tahun, catatan…"
+          class="w-full bevel-soft rounded-xl pl-9 pr-20 py-2 outline-none text-sm" style="color:var(--ink)"/>
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 ink-soft">🔍</span>
+        <div class="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1">
+          <button id="searchPrev" class="btn btn-ghost !py-1 !px-2" title="Sebelumnya">↑</button>
+          <button id="searchNext" class="btn btn-ghost !py-1 !px-2" title="Seterusnya">↓</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1">
+      <button id="btnAddNote" class="btn btn-ghost" title="Tambah nota" style="display:none">📝</button>
+      <button id="btnZoomFit" class="btn btn-ghost" title="Muat skrin">⛶</button>
+      <button id="btnAdmin" class="btn btn-ghost relative" title="Pentadbir" style="display:none">🛡️<span id="pendingBadge" style="display:none">0</span></button>
+      <button id="btnSettings" class="btn btn-ghost" title="Tetapan">⚙️</button>
+      <button id="btnAccount" class="btn btn-ghost relative" title="Akaun / Log Masuk">👤</button>
+    </div>
+  </header>
+
+  <main id="stage">
+    <div id="world">
+      <svg class="links" id="links" viewBox="0 0 6000 4000" preserveAspectRatio="none"></svg>
+      <div id="nodes"></div>
+      <div id="notes"></div>
+    </div>
+  </main>
+
+  <div class="zoomDock">
+    <button class="gold-edge" id="zIn">+</button>
+    <button class="gold-edge" id="zOut">−</button>
+    <button class="gold-edge" id="zReset" title="Reset">⟲</button>
   </div>
-</header>
 
-<!-- STAGE -->
-<main id="stage">
-  <div id="world">
-    <svg class="links" id="links" viewBox="0 0 6000 4000" preserveAspectRatio="none"></svg>
-    <div id="nodes"></div>
-    <div id="notes"></div>
+  <div id="notifyDock"></div>
+
+  <div class="scrim" id="scrim">
+    <div class="modal bevel niceScroll" id="modal"></div>
   </div>
-</main>
 
-<!-- ZOOM DOCK -->
-<div class="zoomDock">
-  <button class="gold-edge" id="zIn">+</button>
-  <button class="gold-edge" id="zOut">−</button>
-  <button class="gold-edge" id="zReset" title="Reset">⟲</button>
-</div>
-
-<!-- NOTIFIKASI -->
-<div id="notifyDock"></div>
-
-<!-- MODAL ROOT -->
-<div class="scrim" id="scrim">
-  <div class="modal bevel niceScroll" id="modal"></div>
-</div>
-
-<script src="app.js" defer></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

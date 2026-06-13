@@ -1,6 +1,13 @@
-/* Salasilah Keluarga Elit — Service Worker (PWA shell cache) */
-const CACHE = 'skg-v1';
-const ASSETS = ['./', './index.html', './app.js', './manifest.json'];
+/* Salasilah Keluarga Elit — Service Worker (PWA) */
+const CACHE = 'skg-v1.1';
+const ASSETS = [
+  './',
+  './index.html',
+  './app.js',
+  './manifest.json',
+  'https://cdn.tailwindcss.com',
+  'https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b'
+];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -18,7 +25,10 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // Network-first for navigations (HTML)
+  // JANGAN CACHE API Google Apps Script
+  if (url.hostname.includes('script.google.com')) return;
+
+  // Navigasi HTML sentiasa Network-First
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req).then(res => {
@@ -30,17 +40,14 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Don't cache Google Apps Script API calls
-  if (url.hostname.includes('script.google.com')) return;
-
-  // Cache-first for same-origin static assets
-  if (url.origin === location.origin) {
-    e.respondWith(
-      caches.match(req).then(hit => hit || fetch(req).then(res => {
+  // Aset statik (JS/CSS/Ikon): Cache-First dengan kemaskini
+  e.respondWith(
+    caches.match(req).then(hit => hit || fetch(req).then(res => {
+      if (res && (res.status === 200 || res.type === 'opaque')) {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(req, copy));
-        return res;
-      }))
-    );
-  }
+      }
+      return res;
+    }).catch(() => { /* Abaikan untuk fail hilang */ }))
+  );
 });
