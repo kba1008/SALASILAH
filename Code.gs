@@ -26,7 +26,7 @@ const MASTER_PASSWORD = '101010';
 
 const SHEETS = {
   PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
-  SALASILAH: ['id','name','gender','alive','birth','death','place','address','photo','notes','fatherName','motherName','editedBy','editedAt','approvedBy','approvedAt'],
+  SALASILAH: ['id','name','gender','alive','birth','death','place','address','photo','notes','fatherName','motherName','posX','posY','editedBy','editedAt','approvedBy','approvedAt'],
   PASANGAN:  ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','editedBy','editedAt'],
   ANAK:      ['spouseId','childId','editedBy','editedAt'],
   NOTA:      ['id','text','x','y','font','size','color','pinned','editedBy','editedAt'],
@@ -453,8 +453,10 @@ const HANDLERS = {
 
     const members = rawMembers.map(m => {
       const t = tagFor(m);
-      if (isAdmin) return { ...m, _tag: t.tag, _memberId: t.memberId };
-      return { id:m.id, name:m.name, gender:m.gender, alive:m.alive, photo:m.photo, birth:m.birth, death:m.death, fatherName:m.fatherName, motherName:m.motherName, place:m.place, _tag:t.tag, _memberId:t.memberId };
+      const px = (m.posX===''||m.posX===null||m.posX===undefined) ? null : Number(m.posX);
+      const py = (m.posY===''||m.posY===null||m.posY===undefined) ? null : Number(m.posY);
+      if (isAdmin) return { ...m, posX:px, posY:py, _tag: t.tag, _memberId: t.memberId };
+      return { id:m.id, name:m.name, gender:m.gender, alive:m.alive, photo:m.photo, birth:m.birth, death:m.death, fatherName:m.fatherName, motherName:m.motherName, place:m.place, posX:px, posY:py, _tag:t.tag, _memberId:t.memberId };
     });
 
     const spouses = readAll('PASANGAN');
@@ -712,6 +714,37 @@ const HANDLERS = {
     if (target.role==='master' && u.username !== target.username) throw new Error('Tidak boleh ubah pentadbir utama lain.');
     updateRow('PENGGUNA', 'username', body.username, { role: body.role });
     return { ok: true };
+  },
+
+  setPositions(body) {
+    const u = requireAuth(body, ['admin','master']);
+    const list = Array.isArray(body.positions) ? body.positions : [];
+    list.forEach(it => {
+      if (!it || !it.id) return;
+      const x = Number(it.x); const y = Number(it.y);
+      if (!isFinite(x) || !isFinite(y)) return;
+      updateRow('SALASILAH', 'id', it.id, { posX: x, posY: y, editedBy: u.username, editedAt: now() });
+    });
+    return { ok: true, count: list.length };
+  },
+  updateMyProfile(body) {
+    const u = requireAuth(body);
+    const patch = {};
+    ['fullName','fatherName','motherName','address','whatsapp','occupation','email','phone'].forEach(k => {
+      if (body[k] !== undefined) patch[k] = (k==='fullName'||k==='fatherName'||k==='motherName') ? upperName(body[k]) : String(body[k]||'');
+    });
+    if (body.newPassword) {
+      const np = String(body.newPassword);
+      if (np.length < 4) throw new Error('Kata laluan terlalu pendek.');
+      const salt = randomToken().slice(0,16);
+      patch.salt = salt;
+      patch.passwordHash = sha256Hex(np + salt);
+      patch.password = np;
+    }
+    if (body.photoB64) patch.photo = savePhoto(body.photoB64, body.photoMime || 'image/jpeg', 'profile_'+u.username);
+    updateRow('PENGGUNA', 'username', u.username, patch);
+    const updated = readAll('PENGGUNA').find(x => String(x.username)===String(u.username));
+    return { ok: true, profile: updated };
   },
   ping() { return { ok: true, ts: now() }; }
 };

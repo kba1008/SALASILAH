@@ -323,12 +323,14 @@ $('#btnAccount').onclick = ()=>{
     </div>
     <div class="grid grid-cols-1 gap-2">
       <button class="btn gold-edge justify-start" id="acProfile">🪪 Kad Keahlian Saya</button>
+      <button class="btn gold-edge justify-start" id="acEditProfile">⚙️ Seting Profil</button>
       ${myDraftsButton()}
       <button class="btn btn-ghost justify-start" style="color:var(--danger)" id="acLogout">🚪 Log Keluar</button>
     </div>
     <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
   `);
   $('#acProfile').onclick = ()=>{ closeModal(); openProfile(); };
+  $('#acEditProfile').onclick = ()=>{ closeModal(); openProfileEditor(); };
   const draftsBtn = $('#acDrafts'); if(draftsBtn) draftsBtn.onclick = openReturnedDrafts;
   $('#acLogout').onclick = ()=>{ STORE.user=null; STORE.cred=null; notify.success("Sesi tamat."); location.reload(); };
 };
@@ -473,6 +475,12 @@ function buildLayout(){
   }
   roots.forEach(r=>{ cursorX = place(r.id, 0, cursorX) + GAP_X*2; });
   getRenderMembers().forEach(m=>{ if(!placed[m.id]){ placed[m.id] = { x: cursorX, y: baseY }; cursorX += NODE_W + GAP_X; } });
+  // Override dengan kedudukan tersimpan (admin telah seret kotak)
+  MEMBERS.forEach(m=>{
+    if(m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY)){
+      placed[m.id] = { x: Number(m.posX), y: Number(m.posY) };
+    }
+  });
   return placed;
 }
 
@@ -526,9 +534,97 @@ function renderNodes(layout){
       if(isDraft && (isAdmin || pendingRec?.user!==STORE.user?.username)) openDraftReview(m, pendingRec);
       else openMemberMenu(m);
     });
+    if (isAdmin) enableNodeDrag(el, m.id, layout);
     frag.appendChild(el);
   });
   wrap.appendChild(frag);
+}
+
+// ===== Drag-and-drop kotak kad (admin/master) =====
+// - Drag kotak akar (tiada ibu/bapa) -> kesemua keturunan & pasangan bergerak sekali
+// - Drag kotak biasa -> hanya kotak itu bergerak, garis dilukis semula auto
+function getSubtreeIds(rootId){
+  const SPOUSES = getRenderSpouses();
+  const CHILDREN = getRenderChildren();
+  const set = new Set([rootId]);
+  const queue = [rootId];
+  while(queue.length){
+    const id = queue.shift();
+    // Pasangan kepada id
+    SPOUSES.forEach(s=>{
+      const partner = s.husbandId===id ? s.wifeId : (s.wifeId===id ? s.husbandId : null);
+      if(partner && !set.has(partner)){ set.add(partner); queue.push(partner); }
+    });
+    // Anak melalui mana-mana pasangan yang melibatkan id
+    SPOUSES.filter(s=>s.husbandId===id || s.wifeId===id).forEach(s=>{
+      CHILDREN.filter(c=>c.spouseId===s.id).forEach(c=>{
+        if(!set.has(c.childId)){ set.add(c.childId); queue.push(c.childId); }
+      });
+    });
+  }
+  return set;
+}
+function isRootMember(id){
+  const CHILDREN = getRenderChildren();
+  return !CHILDREN.find(c=>c.childId===id);
+}
+let _dragState = null;
+function enableNodeDrag(el, id, layout){
+  el.style.touchAction = 'none';
+  el.addEventListener('pointerdown', (e)=>{
+    if(e.button && e.button!==0) return;
+    // jangan ganggu klik pada gambar / butang dalam kad
+    if(e.target.closest('.lb-img,button,a,input,select,textarea')) return;
+    e.stopPropagation();
+    const isRoot = isRootMember(id);
+    const ids = isRoot ? getSubtreeIds(id) : new Set([id]);
+    const scale = panzoomInstance ? panzoomInstance.getScale() : 1;
+    const lay = buildLayout(); // snapshot terkini
+    const positions = {};
+    ids.forEach(mid => { const p = lay[mid]; if(p) positions[mid] = { x:p.x, y:p.y }; });
+    _dragState = { ids, positions, scale, sx:e.clientX, sy:e.clientY, layout:lay, moved:false, isRoot };
+    el.setPointerCapture(e.pointerId);
+    // halang panzoom semasa seret
+    if(panzoomInstance) panzoomInstance.setOptions({ disablePan:true });
+    document.body.style.cursor = 'grabbing';
+  });
+  el.addEventListener('pointermove', (e)=>{
+    if(!_dragState) return;
+    const dx = (e.clientX - _dragState.sx) / _dragState.scale;
+    const dy = (e.clientY - _dragState.sy) / _dragState.scale;
+    if(Math.abs(dx)+Math.abs(dy) > 2) _dragState.moved = true;
+    _dragState.ids.forEach(mid => {
+      const start = _dragState.positions[mid]; if(!start) return;
+      const nx = start.x + dx, ny = start.y + dy;
+      _dragState.layout[mid] = { x:nx, y:ny };
+      const node = document.querySelector(`#nodes .node[data-id="${mid}"]`);
+      if(node){ node.style.left = nx+'px'; node.style.top = ny+'px'; }
+    });
+    renderLinks(_dragState.layout);
+  });
+  const finish = async (e)=>{
+    if(!_dragState) return;
+    const st = _dragState; _dragState = null;
+    if(panzoomInstance) panzoomInstance.setOptions({ disablePan:false });
+    document.body.style.cursor = '';
+    if(!st.moved) return;
+    const positions = [];
+    st.ids.forEach(mid => {
+      const p = st.layout[mid]; if(!p) return;
+      positions.push({ id:mid, x:Math.round(p.x), y:Math.round(p.y) });
+    });
+    try{
+      await dispatchApi('setPositions', { positions });
+      // segarkan DATA supaya posX/posY tersimpan kekal selepas refresh seterusnya
+      DATA.members = DATA.members.map(m=>{
+        const f = positions.find(x=>String(x.id)===String(m.id));
+        return f ? { ...m, posX:f.x, posY:f.y } : m;
+      });
+      notify.success(st.isRoot ? 'Akar & rangkaian dipindahkan.' : 'Kotak dipindahkan.');
+    }catch(err){ toast('Gagal simpan kedudukan: '+err.message); await refresh(); }
+  };
+  el.addEventListener('pointerup', finish);
+  el.addEventListener('pointercancel', finish);
 }
 
 // Paparan semakan kad DRAF (belum disahkan). Admin boleh sah/batal; pengedit
@@ -1192,3 +1288,77 @@ async function refresh(){ try{ let r = await api('bootstrap'); if (STORE.user &&
 if('serviceWorker' in navigator){ window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 
 boot();
+
+
+// ===== Editor profil pengguna sendiri =====
+async function openProfileEditor(){
+  const u = STORE.user; if(!u){ loginForm(); return; }
+  let p = u;
+  try{ const r = await api('myProfile'); if(r?.profile) p = { ...u, ...r.profile }; }catch(_){}
+  openModal(`
+    <div class="font-head text-2xl mb-3">Seting Profil Saya</div>
+    <p class="text-xs ink-soft mb-2">Kemas kini maklumat anda sendiri. Perubahan terus disimpan tanpa perlu kelulusan pentadbir.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div class="field sm:col-span-2"><label>Nama penuh</label><input id="pf_name" value="${escapeHtml(p.fullName||'')}"/></div>
+      <div class="field"><label>Nama bapa</label><input id="pf_father" value="${escapeHtml(p.fatherName||'')}"/></div>
+      <div class="field"><label>Nama ibu</label><input id="pf_mother" value="${escapeHtml(p.motherName||'')}"/></div>
+      <div class="field sm:col-span-2"><label>Alamat</label><textarea id="pf_addr" rows="2">${escapeHtml(p.address||'')}</textarea></div>
+      <div class="field"><label>WhatsApp</label><input id="pf_wa" value="${escapeHtml(p.whatsapp||'')}"/></div>
+      <div class="field"><label>Pekerjaan</label><input id="pf_occ" value="${escapeHtml(p.occupation||'')}"/></div>
+      <div class="field sm:col-span-2"><label>Emel</label><input id="pf_email" type="email" value="${escapeHtml(p.email||'')}"/></div>
+      <div class="field sm:col-span-2"><label>Kata laluan baharu (kosongkan jika tidak mahu ubah)</label><input id="pf_pw" type="password" autocomplete="new-password"/></div>
+      <div class="field sm:col-span-2"><label>Gambar profil baharu (pilihan)</label><input id="pf_photo" type="file" accept="image/*"/></div>
+    </div>
+    <div class="flex gap-2 justify-end mt-3">
+      <button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button>
+      <button class="btn gold-edge" id="pfSave">Simpan</button>
+    </div>
+  `);
+  $('#pfSave').onclick = async ()=>{
+    const payload = {
+      fullName:  $('#pf_name').value.trim(),
+      fatherName:$('#pf_father').value.trim(),
+      motherName:$('#pf_mother').value.trim(),
+      address:   $('#pf_addr').value.trim(),
+      whatsapp:  $('#pf_wa').value.trim(),
+      occupation:$('#pf_occ').value.trim(),
+      email:     $('#pf_email').value.trim()
+    };
+    const pw = $('#pf_pw').value;
+    if(pw) payload.newPassword = pw;
+    const file = $('#pf_photo').files[0];
+    if(file){
+      if(file.size > 2*1024*1024) return toast('Saiz gambar maksimum 2MB.');
+      payload.photoB64 = await fileToB64(file);
+      payload.photoMime = file.type;
+    }
+    try{
+      const r = await dispatchApi('updateMyProfile', payload);
+      if(r?.profile){
+        const u2 = STORE.user || {};
+        u2.fullName = r.profile.fullName || u2.fullName;
+        u2.photo    = r.profile.photo    || u2.photo;
+        STORE.user = u2;
+        if(pw){ const c = STORE.cred || {}; c.password = pw; STORE.cred = c; }
+      }
+      notify.success('Profil dikemaskini.');
+      closeModal();
+    }catch(e){ toast('Gagal kemaskini: '+e.message); }
+  };
+}
+
+// Petunjuk visual untuk admin/master: kursor 'move' di atas kotak
+(function injectAdminDragStyle(){
+  const css = document.createElement('style');
+  css.textContent = `
+    body[data-role="admin"] .node, body[data-role="master"] .node { cursor: move; }
+  `;
+  document.head.appendChild(css);
+  const orig = applyRoleUI;
+  window.applyRoleUI = function(){
+    orig();
+    const r = STORE.user?.role || '';
+    document.body.dataset.role = (r==='admin'||r==='master') ? r : '';
+  };
+})();
+
