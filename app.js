@@ -985,6 +985,45 @@ async function autoPlaceNew(hints, options){
 
 
 let panzoomInstance = null;
+
+// ===== Nasab (bloodline) & Patrilineal computation =====
+// blood: semua keturunan Kepala Salasilah (lelaki/perempuan)
+// patri: rantaian patrilineal — hanya melalui BAPA (lelaki) sahaja
+function computeNasabSets(){
+  const heads = getHeadRoots();
+  const SP = getRenderSpouses();
+  const CH = getRenderChildren();
+  const MEMBERS = getRenderMembers();
+  const byId = Object.fromEntries(MEMBERS.map(m=>[m.id,m]));
+  const blood = new Set();
+  const patri = new Set();
+  function dfsBlood(id){
+    if(blood.has(id)) return;
+    blood.add(id);
+    SP.filter(s=> s.husbandId===id || s.wifeId===id).forEach(s=>{
+      CH.filter(c=> c.spouseId===s.id).forEach(c=>{
+        if(byId[c.childId]) dfsBlood(c.childId);
+      });
+    });
+  }
+  function dfsPatri(id){
+    if(patri.has(id)) return;
+    patri.add(id);
+    const m = byId[id]; if(!m) return;
+    // hanya lelaki menyalurkan nasab patrilineal ke anak-anaknya
+    if(m.gender==='F') return;
+    SP.filter(s=> s.husbandId===id).forEach(s=>{
+      CH.filter(c=> c.spouseId===s.id).forEach(c=>{
+        if(byId[c.childId]) dfsPatri(c.childId);
+      });
+    });
+  }
+  heads.forEach(h=>{
+    if(byId[h]){ dfsBlood(h); dfsPatri(h); }
+  });
+  return { blood, patri };
+}
+
 function renderAll(){
   const layout = buildLayout();
   renderNodes(layout);
@@ -998,6 +1037,7 @@ function renderNodes(layout){
   const editMap = getEditPendingMap();           // id ahli sedia ada -> cadangan edit
   const isAdmin = ['admin','master'].includes(STORE.user?.role);
   const headRoots = getHeadRoots();
+  const { blood: bloodSet, patri: patriSet } = computeNasabSets();
   const frag = document.createDocumentFragment();
   getRenderMembers().forEach(m=>{
     const pos = layout[m.id] || {x:200,y:200};
@@ -1010,7 +1050,10 @@ function renderNodes(layout){
     const isDraft = !!pendingRec;
     const draftCls = isDraft ? 'tag-draft' : '';
     const isHead = headRoots.has(m.id);
-    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls} ${isHead?'root-head':''}`;
+    const isInLaw = !bloodSet.has(m.id) && bloodSet.size>0;
+    const isPatri = patriSet.has(m.id);
+    const kinCls = bloodSet.size===0 ? '' : (isInLaw ? 'kin-inlaw' : (isPatri ? 'kin-patri' : 'kin-blood'));
+    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls} ${isHead?'root-head':''} ${kinCls}`;
     if(isHead) el.title = isAdmin ? 'Kepala Salasilah — seret untuk gerakkan keseluruhan family tree' : 'Kepala Salasilah';
     el.style.left = pos.x+'px'; el.style.top = pos.y+'px';
     el.dataset.id = m.id;
@@ -1029,7 +1072,7 @@ function renderNodes(layout){
       <div class="row">
         <span class="chip" style="background:color-mix(in oklab, var(--gold) 25%, transparent); color:var(--ink)">${ic}</span>
         ${m.alive===false?'<span class="chip" style="background:#3334; color:var(--ink)">Allahyarham</span>':'<span class="chip" style="background:color-mix(in oklab, var(--ok) 30%, transparent); color:var(--ink)">Hidup</span>'}
-        ${isHead?'<span class="chip root-head-chip">👑 Kepala</span>':''}${badge}${draftBadge}
+        ${isHead?'<span class="chip root-head-chip">👑 Kepala</span>':''}${isInLaw?'<span class="chip kin-chip-inlaw">💞 Menantu</span>':(isPatri && !isHead?'<span class="chip kin-chip-patri">🩸 Nasab</span>':'')}${badge}${draftBadge}
       </div>
     `;
     el.addEventListener('click', e=>{
@@ -1245,6 +1288,7 @@ function renderLinks(layout){
   const SPOUSES = getRenderSpouses();
   const CHILDREN = getRenderChildren();
   const isAdmin = ['admin','master'].includes(STORE.user?.role);
+  const { patri: patriSet } = computeNasabSets();
   let paths = '';
   let labels = '';
   let handles = '';
@@ -1324,23 +1368,29 @@ function renderLinks(layout){
     const isDraftGroup = kids.every(c=> c._draft);
     const cls = isDraftGroup ? 'draft-link' : '';
     const grpAttr = `class="child-group ${cls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
+    // Apakah pasangan ini menyalurkan nasab patrilineal? (bapa dalam patriSet)
+    const fatherPatri = patriSet.has(sp.husbandId);
+    const groupPatri = fatherPatri && kids.some(c=> patriSet.has(c.childId));
+    const trunkCls = (cls + (groupPatri ? ' nasab-patri' : '')).trim();
+    const grpAttrPatri = `class="child-group ${trunkCls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
     // Laluan siku 90°: turun dari junction ke busbar, kemudian busbar bercabang.
     const trunkOffset = trunkLaneFor(jx, jy, busY);
     if(trunkOffset){
       const tx = jx + trunkOffset;
-      paths += `<path ${grpAttr} d="M ${jx} ${jy} L ${tx} ${jy} L ${tx} ${busY} L ${jx} ${busY}"/>`;
+      paths += `<path ${grpAttrPatri} d="M ${jx} ${jy} L ${tx} ${jy} L ${tx} ${busY} L ${jx} ${busY}"/>`;
     } else {
-      paths += `<path ${grpAttr} d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
+      paths += `<path ${grpAttrPatri} d="M ${jx} ${jy} L ${jx} ${busY}"/>`;
     }
     if(rightX - leftX > 0.5){
-      paths += `<path ${grpAttr} d="M ${leftX} ${busY} L ${rightX} ${busY}"/>`;
+      paths += `<path ${grpAttrPatri} d="M ${leftX} ${busY} L ${rightX} ${busY}"/>`;
     }
     // Satu titik turun untuk setiap anak
     kids.forEach(c=>{
       const k = layout[c.childId];
       const kx = k.x + NODE_W/2;
-      const ccls = c._draft ? 'draft-link' : '';
-      paths += `<path class="${ccls}" d="M ${kx} ${busY} L ${kx} ${k.y}"/>`;
+      const childPatri = fatherPatri && patriSet.has(c.childId);
+      const ccls = (c._draft ? 'draft-link ' : '') + (childPatri ? 'nasab-patri' : '');
+      paths += `<path class="${ccls.trim()}" d="M ${kx} ${busY} L ${kx} ${k.y}"/>`;
       const dad = byId[sp.husbandId], mom = byId[sp.wifeId];
       const dn = (dad?.name||'?').split(' ')[0];
       const mn = (mom?.name||'?').split(' ')[0];
