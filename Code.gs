@@ -716,6 +716,7 @@ const HANDLERS = {
   setPositions(body) {
     const u = requireAuth(body);
     const list = Array.isArray(body.positions) ? body.positions : [];
+    const junctions = Array.isArray(body.junctions) ? body.junctions : [];
     let updated = 0;
     list.forEach(function(p){
       if (!p || !p.id) return;
@@ -739,7 +740,20 @@ const HANDLERS = {
         });
       } catch(_){}
     });
-    return { ok: true, updated: updated };
+    // Auto Susun menghantar junction pasangan sekali supaya offset seretan lama
+    // tidak mencacatkan garisan pada susunan baharu.
+    junctions.forEach(function(j){
+      if (!j || !j.id) return;
+      try {
+        updateRow('PASANGAN', 'id', j.id, {
+          junctionDx: Number(j.dx) || 0,
+          junctionDy: Number(j.dy) || 0,
+          editedBy: u.username || '',
+          editedAt: now()
+        });
+      } catch(_){}
+    });
+    return { ok: true, updated: updated, junctions: junctions.length };
   },
   setJunction(body) {
     requireAuth(body);

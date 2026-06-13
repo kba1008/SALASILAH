@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxaq2HhURicBEB_wNGpGBBVhoPwMIOczLQGVJIVU8yUt2Lfp29o0lUvhsYVV4Aiuqrz/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbySnlDlLMvubSyGg9zrQ6KbGpH76gM38-HRk4z_GqX1rH6HK_fGQPVGNkRRUwBg7unn/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -589,11 +589,12 @@ function findHeadForMember(id){
   return null;
 }
 
-// 3 variasi tetap — berulang setiap kali butang ditekan.
+// 3 tahap jarak profesional — setiap susunan tetap mengutamakan ruang subtree
+// sebenar supaya cabang besar tidak menghimpit cabang di sebelahnya.
 const AUTO_VARIANTS = [
-  { gapX: GAP_X,        gapY: GAP_Y,        reverse: false, label: 'standard' },
-  { gapX: GAP_X * 1.6,  gapY: GAP_Y,        reverse: false, label: 'lebar'    },
-  { gapX: GAP_X,        gapY: GAP_Y * 1.25, reverse: true,  label: 'terbalik' },
+  { gapX: GAP_X,       gapY: GAP_Y,        branchGap: 44, label: 'kemas'  },
+  { gapX: GAP_X * 1.5, gapY: GAP_Y * 1.1,  branchGap: 70, label: 'lega'   },
+  { gapX: GAP_X * 2.1, gapY: GAP_Y * 1.25, branchGap: 96, label: 'galeri' },
 ];
 
 // Kira tata letak HANYA untuk subtree Kepala Salasilah, mengikut variasi.
@@ -608,8 +609,8 @@ function autoLayoutSubtree(headId, variantIdx){
   const byId = Object.fromEntries(MEMBERS.map(m=>[m.id, m]));
   const subtree = getSubtreeIds(headId);
 
-  const col = {}, depthOf = {}, done = new Set();
-  let cursor = 0;
+  const leftOf = {}, depthOf = {}, done = new Set(), measuring = new Set();
+  const unitCache = {}, widthCache = {};
 
   const spousesOf = id => SPOUSES
     .filter(s=> s.husbandId===id || s.wifeId===id)
@@ -624,52 +625,64 @@ function autoLayoutSubtree(headId, variantIdx){
       });
     });
     out.sort((a,b)=>{ const ka=_sortKey(byId[a]), kb=_sortKey(byId[b]); return ka[0]-kb[0] || (ka[1]<kb[1]?-1:1); });
-    if(cfg.reverse) out.reverse();
     return out;
   };
 
-  function placeUnit(id, depth){
-    if(done.has(id) || !subtree.has(id)) return [];
-    done.add(id);
-    const partners = spousesOf(id).filter(p=> p && subtree.has(p) && !done.has(p));
-    partners.forEach(p=> done.add(p));
-    const unit = [id, ...partners];
-    const unitCols = unit.length;
-    const kids = kidsOfUnit(unit).filter(k=> !done.has(k));
-    let placed = unit.slice();
-    if(kids.length === 0){
-      const left = cursor;
-      unit.forEach((m,i)=>{ col[m] = left + i; depthOf[m] = depth; });
-      cursor += unitCols;
-    } else {
-      const childLeft = cursor;
-      kids.forEach(k=>{ placed = placed.concat(placeUnit(k, depth+1)); });
-      const childRight = cursor;
-      const span = childRight - childLeft;
-      if(unitCols <= span){
-        const unitLeft = childLeft + (span - unitCols)/2;
-        unit.forEach((m,i)=>{ col[m] = unitLeft + i; depthOf[m] = depth; });
-      } else {
-        const extra = unitCols - span;
-        placed.forEach(m=>{ if(!unit.includes(m)) col[m] += extra/2; });
-        cursor += extra;
-        unit.forEach((m,i)=>{ col[m] = childLeft + i; depthOf[m] = depth; });
-      }
-    }
-    return placed;
+  function describeUnit(id){
+    if(unitCache[id]) return unitCache[id];
+    const partners = spousesOf(id).filter(p=> p && subtree.has(p));
+    const unit = [id, ...partners.filter((p,i,a)=> a.indexOf(p)===i)];
+    const kids = kidsOfUnit(unit).filter(k=> !unit.includes(k));
+    return (unitCache[id] = { unit, kids });
   }
-  placeUnit(headId, 0);
+
+  // Ukur dahulu setiap keturunan. Lebar ibu/bapa atau jumlah semua subtree
+  // anak (mana lebih besar) menjadi petak eksklusif cabang tersebut.
+  function measure(id){
+    if(widthCache[id]) return widthCache[id];
+    if(measuring.has(id)) return NODE_W;
+    measuring.add(id);
+    const desc = describeUnit(id);
+    const unitWidth = desc.unit.length * NODE_W + Math.max(0, desc.unit.length-1) * cfg.gapX;
+    const childWidths = desc.kids.map(measure);
+    const childrenWidth = childWidths.reduce((n,w)=>n+w,0) + Math.max(0, childWidths.length-1) * cfg.branchGap;
+    measuring.delete(id);
+    return (widthCache[id] = Math.max(unitWidth, childrenWidth, NODE_W));
+  }
+
+  function placeUnit(id, depth, boxLeft){
+    if(done.has(id) || !subtree.has(id)) return;
+    const desc = describeUnit(id);
+    const boxWidth = measure(id);
+    const unitWidth = desc.unit.length * NODE_W + Math.max(0, desc.unit.length-1) * cfg.gapX;
+    const unitLeft = boxLeft + (boxWidth-unitWidth)/2;
+    desc.unit.forEach((memberId,i)=>{
+      if(done.has(memberId)) return;
+      done.add(memberId);
+      leftOf[memberId] = unitLeft + i*colStep;
+      depthOf[memberId] = depth;
+    });
+
+    const childWidths = desc.kids.map(measure);
+    const childrenWidth = childWidths.reduce((n,w)=>n+w,0) + Math.max(0, childWidths.length-1) * cfg.branchGap;
+    let childLeft = boxLeft + (boxWidth-childrenWidth)/2;
+    desc.kids.forEach((kid,i)=>{
+      placeUnit(kid, depth+1, childLeft);
+      childLeft += childWidths[i] + cfg.branchGap;
+    });
+  }
+  placeUnit(headId, 0, 0);
 
   // Penambat: kekal kedudukan semasa Kepala Salasilah (jika ada), supaya
   // cabang tidak melompat ke penjuru kanvas setiap kali disusun.
   const head = byId[headId];
   const anchorX = (head && head.posX!=null && isFinite(head.posX)) ? Number(head.posX) : ORIGIN_X;
   const anchorY = (head && head.posY!=null && isFinite(head.posY)) ? Number(head.posY) : ORIGIN_Y;
-  const headCol = col[headId] || 0;
+  const headLeft = leftOf[headId] || 0;
 
   const placed = {};
-  Object.keys(col).forEach(id=>{
-    const dx = (col[id] - headCol) * colStep;
+  Object.keys(leftOf).forEach(id=>{
+    const dx = leftOf[id] - headLeft;
     const dy = depthOf[id] * rowStep;
     placed[id] = { x: Math.round(anchorX + dx), y: Math.round(anchorY + dy) };
   });
@@ -691,13 +704,19 @@ async function autoArrangeHead(headId){
     .filter(id=> knownIds.has(String(id)))
     .map(id=> ({ id, x: layout[id].x, y: layout[id].y }));
   if(!positions.length){ notify.info('Tiada cabang untuk disusun.'); return; }
+  const arrangedIds = new Set(Object.keys(layout).map(String));
+  const junctions = (DATA.spouses||[])
+    .filter(s=> arrangedIds.has(String(s.husbandId)) || arrangedIds.has(String(s.wifeId)))
+    .map(s=> ({ id:s.id, dx:0, dy:0 }));
   DATA.members = (DATA.members||[]).map(m=>{
     const f = positions.find(x=> String(x.id)===String(m.id));
     return f ? { ...m, posX:f.x, posY:f.y } : m;
   });
+  DATA.spouses = (DATA.spouses||[]).map(s=> arrangedIds.has(String(s.husbandId)) || arrangedIds.has(String(s.wifeId))
+    ? { ...s, junctionDx:0, junctionDy:0 } : s);
   renderAll();
-  notify.success(`Cabang disusun (variasi ${v+1}/3 • ${AUTO_VARIANTS[v].label}).`);
-  try{ await dispatchApi('setPositions', { positions }); }
+  notify.success(`Cabang disusun semula dengan kemas (${AUTO_VARIANTS[v].label} • ${positions.length} kad).`);
+  try{ await dispatchApi('setPositions', { positions, junctions }); }
   catch(err){ notify.warn('Susunan dipaparkan tetapi gagal disimpan: ' + (err && err.message || err)); }
 }
 
