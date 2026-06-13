@@ -274,6 +274,11 @@
       border-radius:.6rem; padding:.5rem .65rem; font-size:.95rem; outline:none;
     }
     .field input:focus, .field select:focus, .field textarea:focus { border-color:var(--gold); box-shadow:0 0 0 3px color-mix(in oklab, var(--gold) 30%, transparent); }
+    .diff-wrap { overflow-x:auto; border:1px solid color-mix(in oklab,var(--line) 45%,transparent); border-radius:.65rem; }
+    table.diff { width:100%; border-collapse:collapse; min-width:480px; font-size:.78rem; }
+    table.diff th, table.diff td { padding:.45rem .55rem; text-align:left; border-bottom:1px solid color-mix(in oklab,var(--line) 30%,transparent); vertical-align:top; }
+    table.diff th { color:var(--ink-soft); background:color-mix(in oklab,var(--gold) 10%,transparent); }
+    table.diff .diff-changed td { background:color-mix(in oklab,var(--gold-2) 18%,transparent); }
 
     #notifyDock {
       position:fixed; left:50%; bottom:18px; transform:translateX(-50%);

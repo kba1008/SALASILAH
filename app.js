@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyAtgksjM3NfiVz1nQTwBvqsBlXpocJFt2-Bzrv3SG2dLWm-QYmqyTMn-5IDksxIrKX/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyhqYPlvRg27o3tnLXdDVOwFLrVuH42bcs__eEkCHOaUyY5rx-3g9pOCh8yEscZ83nF/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -201,7 +201,7 @@ const TIPS = [
 let tipIdx = 0;
 const tipTimer = setInterval(()=> { tipIdx=(tipIdx+1)%TIPS.length; const el=$('#tip'); if(el) el.textContent="Petua: "+TIPS[tipIdx]; }, 3000);
 
-let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], pendingLog:[], users:[] };
+let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], returnedDrafts:[], pendingLog:[], users:[] };
 const NODE_W = 220, NODE_H = 170, GAP_X = 60, GAP_Y = 120;
 const upperName = (s) => String(s||'').replace(/\s+/g,' ').trim().toUpperCase();
 
@@ -310,11 +310,13 @@ $('#btnAccount').onclick = ()=>{
     </div>
     <div class="grid grid-cols-1 gap-2">
       <button class="btn gold-edge justify-start" id="acProfile">🪪 Kad Keahlian Saya</button>
+      ${myDraftsButton()}
       <button class="btn btn-ghost justify-start" style="color:var(--danger)" id="acLogout">🚪 Log Keluar</button>
     </div>
     <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
   `);
   $('#acProfile').onclick = ()=>{ closeModal(); openProfile(); };
+  const draftsBtn = $('#acDrafts'); if(draftsBtn) draftsBtn.onclick = openReturnedDrafts;
   $('#acLogout').onclick = ()=>{ STORE.user=null; STORE.cred=null; notify.success("Sesi tamat."); location.reload(); };
 };
 
@@ -494,7 +496,7 @@ function renderNodes(layout){
       ? '<span class="chip" style="background:linear-gradient(180deg,#ff8a8a,#b71c1c);color:#fff">🛡️ Admin</span>'
       : (tag==='member' ? `<span class="chip" style="background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#241704">⭐ Ahli${m._memberId?' '+escapeHtml(m._memberId):''}</span>` : '');
     const draftBadge = isDraft
-      ? `<span class="chip draft-chip">📝 Belum Disahkan</span>`
+      ? `<span class="chip draft-chip">📝 ${pendingRec?.user===STORE.user?.username?'Draf Anda':'Sedang diedit: @'+escapeHtml(pendingRec?.user||'pengguna')}</span>`
       : '';
     el.innerHTML = `
       <div class="avatar">${m.photo?`<img src="${m.photo}">`:(m.name||'?').slice(0,1).toUpperCase()}</div>
@@ -508,7 +510,7 @@ function renderNodes(layout){
     `;
     el.addEventListener('click', e=>{
       e.stopPropagation();
-      if(isDraft && isAdmin) openDraftReview(m, pendingRec);
+      if(isDraft && (isAdmin || pendingRec?.user!==STORE.user?.username)) openDraftReview(m, pendingRec);
       else openMemberMenu(m);
     });
     frag.appendChild(el);
@@ -572,7 +574,7 @@ function openDraftReview(m, p){
         <button class="btn btn-ghost" style="color:var(--danger)" id="drReject" data-id="${escapeHtml(p?p.id:'')}">❌ Batalkan</button>
         <button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button>
       </div>` : `
-      <div class="bevel-soft rounded-lg p-2 text-sm ink-soft">Maklumat ini sedang menunggu pengesahan pentadbir. Hanya anda &amp; pentadbir boleh melihatnya buat masa ini.</div>
+      <div class="bevel-soft rounded-lg p-2 text-sm ink-soft">Maklumat ini sedang menunggu pengesahan pentadbir. Pengedit: <b>@${editorUser}</b>. Pengguna lain hanya boleh melihat sehingga pengesahan selesai.</div>
       <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>`}
   `);
 
@@ -682,6 +684,8 @@ const MEMBER_FIELDS = [
 function openMemberMenu(m){
   const role = STORE.user?.role;
   const isAdmin = ['admin','master'].includes(role);
+  const lock = (DATA.pending||[]).find(p => ['addMember','editMember'].includes(p.action) && String(p.payload?.id)===String(m.id));
+  const lockedByOther = !!lock && !isAdmin && lock.user!==STORE.user?.username;
   const basic = `
     <div class="profile-head">
       <div class="profile-avatar">
@@ -699,13 +703,14 @@ function openMemberMenu(m){
 
   openModal(basic + adminInfo + `
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-      ${role?'<button class="btn gold-edge justify-center" data-act="edit">✏️ '+(isAdmin?'Edit':'Cadang Edit')+'</button>':''}
-      ${role?'<button class="btn gold-edge justify-center" data-act="spouse">💍 '+(isAdmin?'Tambah':'Cadang')+' Pasangan</button>':''}
-      ${role?'<button class="btn gold-edge justify-center" data-act="child">👶 '+(isAdmin?'Tambah':'Cadang')+' Anak</button>':''}
+      ${role&&!lockedByOther?'<button class="btn gold-edge justify-center" data-act="edit">✏️ '+(isAdmin?'Edit':'Cadang Edit')+'</button>':''}
+      ${role&&!lockedByOther?'<button class="btn gold-edge justify-center" data-act="spouse">💍 '+(isAdmin?'Tambah':'Cadang')+' Pasangan</button>':''}
+      ${role&&!lockedByOther?'<button class="btn gold-edge justify-center" data-act="child">👶 '+(isAdmin?'Tambah':'Cadang')+' Anak</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="note">📝 Tambah Nota</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="move">🔀 Pindah Cabang</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
     </div>
+    ${lockedByOther?`<div class="bevel-soft rounded-lg p-2 mt-2 text-sm ink-soft">🔒 Sedang diedit oleh <b>@${escapeHtml(lock.user)}</b>. Edit dibuka semula selepas pentadbir membuat keputusan.</div>`:''}
     <div class="mt-3 text-right"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
   `);
   $$('button[data-act]', $('#modal')).forEach(b=> b.onclick = ()=>{
@@ -797,6 +802,7 @@ function memberForm(m){
       <div class="field"><label>Nama ibu</label><input id="f_mo" value="${escapeHtml(m.motherName||'')}"/></div>
       <div class="field sm:col-span-2"><label>Alamat menetap</label><textarea id="f_ad" rows="2">${escapeHtml(m.address||'')}</textarea></div>
       <div class="field sm:col-span-2"><label>Catatan</label><textarea id="f_n" rows="2">${escapeHtml(m.notes||'')}</textarea></div>
+      ${!['admin','master'].includes(STORE.user?.role)?'<div class="field sm:col-span-2"><label>Catatan kepada admin (hanya admin boleh lihat)</label><textarea id="f_reason" rows="2" placeholder="Terangkan sumber atau sebab maklumat ini diyakini tepat"></textarea></div>':''}
       <div class="field sm:col-span-2">
         <label>Gambar profil (sebarang saiz — auto kecilkan)</label>
         <input id="f_ph" type="file" accept="image/*"/>
@@ -832,7 +838,7 @@ function memberForm(m){
     }catch(err){ toast("Gagal baca gambar."); }
   });
   $('#saveMember').onclick = async ()=>{
-    const payload = { id:m.id, name:upperName($('#f_name').value), gender:$('#f_g').value, birth:$('#f_b').value.trim(), alive:$('#f_a').value==='true', death:$('#f_d').value.trim(), place:$('#f_p').value.trim(), address:$('#f_ad').value.trim(), fatherName:upperName($('#f_fa').value), motherName:upperName($('#f_mo').value), notes:$('#f_n').value.trim() };
+    const payload = { id:m.id, name:upperName($('#f_name').value), gender:$('#f_g').value, birth:$('#f_b').value.trim(), alive:$('#f_a').value==='true', death:$('#f_d').value.trim(), place:$('#f_p').value.trim(), address:$('#f_ad').value.trim(), fatherName:upperName($('#f_fa').value), motherName:upperName($('#f_mo').value), notes:$('#f_n').value.trim(), reason:$('#f_reason')?.value.trim()||'' };
     if(!payload.name) return toast("Nama wajib diisi.");
     if(cropper){
       const dataUrl = cropper.getCropped();
@@ -854,6 +860,7 @@ function spouseForm(m){
       <div class="field sm:col-span-2"><label>Nama Pasangan Baru</label><input id="sp_name"/></div>
       <div class="field"><label>Jantina</label><select id="sp_g"><option value="${m.gender==='M'?'F':'M'}">${m.gender==='M'?'Perempuan':'Lelaki'}</option></select></div>
     </div>
+    ${!['admin','master'].includes(STORE.user?.role)?'<div class="field"><label>Catatan kepada admin (hanya admin boleh lihat)</label><textarea id="sp_reason" rows="2"></textarea></div>':''}
     <div class="flex gap-2 justify-end mt-2">
       <button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button>
       <button class="btn gold-edge" id="saveSpouse">Simpan</button>
@@ -861,7 +868,7 @@ function spouseForm(m){
   `);
   $('#saveSpouse').onclick = async ()=>{
     const pick = $('#sp_pick').value;
-    const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:upperName($('#sp_name').value), gender:$('#sp_g').value, alive:true }, spouseId: uid() };
+    const payload = { anchorId: m.id, partnerId: pick || null, newPartner: pick? null : { id:uid(), name:upperName($('#sp_name').value), gender:$('#sp_g').value, alive:true }, spouseId: uid(), reason:$('#sp_reason')?.value.trim()||'' };
     if(!pick && !payload.newPartner.name) return toast("Isi maklumat pasangan.");
     try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh(); }catch(e){ toast(e.message); }
   };
@@ -882,10 +889,11 @@ function childForm(m){
       <div class="field sm:col-span-2"><label>Nama Anak Baru</label><input id="ch_name"/></div>
       <div class="field"><label>Jantina</label><select id="ch_g"><option value="M">Lelaki</option><option value="F">Perempuan</option></select></div>
     </div>
+    ${!['admin','master'].includes(STORE.user?.role)?'<div class="field"><label>Catatan kepada admin (hanya admin boleh lihat)</label><textarea id="ch_reason" rows="2"></textarea></div>':''}
     <div class="flex gap-2 justify-end mt-2"><button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button><button class="btn gold-edge" id="saveChild">Simpan</button></div>
   `);
   $('#saveChild').onclick = async ()=>{
-    const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:upperName($('#ch_name').value), gender:$('#ch_g').value, alive:true } };
+    const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:upperName($('#ch_name').value), gender:$('#ch_g').value, alive:true }, reason:$('#ch_reason')?.value.trim()||'' };
     payload.newChild.id = payload.childId;
     if(!payload.newChild.name) return toast("Nama anak wajib.");
     try{ const r = await dispatchApi('addChild', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya."); } closeModal(); await refresh(); }catch(e){ toast(e.message); }
@@ -978,6 +986,7 @@ function adminPanel(tab='pending'){
       if(b.dataset.a==='reject' && !confirm('Tolak perubahan ini?')) return;
       try{ await dispatchApi(b.dataset.a, { id:b.dataset.id }); notify.success("Selesai."); await refresh(); adminPanel('pending'); }catch(e){ toast(e.message); }
     });
+    $$('button[data-edit-pending]', body).forEach(b=> b.onclick = ()=>editPendingForm(b.dataset.editPending));
   } else if(tab==='users'){
     const pu = DATA.pendingUsers || [];
     body.innerHTML = pu.length ? pu.map(u=>`
@@ -1066,11 +1075,22 @@ function renderPendingCard(p, isAdmin){
         <div class="text-xs ink-soft">${escapeHtml(p.ts||'')}</div>
       </div>
       ${rows? `<div class="diff-wrap"><table class="diff"><thead><tr><th></th><th>Asal</th><th>Cadangan</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<pre class="text-xs ink-soft" style="white-space:pre-wrap">${escapeHtml(JSON.stringify(after,null,2))}</pre>`}
+      ${p.reason?`<div class="bevel-soft rounded-lg p-2 mt-2 text-sm"><span class="ink-soft">Catatan pengedit (admin sahaja):</span><br><b>${escapeHtml(p.reason)}</b></div>`:''}
       ${isAdmin? `<div class="flex gap-2 mt-3">
+        <button class="btn btn-ghost" data-edit-pending="${p.id}">✏️ Edit dahulu</button>
         <button class="btn gold-edge" data-a="approve" data-id="${p.id}">✅ Luluskan</button>
         <button class="btn btn-ghost" style="color:var(--danger)" data-a="reject" data-id="${p.id}">❌ Tolak</button>
       </div>`:'<div class="text-xs ink-soft mt-2">Menunggu kelulusan pentadbir…</div>'}
     </div>`;
+}
+
+function editPendingForm(id){
+  const p=(DATA.pending||[]).find(x=>String(x.id)===String(id)); if(!p) return;
+  const a=p.payload||{};
+  openModal(`<div class="font-head text-2xl mb-3">Edit Cadangan Sebelum Lulus</div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${PENDING_FIELDS.map(k=>`<div class="field ${['address','notes'].includes(k)?'sm:col-span-2':''}"><label>${PENDING_LABEL[k]}</label>${['address','notes'].includes(k)?`<textarea data-pe="${k}" rows="2">${escapeHtml(fmtVal(k,a[k])==='—'?'':a[k])}</textarea>`:`<input data-pe="${k}" value="${escapeHtml(fmtVal(k,a[k])==='—'?'':a[k])}">`}</div>`).join('')}</div>
+    <div class="flex gap-2 justify-end"><button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button><button class="btn gold-edge" id="savePendingEdit">Simpan Perubahan</button></div>`);
+  $('#savePendingEdit').onclick=async()=>{ const payload={...a}; $$('[data-pe]',$('#modal')).forEach(el=>payload[el.dataset.pe]=el.value); payload.alive=String(payload.alive).toLowerCase()!=='false'&&payload.alive!=='Allahyarham'; try{await dispatchApi('editPending',{id:p.id,payload});notify.success('Cadangan admin disimpan.');await refresh();adminPanel('pending');}catch(e){toast(e.message);} };
 }
 
 // Popup semakan maklumat pendaftar baharu (admin sahaja)
@@ -1129,9 +1149,16 @@ function viewPendingUser(username){
 // Akaun saya: papar draf saya jika ada
 function myDraftsButton(){
   const u = STORE.user; if(!u) return '';
-  const mine = (DATA.pending||[]).filter(p=>p.user===u.username);
+  const mine = (DATA.returnedDrafts||[]);
   if(!mine.length) return '';
-  return `<button class="btn btn-ghost justify-start" id="acDrafts">📝 Draf Saya (${mine.length})</button>`;
+  return `<button class="btn btn-ghost justify-start" id="acDrafts">↩️ Draf Dipulangkan (${mine.length})</button>`;
+}
+
+function openReturnedDrafts(){
+  const rows=DATA.returnedDrafts||[];
+  openModal(`<div class="font-head text-2xl mb-3">Draf Dipulangkan</div>${rows.map(p=>`<div class="bevel-soft rounded-lg p-3 mb-2"><b>${escapeHtml(p.payload?.name||p.action)}</b><div class="text-xs ink-soft">Pentadbir membatalkan cadangan ini. Anda boleh mohon semula atau padam kotak.</div><div class="flex gap-2 mt-2"><button class="btn gold-edge" data-resubmit="${p.id}">Mohon semula</button><button class="btn btn-ghost" style="color:var(--danger)" data-delete-returned="${p.id}">Padam kotak</button></div></div>`).join('')||'<p>Tiada draf dipulangkan.</p>'}<div class="text-right"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>`);
+  $$('[data-resubmit]',$('#modal')).forEach(b=>b.onclick=async()=>{try{await dispatchApi('resubmitRejected',{id:b.dataset.resubmit});notify.success('Permohonan dihantar semula.');closeModal();await refresh();}catch(e){toast(e.message);}});
+  $$('[data-delete-returned]',$('#modal')).forEach(b=>b.onclick=async()=>{if(!confirm('Padam kotak draf ini?'))return;try{await dispatchApi('deleteRejected',{id:b.dataset.deleteReturned});notify.success('Kotak draf dipadam.');closeModal();await refresh();}catch(e){toast(e.message);}});
 }
 
 // Auto refresh ringan setiap 60s supaya semua pengguna nampak update terkini

@@ -30,7 +30,7 @@ const SHEETS = {
   PASANGAN:  ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','editedBy','editedAt'],
   ANAK:      ['spouseId','childId','editedBy','editedAt'],
   NOTA:      ['id','text','x','y','font','size','color','pinned','editedBy','editedAt'],
-  PENDING:   ['id','action','payload','before','user','userFullName','ts','status','approvedBy','approvedAt']
+  PENDING:   ['id','action','payload','before','user','userFullName','reason','ts','status','approvedBy','approvedAt']
 };
 const MEMBER_ID_PREFIX = 'KEL';
 
@@ -263,7 +263,7 @@ function savePhoto(b64, mime, name) {
   }
 }
 
-function queuePending(action, payload, username, before) {
+function queuePending(action, payload, username, before, reason) {
   const existing = readAll('PENDING').find(p =>
     isPendingRecord(p) && String(p.user) === String(username) &&
     String(p.action) === String(action) && pendingKey(action, safeParse(p.payload)) === pendingKey(action, payload)
@@ -272,6 +272,7 @@ function queuePending(action, payload, username, before) {
     updateRow('PENDING', 'id', existing.id, {
       payload: JSON.stringify(payload),
       before: existing.before || (before ? JSON.stringify(before) : ''),
+      reason: String(reason || existing.reason || '').slice(0,1000),
       ts: now()
     });
     return existing.id;
@@ -282,6 +283,7 @@ function queuePending(action, payload, username, before) {
     id, action, payload: JSON.stringify(payload),
     before: before ? JSON.stringify(before) : '',
     user: username, userFullName: (user && user.fullName) || username,
+    reason: String(reason || '').slice(0,1000),
     ts: now(), status:'pending', approvedBy:'', approvedAt:''
   });
   notifyTelegram(`📝 <b>PERUBAHAN MENUNGGU KELULUSAN</b>\n<b>Tindakan:</b> ${action}\n<b>Oleh:</b> @${username}\nSila log masuk ke panel pentadbir untuk kelulusan.`);
@@ -305,6 +307,18 @@ function isPendingRecord(p) {
 
 function pendingForUser(username) {
   return readAll('PENDING').filter(p => isPendingRecord(p) && String(p.user) === String(username));
+}
+
+function pendingOwnerForMember(memberId) {
+  const row = readAll('PENDING').find(p => isPendingRecord(p) &&
+    (p.action==='addMember' || p.action==='editMember') &&
+    String(safeParse(p.payload).id)===String(memberId));
+  return row ? String(row.user) : '';
+}
+
+function assertDraftAvailable(memberId, username) {
+  const owner = pendingOwnerForMember(memberId);
+  if (owner && owner !== String(username)) throw new Error('Maklumat ini sedang diedit oleh @' + owner + '. Tunggu pengesahan pentadbir sebelum mengedit.');
 }
 
 function visibleMemberForUser(id, username) {
@@ -442,6 +456,7 @@ const HANDLERS = {
     allUsers.forEach(x => { userByName[String(x.username).toLowerCase()] = x; });
     function enrichPending(p) {
       const out = { ...p, payload: safeParse(p.payload), before: p.before ? safeParse(p.before) : null };
+      if (!isAdmin) delete out.reason;
       if (isAdmin) {
         const eu = userByName[String(p.user).toLowerCase()];
         out.userWhatsapp = eu ? (eu.whatsapp || eu.phone || '') : '';
@@ -451,9 +466,12 @@ const HANDLERS = {
       return out;
     }
     const allPending = readAll('PENDING');
-    const pending = isAdmin
-      ? allPending.filter(isPendingRecord).map(enrichPending)
-      : (u ? allPending.filter(p=>isPendingRecord(p) && String(p.user)===String(u.username)).map(enrichPending) : []);
+    // Semua paparan menggunakan graf yang sama, termasuk pelawat. Butiran sensitif
+    // (catatan permohonan dan hubungan pengedit) tetap dibuang oleh enrichPending.
+    const pending = allPending.filter(isPendingRecord).map(enrichPending);
+    const returnedDrafts = u && !isAdmin ? allPending
+      .filter(p=>String(p.status).toLowerCase()==='rejected' && String(p.user)===String(u.username))
+      .map(p=>({ ...p, payload:safeParse(p.payload), before:p.before?safeParse(p.before):null, reason:undefined })) : [];
     const pendingLog = isAdmin ? allPending.filter(p=>!isPendingRecord(p)).slice(-50).map(p=>({ id:p.id, action:p.action, user:p.user, userFullName:p.userFullName, ts:p.ts, status:p.status, approvedBy:p.approvedBy, approvedAt:p.approvedAt })) : [];
     const pendingUsers = isAdmin ? allUsers.filter(x => !(x.approved===true||String(x.approved)==='true') && x.role!=='master') : [];
     // Senarai semua ahli yang telah diluluskan — untuk Master/Admin melantik admin.
@@ -466,7 +484,7 @@ const HANDLERS = {
             : { username:x.username, fullName:x.fullName, role:x.role, approved:x.approved, memberId:x.memberId, whatsapp:x.whatsapp, phone:x.phone, photo:x.photo })
       : [];
 
-    return { ok: true, data: { members, spouses, children, notes, pending, pendingLog, pendingUsers, users, publicUsers, viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null }};
+    return { ok: true, data: { members, spouses, children, notes, pending, returnedDrafts, pendingLog, pendingUsers, users, publicUsers, viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null }};
   },
 
   approveUser(body) {
@@ -490,12 +508,13 @@ const HANDLERS = {
     let photoUrl = '';
     if (body.photoB64) photoUrl = savePhoto(body.photoB64, body.photoMime || 'image/jpeg', body.id);
     const rec = { id: body.id, name: upperName(body.name).slice(0,200), gender: body.gender||'M', alive: body.alive!==false, birth: body.birth||'', death: body.death||'', place: body.place||'', address: body.address||'', photo: photoUrl, notes: body.notes||'', fatherName: upperName(body.fatherName).slice(0,200), motherName: upperName(body.motherName).slice(0,200), editedBy: u.username, editedAt: now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
-    if (!isAdmin) { queuePending('addMember', rec, u.username, null); return { ok: true, pending: true }; }
+    if (!isAdmin) { queuePending('addMember', rec, u.username, null, body.reason); return { ok: true, pending: true }; }
     appendRow('SALASILAH', rec); return { ok: true };
   },
   editMember(body) {
     const u = requireAuth(body);
     const isAdmin = u.role==='admin' || u.role==='master';
+    if (!isAdmin) assertDraftAvailable(body.id, u.username);
     const liveBefore = readAll('SALASILAH').find(m=>String(m.id)===String(body.id)) || null;
     const draftBefore = !isAdmin ? pendingForUser(u.username).find(p => p.action==='addMember' && String(safeParse(p.payload).id)===String(body.id)) : null;
     const before = liveBefore || (draftBefore ? safeParse(draftBefore.payload) : null);
@@ -517,7 +536,7 @@ const HANDLERS = {
       updateRow('PENDING', 'id', draftBefore.id, { payload:JSON.stringify(Object.assign({}, before, patch)), ts:now() });
       return { ok:true, pending:true };
     }
-    queuePending('editMember', Object.assign({}, before, patch), u.username, liveBefore);
+    queuePending('editMember', Object.assign({}, before, patch), u.username, liveBefore, body.reason);
     return { ok: true, pending: true };
   },
   deleteMember(body) { requireAuth(body, ['admin','master']); deleteRow('SALASILAH', 'id', body.id); deleteWhere('PASANGAN', s => s.husbandId===body.id || s.wifeId===body.id); deleteWhere('ANAK', c => c.childId===body.id); return { ok: true }; },
@@ -525,6 +544,7 @@ const HANDLERS = {
   addSpouse(body) {
     const u = requireAuth(body);
     const isAdmin = u.role==='admin' || u.role==='master';
+    if (!isAdmin) assertDraftAvailable(body.anchorId, u.username);
     let partnerId = body.partnerId;
     if (!partnerId && body.newPartner) {
       partnerId = body.newPartner.id;
@@ -534,19 +554,24 @@ const HANDLERS = {
     const anchor = visibleMemberForUser(body.anchorId, u.username);
     if (!anchor) throw new Error('Ahli utama tidak dijumpai.');
     const rec = { id: body.spouseId, husbandId: anchor.gender==='M' ? body.anchorId : partnerId, wifeId: anchor.gender==='M' ? partnerId : body.anchorId, status: body.status||'kahwin', marriageDate: body.marriageDate||'', divorceDate: body.divorceDate||'', deathDate: body.deathDate||'', editedBy: u.username, editedAt: now() };
-    if (!isAdmin) { queuePending('addSpouse', rec, u.username); return { ok: true, pending: true }; }
+    if (!isAdmin) { queuePending('addSpouse', rec, u.username, null, body.reason); return { ok: true, pending: true }; }
     appendRow('PASANGAN', rec); return { ok: true };
   },
   addChild(body) {
     const u = requireAuth(body);
     const isAdmin = u.role==='admin' || u.role==='master';
+    const spouseForLock = visibleSpouseForUser(body.spouseId, u.username);
+    if (!isAdmin && spouseForLock) {
+      assertDraftAvailable(spouseForLock.husbandId, u.username);
+      assertDraftAvailable(spouseForLock.wifeId, u.username);
+    }
     if (!visibleSpouseForUser(body.spouseId, u.username)) throw new Error('Pasangan tidak dijumpai atau draf bukan milik anda.');
     if (body.newChild) {
       const rec = { id: body.childId, name: upperName(body.newChild.name), gender: body.newChild.gender||'M', alive: body.newChild.alive!==false, birth: body.newChild.birth||'', death:'', place:'', photo:'', notes:'', editedBy:u.username, editedAt:now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
       if (isAdmin) appendRow('SALASILAH', rec); else queuePending('addMember', rec, u.username);
     }
     const link = { spouseId: body.spouseId, childId: body.childId, editedBy:u.username, editedAt:now() };
-    if (!isAdmin) { queuePending('addChild', link, u.username); return { ok: true, pending: true }; }
+    if (!isAdmin) { queuePending('addChild', link, u.username, null, body.reason); return { ok: true, pending: true }; }
     appendRow('ANAK', link); return { ok: true };
   },
   moveBranch(body) { requireAuth(body, ['admin','master']); deleteWhere('ANAK', c => c.childId===body.childId); appendRow('ANAK', { spouseId: body.newSpouseId, childId: body.childId, editedBy:'admin', editedAt:now() }); return { ok: true }; },
@@ -626,6 +651,33 @@ const HANDLERS = {
     } finally {
       lock.releaseLock();
     }
+  },
+  editPending(body) {
+    const u = requireAuth(body, ['admin','master']);
+    const p = readAll('PENDING').find(x=>String(x.id)===String(body.id) && isPendingRecord(x));
+    if (!p) throw new Error('Draf tidak dijumpai atau telah diproses.');
+    const clean = body.payload && typeof body.payload==='object' ? body.payload : {};
+    delete clean.action; delete clean.username; delete clean.token;
+    if (clean.name !== undefined) clean.name = upperName(clean.name).slice(0,200);
+    clean.editedBy = u.username; clean.editedAt = now();
+    updateRow('PENDING', 'id', p.id, { payload:JSON.stringify(clean), ts:now() });
+    return { ok:true };
+  },
+  resubmitRejected(body) {
+    const u = requireAuth(body);
+    const p = readAll('PENDING').find(x=>String(x.id)===String(body.id) && String(x.user)===String(u.username) && String(x.status).toLowerCase()==='rejected');
+    if (!p) throw new Error('Draf dipulangkan tidak dijumpai.');
+    const conflict = readAll('PENDING').some(x=>isPendingRecord(x) && String(x.id)!==String(p.id) && pendingKey(x.action,safeParse(x.payload))===pendingKey(p.action,safeParse(p.payload)));
+    if (conflict) throw new Error('Maklumat ini sedang diedit oleh pengguna lain.');
+    updateRow('PENDING', 'id', p.id, { status:'pending', approvedBy:'', approvedAt:'', reason:String(body.reason||p.reason||'').slice(0,1000), ts:now() });
+    return { ok:true };
+  },
+  deleteRejected(body) {
+    const u = requireAuth(body);
+    const p = readAll('PENDING').find(x=>String(x.id)===String(body.id) && String(x.user)===String(u.username) && String(x.status).toLowerCase()==='rejected');
+    if (!p) throw new Error('Draf dipulangkan tidak dijumpai.');
+    deleteRow('PENDING', 'id', p.id);
+    return { ok:true };
   },
   setRole(body) {
     const u = requireAuth(body, ['admin','master']);
