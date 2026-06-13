@@ -17,9 +17,10 @@
 const SHEET_ID = '1wqIc6971U96VXqOJ55pD-wzxQicC4RT4TBNoUrUVtig'; // ← ISI ID GOOGLE SHEET DI SINI
 const DRIVE_FOLDER_ID = '1tb1YIWlxbHkN-HzdAXtFlMWp136JXxN4'; // ← BIARKAN KOSONG untuk auto-cipta folder di Drive anda sendiri
 
-const TELEGRAM_BOT_TOKEN = ''; // [PILIHAN] Masukkan token bot telegram jika mahu (cth: 123456:ABC...)
-const TELEGRAM_CHAT_ID = '';   // [PILIHAN] Masukkan chat ID kumpulan/admin (cth: -1001234567)
+const TELEGRAM_BOT_TOKEN = ''; // [PILIHAN] Masukkan token bot telegram jika mahu
+const TELEGRAM_CHAT_ID = '';   // [PILIHAN] Masukkan chat ID kumpulan/admin
 
+// Akaun MASTER ADMIN Ditanam di sini! Ia akan Bypass (langkau) Google Sheet.
 const MASTER_USERNAME = 'admin';
 const MASTER_PASSWORD = '101010';
 
@@ -45,13 +46,16 @@ function doPost(e) {
   }
 }
 function doGet() {
-  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '1.2' });
+  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '1.3' });
 }
 function json(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function ss() { if(!SHEET_ID || SHEET_ID.includes('PASTE_')) throw new Error('Sila tetapkan SHEET_ID dalam Code.gs'); return SpreadsheetApp.openById(SHEET_ID); }
+function ss() { 
+  if(!SHEET_ID || SHEET_ID.includes('PASTE_')) throw new Error('Sila tetapkan SHEET_ID dalam Code.gs'); 
+  return SpreadsheetApp.openById(SHEET_ID); 
+}
 function sheet(name) {
   const s = ss();
   let sh = s.getSheetByName(name);
@@ -127,45 +131,14 @@ function sha256Hex(text) {
 function randomToken() { return Utilities.getUuid().replace(/-/g,'') + Utilities.getUuid().replace(/-/g,''); }
 function now() { return new Date().toISOString(); }
 
-// DIKEMASKINI: Elak race condition dan elak kemaskini salt tanpa sebab!
-function ensureSeed() {
+// Menjana Token Master Kekal untuk menyokong Multi-Login berbilang peranti
+function getMasterToken() {
+  return sha256Hex(MASTER_USERNAME + MASTER_PASSWORD + "SKG_ELIT_SUPER_SECRET");
+}
+
+// Menggantikan ensureSeed bagi memastikan struktur sheet tidak ralat.
+function ensureSheets() {
   Object.keys(SHEETS).forEach(n => sheet(n));
-  const users = readAll('PENGGUNA');
-  const admin = users.find(u => String(u.username).toLowerCase() === MASTER_USERNAME);
-
-  if (!admin) {
-    const salt = randomToken().slice(0,16);
-    const hash = sha256Hex(MASTER_PASSWORD + salt);
-    appendRow('PENGGUNA', {
-      username: MASTER_USERNAME, fullName: 'Pentadbir Utama',
-      fatherName: '', motherName: '', address: '', whatsapp: '', occupation: 'Pentadbir Sistem',
-      photo: '', email: '', phone: '',
-      password: MASTER_PASSWORD,
-      passwordHash: hash, salt: salt,
-      role: 'master', approved: true, token: '', memberId: MEMBER_ID_PREFIX+'-MASTER-0001',
-      createdAt: now()
-    });
-    return { created: true };
-  }
-
-  let needsUpdate = false;
-  const patch = {};
-  if (admin.role !== 'master') { patch.role = 'master'; needsUpdate = true; }
-  if (String(admin.approved) !== 'true' && admin.approved !== true) { patch.approved = true; needsUpdate = true; }
-  // Hanya tukar hash JIKA password di sheet tidak sama dengan skrip
-  if (String(admin.password) !== String(MASTER_PASSWORD)) {
-    patch.password = MASTER_PASSWORD;
-    patch.salt = randomToken().slice(0,16);
-    patch.passwordHash = sha256Hex(MASTER_PASSWORD + patch.salt);
-    needsUpdate = true;
-  }
-  if (!admin.memberId) { patch.memberId = MEMBER_ID_PREFIX+'-MASTER-0001'; needsUpdate = true; }
-
-  if (needsUpdate) {
-    updateRow('PENGGUNA', 'username', admin.username, patch);
-    return { repaired: true };
-  }
-  return { ok: true };
 }
 
 function nextMemberId() {
@@ -181,7 +154,17 @@ function nextMemberId() {
 function normName(s) { return String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim(); }
 
 function requireAuth(body, roles) {
-  ensureSeed();
+  ensureSheets();
+  // Bypass check untuk Master Admin hardcoded
+  if (String(body.username).toLowerCase() === MASTER_USERNAME.toLowerCase()) {
+    if (body.token === getMasterToken()) {
+      if (roles && roles.length && roles.indexOf('master') < 0) throw new Error('Akses peranan ditolak.');
+      return { username: MASTER_USERNAME, role: 'master', fullName: 'Pentadbir Utama', memberId: 'KEL-MASTER' };
+    } else {
+      throw new Error('Sesi Master tamat. Sila log masuk semula.');
+    }
+  }
+  
   const u = readAll('PENGGUNA').find(x => String(x.username) === String(body.username) && x.token && x.token === body.token);
   if (!u) throw new Error('Tidak dibenarkan — sila log masuk semula.');
   if (roles && roles.length && roles.indexOf(u.role) < 0) throw new Error('Akses peranan ditolak.');
@@ -203,13 +186,10 @@ function notifyTelegram(message) {
 
 function setupSheets() {
   if (!SHEET_ID || SHEET_ID.includes('PASTE_')) throw new Error('SHEET_ID belum ditetapkan dalam Code.gs');
-  Object.keys(SHEETS).forEach(n => sheet(n));
-  const r = ensureSeed();
-  DriveApp.getRootFolder(); // Panggil ini secara pasif supaya Google Apps Script memohon kebenaran Drive (Scope)
-  const msg = r.created ? 'Akaun Master Admin dicipta.' : 'Akaun Master Admin disemak/selamat.';
+  ensureSheets();
+  DriveApp.getRootFolder(); // Meminta kebenaran awal Google Drive
   Logger.log('✅ Semua sheet sedia.');
-  Logger.log('✅ ' + msg);
-  return { ok: true, message: msg, sheets: Object.keys(SHEETS) };
+  return { ok: true, message: 'Google Sheets & Kebenaran sedia.', sheets: Object.keys(SHEETS) };
 }
 
 function getPhotoFolder() {
@@ -221,10 +201,15 @@ function getPhotoFolder() {
 
 function savePhoto(b64, mime, name) {
   if (!b64) return '';
-  const blob = Utilities.newBlob(Utilities.base64Decode(b64), mime, (name||'photo')+'.'+(mime.split('/')[1]||'jpg'));
-  const f = getPhotoFolder().createFile(blob);
-  f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  return 'https://drive.google.com/thumbnail?id=' + f.getId() + '&sz=w400';
+  try {
+    const blob = Utilities.newBlob(Utilities.base64Decode(b64), mime, (name||'photo')+'.'+(mime.split('/')[1]||'jpg'));
+    const f = getPhotoFolder().createFile(blob);
+    f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return 'https://drive.google.com/thumbnail?id=' + f.getId() + '&sz=w400';
+  } catch(e) {
+    Logger.log('RALAT MENYIMPAN GAMBAR: ' + e.message);
+    return ''; // Fail-safe supaya pendaftaran tidak ranap walaupun Drive error.
+  }
 }
 
 function queuePending(action, payload, username) {
@@ -239,13 +224,14 @@ function queuePending(action, payload, username) {
 
 const HANDLERS = {
   register(body) {
-    ensureSeed();
+    ensureSheets();
     const username = String(body.username||'').trim().toLowerCase();
     const password = String(body.password||'');
     const fullName = String(body.fullName||'').trim();
     if (username.length<3 || password.length<6) throw new Error('Kriteria nama pengguna atau kata laluan tidak sah.');
     if (!fullName) throw new Error('Nama penuh wajib diisi.');
     
+    if (username === MASTER_USERNAME.toLowerCase()) throw new Error('Nama pengguna telah digunakan.');
     const users = readAll('PENGGUNA');
     if (users.find(u => String(u.username).toLowerCase() === username)) throw new Error('Nama pengguna telah digunakan.');
     
@@ -266,11 +252,19 @@ const HANDLERS = {
   },
 
   login(body) {
-    ensureSeed();
+    ensureSheets();
     const uname = String(body.username||'').trim().toLowerCase();
+    const pwd = String(body.password||'');
+    
+    // LALUAN MASTER ADMIN (Bypass Google Sheet)
+    if (uname === MASTER_USERNAME.toLowerCase() && pwd === MASTER_PASSWORD) {
+      return { ok: true, username: MASTER_USERNAME, role: 'master', token: getMasterToken(), fullName: 'Pentadbir Utama', memberId: 'KEL-MASTER', photo: '' };
+    }
+    
+    // LALUAN PENGGUNA BIASA (Semak di Google Sheet)
     const u = readAll('PENGGUNA').find(x => String(x.username).toLowerCase() === uname);
     if (!u) throw new Error('Nama pengguna atau kata laluan salah.');
-    const hash = sha256Hex(String(body.password||'') + u.salt);
+    const hash = sha256Hex(pwd + u.salt);
     if (hash !== u.passwordHash) throw new Error('Nama pengguna atau kata laluan salah.');
     
     const isAdminUser = u.role==='admin' || u.role==='master';
@@ -289,9 +283,11 @@ const HANDLERS = {
   },
 
   bootstrap(body) {
-    ensureSeed();
+    ensureSheets();
     let u = null;
-    if (body.username && body.token) u = readAll('PENGGUNA').find(x => String(x.username)===String(body.username) && x.token && x.token===body.token) || null;
+    if (body.username && body.token) {
+      try { u = requireAuth(body); } catch(e) {}
+    }
     
     const isAdmin = !!u && (u.role==='admin' || u.role==='master');
     const isMaster = !!u && u.role==='master';
@@ -423,3 +419,48 @@ const HANDLERS = {
 };
 
 function safeParse(s) { try{ return JSON.parse(s); }catch(_){ return s; } }
+
+// =========================================================================
+// SCRIPT UJIAN: PENDAFTARAN & LOG MASUK
+// Sila pilih 'testRegisterAndLogin' dari kotak fungsi di atas dan tekan Run.
+// =========================================================================
+function testRegisterAndLogin() {
+  Logger.log("--- MEMULAKAN UJIAN PENDAFTARAN & LOG MASUK ---");
+  try {
+    ensureSheets();
+    const testUser = "penguji" + Math.floor(Math.random()*1000);
+    const testPass = "rahsia123";
+    
+    Logger.log("1. MENGUJI PENDAFTARAN PENGGUNA BARU: " + testUser);
+    const regRes = HANDLERS.register({
+      username: testUser,
+      password: testPass,
+      fullName: "Ahmad Penguji",
+      whatsapp: "0123456789",
+      occupation: "IT Tester"
+    });
+    Logger.log("-> Hasil Pendaftaran: " + JSON.stringify(regRes));
+    
+    Logger.log("2. MENGUJI LOG MASUK PENGGUNA: " + testUser);
+    try {
+      const loginRes = HANDLERS.login({
+        username: testUser,
+        password: testPass
+      });
+      Logger.log("-> Hasil Log Masuk (Sepatutnya gagal kerana belum lulus): " + JSON.stringify(loginRes));
+    } catch(errLogin) {
+      Logger.log("-> Ralat Log Masuk Dijangka (Belum Lulus): " + errLogin.message);
+    }
+    
+    Logger.log("3. MENGUJI LOG MASUK MASTER ADMIN");
+    const masterLogin = HANDLERS.login({
+      username: MASTER_USERNAME,
+      password: MASTER_PASSWORD
+    });
+    Logger.log("-> Hasil Master Admin: " + JSON.stringify(masterLogin));
+    
+    Logger.log("\n✅ KESELURUHAN UJIAN SELESAI TANPA CRASH.");
+  } catch(e) {
+    Logger.log("❌ RALAT UJIAN KRITIKAL: " + e.message);
+  }
+}

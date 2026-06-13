@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbzw1IRP0UXg_IWYkAgrsztTdOymGCwfp5JH7xPIKFsjsjum_lB9hdbm6cL2mxWTnbZi/exec";
+const API_URL = "https://script.google.com/macros/s/PASTE_DEPLOY_ID_DI_SINI/exec";
 
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
@@ -72,15 +72,6 @@ document.body.dataset.theme = STORE.theme;
 
 const LOCAL_MODE = !API_URL || API_URL.includes('PASTE_DEPLOY_ID_DI_SINI');
 if (LOCAL_MODE) console.warn('[SKG] Mod Tempatan aktif — Sila isikan API_URL di dalam app.js jika anda telah selesai mendeploy Code.gs.');
-
-const LOCAL = {
-  get db(){ try{ return JSON.parse(localStorage.getItem('skg_localdb')||'null') || this._seed(); }catch{ return this._seed(); } },
-  set db(v){ localStorage.setItem('skg_localdb', JSON.stringify(v)); },
-  _seed(){ 
-    const db = { users:[], members:[], spouses:[], children:[], notes:[], pending:[] };
-    localStorage.setItem('skg_localdb', JSON.stringify(db)); return db;
-  }
-};
 
 async function api(action, payload={}){
   const u = STORE.user;
@@ -165,7 +156,7 @@ function loginForm(){
   openModal(`
     <div class="flex items-center justify-between mb-3">
       <div class="font-head text-2xl">Selamat Datang</div>
-      <div class="chip gold-edge">v1.1</div>
+      <div class="chip gold-edge">v1.3</div>
     </div>
     <div class="flex gap-2 mb-4">
       <button class="tab active" data-tab="login">Log Masuk</button>
@@ -229,7 +220,8 @@ async function doRegister(){
   const o = {
     fullName:$('#rname').value.trim(), fatherName:$('#rfather').value.trim(), motherName:$('#rmother').value.trim(),
     address:$('#raddr').value.trim(), whatsapp:$('#rwa').value.trim(), occupation:$('#rocc').value.trim(),
-    email:$('#remail').value.trim(), username:$('#ru').value.trim(), password:$('#rp').value, password2:$('#rp2').value
+    email:$('#remail').value.trim(), username:$('#ru').value.trim().replace(/\s+/g, '').toLowerCase(), 
+    password:$('#rp').value, password2:$('#rp2').value
   };
   if(!o.fullName||!o.fatherName||!o.motherName||!o.address||!o.whatsapp||!o.occupation||!o.username||!o.password) return toast("Semua ruangan bertanda (*) wajib diisi.");
   if(o.password!==o.password2) return toast("Kata laluan tidak sepadan.");
