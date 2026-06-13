@@ -374,7 +374,25 @@ async function boot(){
   }
   renderAll(); updatePendingBadge();
   setTimeout(()=>{ $('#splash').style.display='none'; clearInterval(tipTimer); }, 400);
+  setTimeout(()=> autoCenterActive(), 250);
+  startAutoRefresh();
   flushQueue();
+}
+
+// Tentukan kad aktif: kad ahli pengguna log masuk, atau kad pertama.
+function autoCenterActive(){
+  try{
+    const u = STORE.user;
+    let target = null;
+    if(u){
+      target = (DATA.members||[]).find(m =>
+        (u.memberId && m._memberId===u.memberId) ||
+        (u.fullName && m.name && String(m.name).toLowerCase()===String(u.fullName).toLowerCase())
+      );
+    }
+    if(!target) target = (DATA.members||[])[0];
+    if(target) centerOn(target.id);
+  }catch(e){}
 }
 
 
@@ -429,7 +447,7 @@ function buildLayout(){
     const sp = SPOUSES.find(s=>s.id===c.spouseId);
     if(!sp) return;
     [sp.husbandId, sp.wifeId].forEach(pid=>{
-      if(pid) (childMap[pid] ||= []).push(c.childId);
+      if(pid){ if(!childMap[pid]) childMap[pid]=[]; childMap[pid].push(c.childId); }
     });
   });
   const placed = {};
@@ -482,10 +500,14 @@ function renderNodes(layout){
     const el = document.createElement('div');
     const tag = m._tag || 'none';
     const tagCls = tag==='admin' ? 'tag-admin' : (tag==='member' ? 'tag-member' : '');
-    // Draf = ahli baharu belum lulus (m._draft) ATAU ahli sedia ada yang ada cadangan edit.
+    // Draf = ahli BAHARU yang belum lulus (m._draft). Hanya kad draf sebenar (kelabu)
+    // yang dikunci daripada diedit oleh pengguna lain. Kad yang sudah disahkan tetapi
+    // mempunyai cadangan edit menunggu hanya dipaparkan dengan lencana kecil (untuk admin)
+    // dan kekal boleh diedit oleh sesiapa.
     const editPending = editMap[String(m.id)] || null;
+    const isDraft = !!m._draft;
+    const hasPendingEdit = !isDraft && !!editPending;
     const pendingRec = m._pending || editPending;
-    const isDraft = !!pendingRec;
     const draftCls = isDraft ? 'tag-draft' : '';
     el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls}`;
     el.style.left = pos.x+'px'; el.style.top = pos.y+'px';
@@ -496,8 +518,8 @@ function renderNodes(layout){
       ? '<span class="chip" style="background:linear-gradient(180deg,#ff8a8a,#b71c1c);color:#fff">🛡️ Admin</span>'
       : (tag==='member' ? `<span class="chip" style="background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#241704">⭐ Ahli${m._memberId?' '+escapeHtml(m._memberId):''}</span>` : '');
     const draftBadge = isDraft
-      ? `<span class="chip draft-chip">📝 ${pendingRec?.user===STORE.user?.username?'Draf Anda':'Sedang diedit: @'+escapeHtml(pendingRec?.user||'pengguna')}</span>`
-      : '';
+      ? `<span class="chip draft-chip">📝 ${pendingRec?.user===STORE.user?.username?'Draf Anda':'Draf @'+escapeHtml(pendingRec?.user||'pengguna')}</span>`
+      : (hasPendingEdit && isAdmin ? `<span class="chip draft-chip">📝 Cadangan Edit</span>` : '');
     el.innerHTML = `
       <div class="avatar">${m.photo?`<img src="${m.photo}">`:(m.name||'?').slice(0,1).toUpperCase()}</div>
       <div class="nm">${escapeHtml(m.name||'Tanpa Nama')}</div>
@@ -510,7 +532,10 @@ function renderNodes(layout){
     `;
     el.addEventListener('click', e=>{
       e.stopPropagation();
+      // Kad DRAF kelabu → semakan draf (admin sah/batal; pengguna lain lihat sahaja).
       if(isDraft && (isAdmin || pendingRec?.user!==STORE.user?.username)) openDraftReview(m, pendingRec);
+      // Kad disahkan dengan cadangan edit → admin nampak perbandingan Lama vs Baru.
+      else if(hasPendingEdit && isAdmin) openDraftReview(m, editPending);
       else openMemberMenu(m);
     });
     frag.appendChild(el);
@@ -536,8 +561,24 @@ function openDraftReview(m, p){
   const rows = fields.map(([k,lbl])=>{
     const av = data[k], bv = before[k];
     if(av===undefined && bv===undefined) return '';
-    const changed = !isNew && String(bv||'')!==String(av||'');
-    return `<div class="mc-row ${changed?'diff-changed':''}"><span>${lbl}</span><b>${escapeHtml(fmt(k,av))}</b></div>`;
+    const changed = !isNew && String(bv==null?'':bv)!==String(av==null?'':av);
+    if(isNew || !changed){
+      return `<div class="mc-row"><span>${lbl}</span><b>${escapeHtml(fmt(k,av))}</b></div>`;
+    }
+    // Perbandingan Lama vs Baru — admin guna untuk buat keputusan sah/batal.
+    return `<div class="mc-row diff-changed" style="flex-direction:column;align-items:stretch;gap:6px">
+      <span>${lbl}</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px;padding:6px 8px;border-radius:8px;background:color-mix(in oklab, var(--danger) 14%, transparent)">
+          <div class="text-xs ink-soft mb-1">Lama</div>
+          <b style="text-decoration:line-through;opacity:.85">${escapeHtml(fmt(k,bv))}</b>
+        </div>
+        <div style="flex:1;min-width:140px;padding:6px 8px;border-radius:8px;background:color-mix(in oklab, var(--ok) 18%, transparent)">
+          <div class="text-xs ink-soft mb-1">Baru</div>
+          <b>${escapeHtml(fmt(k,av))}</b>
+        </div>
+      </div>
+    </div>`;
   }).join('');
 
   const editorName = escapeHtml((p&&(p.userFullName||p.user))||'Tidak diketahui');
@@ -555,7 +596,7 @@ function openDraftReview(m, p){
 
   openModal(`
     <div class="flex items-center justify-between mb-2">
-      <div class="font-head text-2xl">${isNew?'Profil Baharu (Draf)':'Cadangan Edit (Draf)'}</div>
+      <div class="font-head text-2xl">${isNew?'Profil Baharu (Draf)':'Cadangan Edit — Perbandingan Lama vs Baru'}</div>
       <span class="chip draft-chip">📝 Belum Disahkan</span>
     </div>
     <div class="profile-head mb-2">
@@ -625,18 +666,10 @@ function renderLinks(layout){
 
 // Sembunyi node luar viewport untuk skala besar (1000+ kad)
 function cullViewport(){
+  // Dilumpuhkan: dahulu kad hilang ketika zoom-in/out kerana viewport culling.
+  // Biarkan pelayar urus render — kad sentiasa kelihatan pada semua skala.
   if(!panzoomInstance) return;
-  const stage = $('#stage').getBoundingClientRect();
-  const pad = 600;
-  const wrap = $('#nodes');
-  const t = panzoomInstance.getScale();
-  const pan = panzoomInstance.getPan();
-  $$('#nodes .node').forEach(el=>{
-    const x = parseFloat(el.style.left), y = parseFloat(el.style.top);
-    const sx = x*t + pan.x, sy = y*t + pan.y;
-    const visible = sx + NODE_W*t > -pad && sx < stage.width + pad && sy + NODE_H*t > -pad && sy < stage.height + pad;
-    el.style.visibility = visible ? 'visible' : 'hidden';
-  });
+  $$('#nodes .node').forEach(el=>{ el.style.visibility=''; });
 }
 
 function renderNotes(){
@@ -684,7 +717,9 @@ const MEMBER_FIELDS = [
 function openMemberMenu(m){
   const role = STORE.user?.role;
   const isAdmin = ['admin','master'].includes(role);
-  const lock = (DATA.pending||[]).find(p => ['addMember','editMember'].includes(p.action) && String(p.payload?.id)===String(m.id));
+  // Hanya kad DRAF baharu (addMember belum lulus) yang dikunci kepada satu pengedit.
+  // Kad yang sudah disahkan boleh diedit oleh sesiapa, walaupun ada cadangan edit menunggu.
+  const lock = (DATA.pending||[]).find(p => p.action==='addMember' && String(p.payload?.id)===String(m.id));
   const lockedByOther = !!lock && !isAdmin && lock.user!==STORE.user?.username;
   const basic = `
     <div class="profile-head">
@@ -1176,6 +1211,28 @@ function updatePendingBadge(){
 
 async function refresh(){ try{ let r = await api('bootstrap'); if (STORE.user && r?.data && !r.data.viewer) { if (await silentRelogin()) r = await api('bootstrap'); } DATA = { ...DATA, ...r.data }; STORE.cache = DATA; }catch(e){} renderAll(); updatePendingBadge(); }
 
-if('serviceWorker' in navigator){ window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{})); }
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      // Paksa kemas kini segera apabila SW baharu sedia.
+      if(reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
+      reg.addEventListener('updatefound', ()=>{
+        const nw = reg.installing;
+        if(!nw) return;
+        nw.addEventListener('statechange', ()=>{
+          if(nw.state==='installed' && navigator.serviceWorker.controller){
+            nw.postMessage('SKIP_WAITING');
+          }
+        });
+      });
+      // Periksa setiap 5 minit untuk versi baharu.
+      setInterval(()=> reg.update().catch(()=>{}), 5*60*1000);
+    }).catch(()=>{});
+    let reloaded=false;
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(reloaded) return; reloaded=true; location.reload();
+    });
+  });
+}
 
 boot();

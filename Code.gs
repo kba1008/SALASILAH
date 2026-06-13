@@ -310,19 +310,13 @@ function pendingForUser(username) {
 }
 
 function pendingOwnerForMember(memberId) {
-  const liveSpouses = readAll('PASANGAN');
+  // Hanya kad DRAF (addMember yang belum lulus / belum wujud di SALASILAH) yang dikunci
+  // supaya tidak boleh diedit oleh lebih daripada seorang pengguna serentak.
+  // Kad yang telah DISAHKAN boleh diedit oleh sesiapa sahaja (tiada kunci).
+  const live = readAll('SALASILAH').some(m => String(m.id) === String(memberId));
+  if (live) return '';
   const pendingRows = readAll('PENDING').filter(isPendingRecord);
-  const row = pendingRows.find(p => {
-    const payload = safeParse(p.payload) || {};
-    if ((p.action==='addMember' || p.action==='editMember') && String(payload.id)===String(memberId)) return true;
-    if (p.action==='addSpouse' && (String(payload.husbandId)===String(memberId) || String(payload.wifeId)===String(memberId))) return true;
-    if (p.action==='addChild') {
-      const spouse = liveSpouses.find(s=>String(s.id)===String(payload.spouseId)) ||
-        pendingRows.filter(x=>x.action==='addSpouse').map(x=>safeParse(x.payload)).find(s=>s && String(s.id)===String(payload.spouseId));
-      return !!spouse && (String(spouse.husbandId)===String(memberId) || String(spouse.wifeId)===String(memberId));
-    }
-    return false;
-  });
+  const row = pendingRows.find(p => p.action==='addMember' && String((safeParse(p.payload)||{}).id) === String(memberId));
   return row ? String(row.user) : '';
 }
 
