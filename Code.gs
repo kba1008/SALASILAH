@@ -310,9 +310,19 @@ function pendingForUser(username) {
 }
 
 function pendingOwnerForMember(memberId) {
-  const row = readAll('PENDING').find(p => isPendingRecord(p) &&
-    (p.action==='addMember' || p.action==='editMember') &&
-    String(safeParse(p.payload).id)===String(memberId));
+  const liveSpouses = readAll('PASANGAN');
+  const pendingRows = readAll('PENDING').filter(isPendingRecord);
+  const row = pendingRows.find(p => {
+    const payload = safeParse(p.payload) || {};
+    if ((p.action==='addMember' || p.action==='editMember') && String(payload.id)===String(memberId)) return true;
+    if (p.action==='addSpouse' && (String(payload.husbandId)===String(memberId) || String(payload.wifeId)===String(memberId))) return true;
+    if (p.action==='addChild') {
+      const spouse = liveSpouses.find(s=>String(s.id)===String(payload.spouseId)) ||
+        pendingRows.filter(x=>x.action==='addSpouse').map(x=>safeParse(x.payload)).find(s=>s && String(s.id)===String(payload.spouseId));
+      return !!spouse && (String(spouse.husbandId)===String(memberId) || String(spouse.wifeId)===String(memberId));
+    }
+    return false;
+  });
   return row ? String(row.user) : '';
 }
 
@@ -576,8 +586,8 @@ const HANDLERS = {
   },
   moveBranch(body) { requireAuth(body, ['admin','master']); deleteWhere('ANAK', c => c.childId===body.childId); appendRow('ANAK', { spouseId: body.newSpouseId, childId: body.childId, editedBy:'admin', editedAt:now() }); return { ok: true }; },
 
-  addNote(body) { const u = requireAuth(body); appendRow('NOTA', { id: body.id, text: String(body.text||'').slice(0,2000), x: body.x||0, y: body.y||0, font: body.font||'', size: body.size||14, color: body.color||'', pinned: !!body.pinned, editedBy: u.username, editedAt: now() }); return { ok: true }; },
-  editNote(body) { const u = requireAuth(body); updateRow('NOTA', 'id', body.id, { text: String(body.text||'').slice(0,2000), x: body.x||0, y: body.y||0, font: body.font||'', size: body.size||14, color: body.color||'', pinned: !!body.pinned, editedBy: u.username, editedAt: now() }); return { ok: true }; },
+  addNote(body) { const u = requireAuth(body, ['admin','master']); appendRow('NOTA', { id: body.id, text: String(body.text||'').slice(0,2000), x: body.x||0, y: body.y||0, font: body.font||'', size: body.size||14, color: body.color||'', pinned: !!body.pinned, editedBy: u.username, editedAt: now() }); return { ok: true }; },
+  editNote(body) { const u = requireAuth(body, ['admin','master']); updateRow('NOTA', 'id', body.id, { text: String(body.text||'').slice(0,2000), x: body.x||0, y: body.y||0, font: body.font||'', size: body.size||14, color: body.color||'', pinned: !!body.pinned, editedBy: u.username, editedAt: now() }); return { ok: true }; },
   deleteNote(body) { requireAuth(body, ['admin','master']); deleteRow('NOTA', 'id', body.id); return { ok: true }; },
 
   approve(body) {
@@ -645,6 +655,22 @@ const HANDLERS = {
           rows.filter(x=>isPendingRecord(x) && String(x.user)===String(p.user) && x.action==='addMember' && String(safeParse(x.payload).id)===String(childId))
             .forEach(x=>{ rejectIds[String(x.id)] = true; });
         }
+      } else if (p.action === 'addMember') {
+        const memberId = payload.id;
+        const spouseIds = {};
+        rows.filter(x=>isPendingRecord(x) && String(x.user)===String(p.user) && x.action==='addSpouse')
+          .forEach(x=>{
+            const relation = safeParse(x.payload) || {};
+            if (String(relation.husbandId)===String(memberId) || String(relation.wifeId)===String(memberId)) {
+              rejectIds[String(x.id)] = true;
+              spouseIds[String(relation.id)] = true;
+            }
+          });
+        rows.filter(x=>isPendingRecord(x) && String(x.user)===String(p.user) && x.action==='addChild')
+          .forEach(x=>{
+            const relation = safeParse(x.payload) || {};
+            if (String(relation.childId)===String(memberId) || spouseIds[String(relation.spouseId)]) rejectIds[String(x.id)] = true;
+          });
       }
       Object.keys(rejectIds).forEach(id => updateRow('PENDING', 'id', id, { status:'rejected', approvedBy:u.username, approvedAt:rejectedAt }));
       return { ok: true, rejectedDependents:Object.keys(rejectIds).length };
