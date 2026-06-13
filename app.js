@@ -358,7 +358,8 @@ function applyRoleUI(){
   const isAdmin = !!u && (u.role==='admin' || u.role==='master');
   $('#btnAdmin').style.display = isAdmin ? '' : 'none';
   $('#btnAddNote').style.display = isAdmin ? '' : 'none';
-  $('#btnAutoTree').style.display = isAdmin ? '' : 'none';
+  // Butang auto global dimatikan — auto-susun kini ada pada kad Kepala Salasilah sahaja.
+  $('#btnAutoTree').style.display = 'none';
 }
 
 async function boot(){
@@ -559,71 +560,209 @@ function buildLayout(){
   return placed;
 }
 
-// Butang "Auto Family Tree": susun semula semua kad & garisan secara auto,
-// abaikan kedudukan manual, kemudian simpan supaya kekal & dilihat semua.
-async function autoArrange(){
-  const layout = autoLayout();
-  const knownIds = new Set((DATA.members||[]).map(m=> String(m.id)));
-  const positions = [];
-  getRenderMembers().forEach(m=>{
-    const p = layout[m.id]; if(!p) return;
-    if(knownIds.has(String(m.id))) positions.push({ id:m.id, x:Math.round(p.x), y:Math.round(p.y) });
+// ===================================================================
+// AUTO LAYOUT — terhad kepada CABANG di bawah Kepala Salasilah sahaja
+// ===================================================================
+// Kumpul semua id (pasangan + keturunan) di bawah satu Kepala Salasilah.
+function getSubtreeIds(headId){
+  const SP = getRenderSpouses();
+  const CH = getRenderChildren();
+  const ids = new Set([headId]);
+  const queue = [headId];
+  while(queue.length){
+    const id = queue.shift();
+    SP.filter(s=> s.husbandId===id || s.wifeId===id).forEach(s=>{
+      const pid = s.husbandId===id ? s.wifeId : s.husbandId;
+      if(pid) ids.add(pid);
+      CH.filter(c=> c.spouseId===s.id).forEach(c=>{
+        if(c.childId && !ids.has(c.childId)){ ids.add(c.childId); queue.push(c.childId); }
+      });
+    });
+  }
+  return ids;
+}
+
+// Cari Kepala Salasilah yang merangkumi ahli tertentu (jika ada).
+function findHeadForMember(id){
+  const heads = Array.from(getHeadRoots());
+  for(const h of heads){ if(getSubtreeIds(h).has(id)) return h; }
+  return null;
+}
+
+// 3 variasi tetap — berulang setiap kali butang ditekan.
+const AUTO_VARIANTS = [
+  { gapX: GAP_X,        gapY: GAP_Y,        reverse: false, label: 'standard' },
+  { gapX: GAP_X * 1.6,  gapY: GAP_Y,        reverse: false, label: 'lebar'    },
+  { gapX: GAP_X,        gapY: GAP_Y * 1.25, reverse: true,  label: 'terbalik' },
+];
+
+// Kira tata letak HANYA untuk subtree Kepala Salasilah, mengikut variasi.
+function autoLayoutSubtree(headId, variantIdx){
+  const cfg = AUTO_VARIANTS[((variantIdx%3)+3)%3];
+  const colStep = NODE_W + cfg.gapX;
+  const rowStep = NODE_H + cfg.gapY;
+
+  const MEMBERS  = getRenderMembers();
+  const SPOUSES  = getRenderSpouses();
+  const CHILDREN = getRenderChildren();
+  const byId = Object.fromEntries(MEMBERS.map(m=>[m.id, m]));
+  const subtree = getSubtreeIds(headId);
+
+  const col = {}, depthOf = {}, done = new Set();
+  let cursor = 0;
+
+  const spousesOf = id => SPOUSES
+    .filter(s=> s.husbandId===id || s.wifeId===id)
+    .map(s=> s.husbandId===id ? s.wifeId : s.husbandId)
+    .filter(Boolean);
+
+  const kidsOfUnit = unit => {
+    const out = [];
+    SPOUSES.filter(s=> unit.includes(s.husbandId) || unit.includes(s.wifeId)).forEach(s=>{
+      CHILDREN.filter(c=> c.spouseId===s.id).forEach(c=>{
+        if(byId[c.childId] && subtree.has(c.childId) && !out.includes(c.childId)) out.push(c.childId);
+      });
+    });
+    out.sort((a,b)=>{ const ka=_sortKey(byId[a]), kb=_sortKey(byId[b]); return ka[0]-kb[0] || (ka[1]<kb[1]?-1:1); });
+    if(cfg.reverse) out.reverse();
+    return out;
+  };
+
+  function placeUnit(id, depth){
+    if(done.has(id) || !subtree.has(id)) return [];
+    done.add(id);
+    const partners = spousesOf(id).filter(p=> p && subtree.has(p) && !done.has(p));
+    partners.forEach(p=> done.add(p));
+    const unit = [id, ...partners];
+    const unitCols = unit.length;
+    const kids = kidsOfUnit(unit).filter(k=> !done.has(k));
+    let placed = unit.slice();
+    if(kids.length === 0){
+      const left = cursor;
+      unit.forEach((m,i)=>{ col[m] = left + i; depthOf[m] = depth; });
+      cursor += unitCols;
+    } else {
+      const childLeft = cursor;
+      kids.forEach(k=>{ placed = placed.concat(placeUnit(k, depth+1)); });
+      const childRight = cursor;
+      const span = childRight - childLeft;
+      if(unitCols <= span){
+        const unitLeft = childLeft + (span - unitCols)/2;
+        unit.forEach((m,i)=>{ col[m] = unitLeft + i; depthOf[m] = depth; });
+      } else {
+        const extra = unitCols - span;
+        placed.forEach(m=>{ if(!unit.includes(m)) col[m] += extra/2; });
+        cursor += extra;
+        unit.forEach((m,i)=>{ col[m] = childLeft + i; depthOf[m] = depth; });
+      }
+    }
+    return placed;
+  }
+  placeUnit(headId, 0);
+
+  // Penambat: kekal kedudukan semasa Kepala Salasilah (jika ada), supaya
+  // cabang tidak melompat ke penjuru kanvas setiap kali disusun.
+  const head = byId[headId];
+  const anchorX = (head && head.posX!=null && isFinite(head.posX)) ? Number(head.posX) : ORIGIN_X;
+  const anchorY = (head && head.posY!=null && isFinite(head.posY)) ? Number(head.posY) : ORIGIN_Y;
+  const headCol = col[headId] || 0;
+
+  const placed = {};
+  Object.keys(col).forEach(id=>{
+    const dx = (col[id] - headCol) * colStep;
+    const dy = depthOf[id] * rowStep;
+    placed[id] = { x: Math.round(anchorX + dx), y: Math.round(anchorY + dy) };
   });
-  // Terap segera supaya papar kemas tanpa tunggu rangkaian.
+  return placed;
+}
+
+// Simpan kitaran variasi per-Kepala — berulang 3 variasi yang sama.
+const _autoVariant = {};
+
+// Susun cabang di bawah satu Kepala Salasilah. Setiap tekan = variasi seterusnya.
+async function autoArrangeHead(headId){
+  if(!headId) return;
+  if(!isHeadRoot(headId)){ notify.warn('Auto-susun terhad kepada Kepala Salasilah sahaja.'); return; }
+  const v = (_autoVariant[headId] || 0) % 3;
+  _autoVariant[headId] = (v + 1) % 3;
+  const layout = autoLayoutSubtree(headId, v);
+  const knownIds = new Set((DATA.members||[]).map(m=> String(m.id)));
+  const positions = Object.keys(layout)
+    .filter(id=> knownIds.has(String(id)))
+    .map(id=> ({ id, x: layout[id].x, y: layout[id].y }));
+  if(!positions.length){ notify.info('Tiada cabang untuk disusun.'); return; }
   DATA.members = (DATA.members||[]).map(m=>{
     const f = positions.find(x=> String(x.id)===String(m.id));
     return f ? { ...m, posX:f.x, posY:f.y } : m;
   });
   renderAll();
-  setTimeout(()=> panzoomInstance && panzoomInstance.reset(), 60);
-  if(!positions.length){ notify.info('Tiada kad untuk disusun.'); return; }
-  try{
-    await dispatchApi('setPositions', { positions });
-    notify.success('Salasilah disusun secara automatik & disimpan.');
-  }catch(err){
-    notify.warn('Susunan dipaparkan tetapi gagal disimpan: ' + (err && err.message || err));
-  }
+  notify.success(`Cabang disusun (variasi ${v+1}/3 • ${AUTO_VARIANTS[v].label}).`);
+  try{ await dispatchApi('setPositions', { positions }); }
+  catch(err){ notify.warn('Susunan dipaparkan tetapi gagal disimpan: ' + (err && err.message || err)); }
 }
 
-// Auto-letak HANYA kad baharu (yang belum ada kedudukan tersimpan) pada tempat
-// yang kemas mengikut format standard — bersebelahan pasangan / di bawah ibu-bapa.
-// Kad sedia ada yang telah diatur manual TIDAK diusik. Dipanggil setiap kali
-// admin tambah ahli/pasangan/anak supaya tak perlu drag manual setiap kali.
+// Auto-letak kemas untuk kad BAHARU sahaja (pasangan/anak yang baru ditambah).
+// 1) Jika kad baharu jatuh di bawah sebuah Kepala Salasilah, susun semula
+//    cabang tersebut menggunakan variasi 0 (tanpa kitar) — hasil paling kemas.
+// 2) Selainnya, letak bersebelahan pasangan / di bawah ibu-bapa supaya
+//    tidak ditinggalkan di penjuru kanvas.
 async function autoPlaceNew(){
-  const lay  = buildLayout();          // kedudukan semasa (termasuk manual)
-  const auto = autoLayout();           // kedudukan auto bersih (fallback)
+  const hasPos = (m)=> m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY);
+  const newOnes = (DATA.members||[]).filter(m=> !hasPos(m));
+  if(!newOnes.length) return;
+
+  const positions = [];
+  const placedIds = new Set();
+
+  // (1) Susun semula setiap cabang Kepala yang mempunyai kad baharu.
+  const headsToFix = new Set();
+  newOnes.forEach(m=>{ const h = findHeadForMember(m.id); if(h) headsToFix.add(h); });
+  headsToFix.forEach(h=>{
+    const layout = autoLayoutSubtree(h, 0);
+    Object.keys(layout).forEach(id=>{
+      if(placedIds.has(String(id))) return;
+      positions.push({ id, x: layout[id].x, y: layout[id].y });
+      placedIds.add(String(id));
+    });
+  });
+
+  // (2) Kad baharu di luar mana-mana Kepala Salasilah — letak dekat saudara.
+  const lay  = buildLayout();
+  const auto = autoLayout();
   const SP = getRenderSpouses();
   const CH = getRenderChildren();
-  const hasPos = (m)=> m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY);
   const taken = new Set(Object.values(lay).map(p=>`${Math.round(p.x)},${Math.round(p.y)}`));
-  const positions = [];
-  (DATA.members||[]).filter(m=>!hasPos(m)).forEach(m=>{
+  positions.forEach(p=> taken.add(`${p.x},${p.y}`));
+
+  newOnes.filter(m=> !placedIds.has(String(m.id))).forEach(m=>{
     let pos = null;
-    // 1) Bersebelahan pasangan yang sudah ada kedudukan.
     const partnerIds = SP.filter(s=>s.husbandId===m.id||s.wifeId===m.id)
       .map(s=> s.husbandId===m.id ? s.wifeId : s.husbandId).filter(Boolean);
-    for(const pid of partnerIds){ if(lay[pid]){ pos = { x: lay[pid].x + COL_STEP, y: lay[pid].y }; break; } }
-    // 2) Di bawah ibu/bapa, bersusun di sebelah adik-beradik sedia ada.
+    for(const pid of partnerIds){
+      if(lay[pid]){ pos = { x: lay[pid].x + COL_STEP, y: lay[pid].y }; break; }
+    }
     if(!pos){
       const parentSpouseIds = CH.filter(c=>c.childId===m.id).map(c=>c.spouseId);
       for(const sid of parentSpouseIds){
         const sp = SP.find(s=>s.id===sid); if(!sp) continue;
         const pa = lay[sp.husbandId] || lay[sp.wifeId];
         if(pa){
-          const sibs = CH.filter(c=>c.spouseId===sid).map(c=>c.childId).filter(id=>id!==m.id && lay[id]);
+          const sibs = CH.filter(c=>c.spouseId===sid).map(c=>c.childId)
+            .filter(id=> id!==m.id && lay[id]);
           pos = { x: pa.x + sibs.length*COL_STEP, y: pa.y + ROW_STEP };
           break;
         }
       }
     }
-    // 3) Tiada kaitan berkedudukan — guna susunan auto bersih.
     if(!pos) pos = auto[m.id];
     if(!pos) return;
     let x = Math.round(pos.x), y = Math.round(pos.y), guard = 0;
     while(taken.has(`${x},${y}`) && guard++ < 80){ x += COL_STEP; }
-    taken.add(`${x},${y}`); lay[m.id] = { x, y };
+    taken.add(`${x},${y}`);
     positions.push({ id:m.id, x, y });
+    placedIds.add(String(m.id));
   });
+
   if(!positions.length) return;
   DATA.members = (DATA.members||[]).map(m=>{
     const f = positions.find(x=> String(x.id)===String(m.id));
@@ -632,6 +771,7 @@ async function autoPlaceNew(){
   renderAll();
   try{ await dispatchApi('setPositions', { positions }); }catch(_){}
 }
+
 
 let panzoomInstance = null;
 function renderAll(){
@@ -948,7 +1088,7 @@ $('#zOut').onclick = ()=> panzoomInstance?.zoomOut();
 $('#zReset').onclick = ()=> panzoomInstance?.reset();
 $('#btnZoomFit').onclick = ()=> panzoomInstance?.reset();
 const _btnAutoTree = document.getElementById('btnAutoTree');
-if(_btnAutoTree) _btnAutoTree.onclick = ()=> autoArrange();
+if(_btnAutoTree) _btnAutoTree.style.display = 'none';
 
 // Susunan paparan mengikut header Google Sheet SALASILAH.
 // Tambah/ubah di sini sahaja apabila kolum baharu ditambah — paparan tidak akan lari.
@@ -989,6 +1129,7 @@ function openMemberMenu(m){
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="move">🔀 Pindah Cabang</button>':''}
       ${isAdmin&&isRootMember(m.id)&&!isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="sethead">👑 Jadikan Kepala</button>':''}
       ${isAdmin&&isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="unsethead">🚫 Nyahkan Kepala</button>':''}
+      ${isAdmin&&isHeadFlag(m)?'<button class="btn gold-edge justify-center" data-act="autohead" title="Susun automatik semua pasangan & keturunan di bawah kepala ini (3 variasi berkitar)">🌳 Auto Susun Cabang</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
     </div>
     ${lockedByOther?`<div class="bevel-soft rounded-lg p-2 mt-2 text-sm ink-soft">🔒 Sedang diedit oleh <b>@${escapeHtml(lock.user)}</b>. Edit dibuka semula selepas pentadbir membuat keputusan.</div>`:''}
@@ -1004,6 +1145,7 @@ function openMemberMenu(m){
     else if(act==='move') moveBranch(m);
     else if(act==='sethead') setHeadRoot(m);
     else if(act==='unsethead') unsetHeadRoot(m);
+    else if(act==='autohead'){ closeModal(); autoArrangeHead(m.id); }
   });
 }
 
