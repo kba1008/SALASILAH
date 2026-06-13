@@ -766,6 +766,24 @@ const HANDLERS = {
     return { ok: true, updated: updated };
   },
 
+  // Admin menyahkan (membuang) status Kepala Salasilah daripada seorang ahli.
+  // Selepas ini, sistem akan auto-pilih semula moyang teratas sebagai kepala
+  // (kerana tiada lagi kepala yang ditetapkan secara manual untuk keluarga itu).
+  unsetHead(body) {
+    requireAuth(body, ['admin','master']);
+    const id = body.id;
+    if (!id) return { ok: false, error: 'id diperlukan' };
+    const members = readAll('SALASILAH');
+    let updated = 0;
+    members.forEach(function(mm){
+      if (String(mm.id) !== String(id)) return;
+      if (String(mm.isHead||'') !== '') {
+        try { updateRow('SALASILAH','id',mm.id,{ isHead: '' }); updated++; } catch(_){}
+      }
+    });
+    return { ok: true, updated: updated };
+  },
+
   updateMyProfile(body) {
     const u = requireAuth(body);
     const patch = {};

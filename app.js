@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbw5idSB_5pvWJoBvPw-OklfjxPYcbCY1u2Q5czYa_crE3xQMASO9ozfj__ZJVNHUBtj/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyA1ORvxar-f3wQ4C6yR6UehN4TrQ7gi-P8pjJT251GdWGw6jp2DedoebUxwHm2Dv8T/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1006,6 +1006,7 @@ function openMemberMenu(m){
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="note">📝 Tambah Nota</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="move">🔀 Pindah Cabang</button>':''}
       ${isAdmin&&isRootMember(m.id)&&!isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="sethead">👑 Jadikan Kepala</button>':''}
+      ${isAdmin&&isRootMember(m.id)&&isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="unsethead">🚫 Nyahkan Kepala</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
     </div>
     ${lockedByOther?`<div class="bevel-soft rounded-lg p-2 mt-2 text-sm ink-soft">🔒 Sedang diedit oleh <b>@${escapeHtml(lock.user)}</b>. Edit dibuka semula selepas pentadbir membuat keputusan.</div>`:''}
@@ -1020,6 +1021,7 @@ function openMemberMenu(m){
     else if(act==='del') deleteMember(m);
     else if(act==='move') moveBranch(m);
     else if(act==='sethead') setHeadRoot(m);
+    else if(act==='unsethead') unsetHeadRoot(m);
   });
 }
 
@@ -1029,6 +1031,16 @@ async function setHeadRoot(m){
   try{
     await dispatchApi('setHead', { id:m.id });
     notify.success('👑 ' + (m.name||'Ahli') + ' kini Kepala Salasilah.');
+    closeModal();
+    await refresh();
+  }catch(e){ toast(e.message); }
+}
+
+// Admin menyahkan status Kepala Salasilah daripada ahli ini.
+async function unsetHeadRoot(m){
+  try{
+    await dispatchApi('unsetHead', { id:m.id });
+    notify.success('🚫 ' + (m.name||'Ahli') + ' bukan lagi Kepala Salasilah.');
     closeModal();
     await refresh();
   }catch(e){ toast(e.message); }
