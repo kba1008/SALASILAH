@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbwVouVrvvjvPYJ-2ZYV316VtNVE0BKyZs0-kdKhwH8hlpqBU73VOTOULdo1pieGp0I_/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwfWpEBVEwUtnSMlEcgSVL88MWA_2Q7jWoF68apRieopooUWkpAV_Y_tYXZ68thHX_g/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
