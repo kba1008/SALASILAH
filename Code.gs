@@ -22,20 +22,21 @@
    9) Buka aplikasi → log masuk dengan: admin / 101010
    ===================================================================== */
 
-const SHEET_ID = '1wqIc6971U96VXqOJ55pD-wzxQicC4RT4TBNoUrUVtig';        // ← isi di sini
-const DRIVE_FOLDER_ID = '1tb1YIWlxbHkN-HzdAXtFlMWp136JXxN4'; // ← biar kosong jika mahu auto-cipta
+const SHEET_ID = '';        // ← isi di sini
+const DRIVE_FOLDER_ID = ''; // ← biar kosong jika mahu auto-cipta
 
 const MASTER_USERNAME = 'admin';
 const MASTER_PASSWORD = '101010';
 
 const SHEETS = {
-  PENGGUNA:  ['username','fullName','email','phone','passwordHash','salt','role','approved','token','memberId','createdAt'],
-  SALASILAH: ['id','name','gender','alive','birth','death','place','photo','notes','editedBy','editedAt','approvedBy','approvedAt'],
+  PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
+  SALASILAH: ['id','name','gender','alive','birth','death','place','photo','notes','fatherName','motherName','editedBy','editedAt','approvedBy','approvedAt'],
   PASANGAN:  ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','editedBy','editedAt'],
   ANAK:      ['spouseId','childId','editedBy','editedAt'],
   NOTA:      ['id','text','x','y','font','size','color','pinned','editedBy','editedAt'],
   PENDING:   ['id','action','payload','user','ts','status','approvedBy','approvedAt']
 };
+const MEMBER_ID_PREFIX = 'KEL';
 
 // =====================================================================
 // ENTRY
@@ -158,24 +159,38 @@ function ensureSeed(){
   if(!admin){
     appendRow('PENGGUNA', {
       username: MASTER_USERNAME, fullName:'Pentadbir Utama',
-      email:'', phone:'',
+      fatherName:'', motherName:'', address:'', whatsapp:'', occupation:'Pentadbir Sistem',
+      photo:'', email:'', phone:'',
+      password: MASTER_PASSWORD,
       passwordHash: hash, salt: salt,
-      role:'master', approved: true, token:'', memberId:'',
+      role:'master', approved: true, token:'', memberId: MEMBER_ID_PREFIX+'-MASTER-0001',
       createdAt: now()
     });
     return { created:true };
   }
-  // Kemaskini supaya master sentiasa boleh log masuk dengan password yang ditetapkan
-  // dan peranannya kekal 'master', approved=true.
   const patch = {};
   if(admin.role !== 'master') patch.role = 'master';
   if(String(admin.approved) !== 'true' && admin.approved !== true) patch.approved = true;
-  // Reset password kepada MASTER_PASSWORD agar mengikut ketetapan
+  patch.password = MASTER_PASSWORD;
   patch.passwordHash = hash;
   patch.salt = salt;
+  if(!admin.memberId) patch.memberId = MEMBER_ID_PREFIX+'-MASTER-0001';
   updateRow('PENGGUNA','username', admin.username, patch);
   return { repaired:true };
 }
+
+function nextMemberId(){
+  const users = readAll('PENGGUNA');
+  const yr = new Date().getFullYear();
+  let n = 0;
+  users.forEach(u => {
+    const m = String(u.memberId||'').match(new RegExp('^'+MEMBER_ID_PREFIX+'-'+yr+'-(\\d+)$'));
+    if(m) n = Math.max(n, parseInt(m[1],10));
+  });
+  return MEMBER_ID_PREFIX+'-'+yr+'-'+String(n+1).padStart(4,'0');
+}
+
+function normName(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim(); }
 
 function requireAuth(body, roles){
   ensureSeed();
@@ -285,18 +300,33 @@ const HANDLERS = {
     ensureSeed();
     const username = String(body.username||'').trim().toLowerCase();
     const password = String(body.password||'');
+    const fullName = String(body.fullName||'').trim();
+    const fatherName = String(body.fatherName||'').trim();
+    const motherName = String(body.motherName||'').trim();
+    const address = String(body.address||'').trim();
+    const whatsapp = String(body.whatsapp||'').trim();
+    const occupation = String(body.occupation||'').trim();
     if(username.length<3) throw new Error('Nama pengguna minima 3 aksara.');
     if(username.length>40) throw new Error('Nama pengguna terlalu panjang.');
     if(password.length<6) throw new Error('Kata laluan minima 6 aksara.');
+    if(!fullName) throw new Error('Nama penuh wajib diisi.');
+    if(!fatherName) throw new Error('Nama penuh bapa wajib diisi.');
+    if(!motherName) throw new Error('Nama penuh ibu wajib diisi.');
+    if(!address) throw new Error('Alamat menetap wajib diisi.');
+    if(!whatsapp) throw new Error('No telefon WhatsApp wajib diisi.');
+    if(!occupation) throw new Error('Pekerjaan wajib diisi.');
     const users = readAll('PENGGUNA');
     if(users.find(u=>String(u.username).toLowerCase()===username)) throw new Error('Nama pengguna telah digunakan.');
     const salt = randomToken().slice(0,16);
     const hash = sha256Hex(password+salt);
+    let photoUrl = '';
+    if(body.photoB64) photoUrl = savePhoto(body.photoB64, body.photoMime || 'image/jpeg', 'profile_'+username);
     appendRow('PENGGUNA', {
-      username,
-      fullName: String(body.fullName||'').slice(0,120),
+      username, fullName, fatherName, motherName, address, whatsapp, occupation,
+      photo: photoUrl,
       email: String(body.email||'').slice(0,120),
-      phone: String(body.phone||'').slice(0,40),
+      phone: whatsapp,
+      password,
       passwordHash:hash, salt, role:'user', approved:false,
       token:'', memberId:'', createdAt: now()
     });
@@ -316,17 +346,70 @@ const HANDLERS = {
     }
     const token = randomToken();
     updateRow('PENGGUNA','username', u.username, { token });
-    return { ok:true, username:u.username, role:u.role, token, fullName:u.fullName };
+    return { ok:true, username:u.username, role:u.role, token, fullName:u.fullName, memberId:u.memberId, photo:u.photo };
+  },
+
+  myProfile(body){
+    const u = requireAuth(body);
+    return { ok:true, profile: {
+      username:u.username, fullName:u.fullName, fatherName:u.fatherName, motherName:u.motherName,
+      address:u.address, whatsapp:u.whatsapp, occupation:u.occupation, photo:u.photo,
+      role:u.role, memberId:u.memberId, createdAt:u.createdAt
+    }};
   },
 
   // ----- BOOTSTRAP -----
   bootstrap(body){
-    const u = requireAuth(body);
-    const isAdmin = u.role==='admin' || u.role==='master';
-    const isMaster = u.role==='master';
-    const members = readAll('SALASILAH').map(m => ({
+    // Pelawat dibenarkan (lihat asas sahaja)
+    ensureSeed();
+    let u = null;
+    if(body.username && body.token){
+      u = readAll('PENGGUNA').find(x => String(x.username)===String(body.username) && x.token && x.token===body.token) || null;
+    }
+    const isAdmin = !!u && (u.role==='admin' || u.role==='master');
+    const isMaster = !!u && u.role==='master';
+    const allUsers = readAll('PENGGUNA');
+    const approvedUsers = allUsers.filter(x => (x.approved===true||String(x.approved)==='true'));
+
+    // publicUsers: untuk padanan warna kad dalam pokok (tiada maklumat sensitif)
+    const publicUsers = approvedUsers.map(x => ({
+      fullName: x.fullName, fatherName: x.fatherName, motherName: x.motherName,
+      role: x.role, memberId: x.memberId
+    }));
+
+    const rawMembers = readAll('SALASILAH').map(m => ({
       ...m, alive: String(m.alive)==='true' || m.alive===true
     }));
+
+    // Tag setiap ahli: 'admin' jika padan dgn pentadbir, 'member' jika padan dgn ahli berdaftar
+    function tagFor(m){
+      const mn = normName(m.name);
+      const mf = normName(m.fatherName);
+      const mo = normName(m.motherName);
+      for(const pu of publicUsers){
+        const sameName = normName(pu.fullName) === mn;
+        const sameFather = !mf || !pu.fatherName ? true : normName(pu.fatherName)===mf;
+        const sameMother = !mo || !pu.motherName ? true : normName(pu.motherName)===mo;
+        if(sameName && (sameFather || sameMother)){
+          return { tag: (pu.role==='admin'||pu.role==='master') ? 'admin' : 'member', memberId: pu.memberId };
+        }
+      }
+      return { tag:'none', memberId:'' };
+    }
+
+    const members = rawMembers.map(m => {
+      const t = tagFor(m);
+      if(isAdmin){
+        return { ...m, _tag:t.tag, _memberId:t.memberId };
+      }
+      // Pelawat & pengguna biasa: maklumat asas sahaja
+      return {
+        id:m.id, name:m.name, gender:m.gender, alive:m.alive, photo:m.photo,
+        birth:m.birth, death:m.death,
+        _tag:t.tag, _memberId:t.memberId
+      };
+    });
+
     const spouses = readAll('PASANGAN');
     const children = readAll('ANAK');
     const notes = readAll('NOTA').map(n => ({
@@ -337,24 +420,38 @@ const HANDLERS = {
     const pending = isAdmin
       ? readAll('PENDING').filter(p=>p.status==='pending').map(p=>({ ...p, payload: safeParse(p.payload) }))
       : [];
-    const allUsers = readAll('PENGGUNA');
     const pendingUsers = isAdmin
       ? allUsers.filter(x => !(x.approved===true||String(x.approved)==='true') && x.role!=='master')
-                .map(x => ({ username:x.username, fullName:x.fullName, email:x.email, phone:x.phone, createdAt:x.createdAt }))
+                .map(x => ({ username:x.username, fullName:x.fullName, fatherName:x.fatherName, motherName:x.motherName,
+                             address:x.address, whatsapp:x.whatsapp, occupation:x.occupation, photo:x.photo,
+                             email:x.email, phone:x.phone, createdAt:x.createdAt }))
       : [];
+    // Master melihat SEMUA maklumat pengguna TERMASUK password
     const users = isMaster
-      ? allUsers.filter(x => x.role !== 'master')
-                .map(x => ({ username:x.username, fullName:x.fullName, role:x.role,
-                             approved: x.approved===true || String(x.approved)==='true' }))
+      ? allUsers.filter(x => x.role !== 'master').map(x => ({
+          username:x.username, fullName:x.fullName, fatherName:x.fatherName, motherName:x.motherName,
+          address:x.address, whatsapp:x.whatsapp, occupation:x.occupation, photo:x.photo,
+          email:x.email, phone:x.phone, password:x.password,
+          role:x.role, memberId:x.memberId,
+          approved: x.approved===true || String(x.approved)==='true',
+          createdAt:x.createdAt
+        }))
       : [];
-    return { ok:true, data: { members, spouses, children, notes, pending, pendingUsers, users } };
+
+    return { ok:true, data: { members, spouses, children, notes, pending, pendingUsers, users, publicUsers,
+      viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null
+    }};
   },
 
   // ----- USER APPROVAL -----
   approveUser(body){
     requireAuth(body, ['admin','master']);
-    updateRow('PENGGUNA','username', body.target, { approved: true });
-    return { ok:true };
+    const target = readAll('PENGGUNA').find(x => x.username===body.target);
+    if(!target) throw new Error('Pengguna tidak dijumpai.');
+    const patch = { approved: true };
+    if(!target.memberId) patch.memberId = nextMemberId();
+    updateRow('PENGGUNA','username', body.target, patch);
+    return { ok:true, memberId: patch.memberId || target.memberId };
   },
   rejectUser(body){
     requireAuth(body, ['admin','master']);
@@ -374,6 +471,8 @@ const HANDLERS = {
       id: body.id, name: String(body.name||'').slice(0,200), gender: body.gender||'M',
       alive: body.alive!==false, birth: body.birth||'', death: body.death||'',
       place: body.place||'', photo: photoUrl, notes: body.notes||'',
+      fatherName: String(body.fatherName||'').slice(0,200),
+      motherName: String(body.motherName||'').slice(0,200),
       editedBy: u.username, editedAt: now(),
       approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():''
     };
