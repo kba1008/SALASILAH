@@ -26,11 +26,11 @@ const MASTER_PASSWORD = '101010';
 
 const SHEETS = {
   PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
-  SALASILAH: ['id','name','gender','alive','birth','death','place','photo','notes','fatherName','motherName','editedBy','editedAt','approvedBy','approvedAt'],
+  SALASILAH: ['id','name','gender','alive','birth','death','place','address','photo','notes','fatherName','motherName','editedBy','editedAt','approvedBy','approvedAt'],
   PASANGAN:  ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','editedBy','editedAt'],
   ANAK:      ['spouseId','childId','editedBy','editedAt'],
   NOTA:      ['id','text','x','y','font','size','color','pinned','editedBy','editedAt'],
-  PENDING:   ['id','action','payload','user','ts','status','approvedBy','approvedAt']
+  PENDING:   ['id','action','payload','before','user','userFullName','ts','status','approvedBy','approvedAt']
 };
 const MEMBER_ID_PREFIX = 'KEL';
 
@@ -46,7 +46,7 @@ function doPost(e) {
   }
 }
 function doGet() {
-  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '1.4' });
+  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '1.5' });
 }
 function json(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
@@ -213,11 +213,14 @@ function savePhoto(b64, mime, name) {
   }
 }
 
-function queuePending(action, payload, username) {
+function queuePending(action, payload, username, before) {
   const id = Utilities.getUuid();
+  const user = readAll('PENGGUNA').find(x => String(x.username)===String(username));
   appendRow('PENDING', {
     id, action, payload: JSON.stringify(payload),
-    user: username, ts: now(), status:'pending', approvedBy:'', approvedAt:''
+    before: before ? JSON.stringify(before) : '',
+    user: username, userFullName: (user && user.fullName) || username,
+    ts: now(), status:'pending', approvedBy:'', approvedAt:''
   });
   notifyTelegram(`📝 <b>PERUBAHAN MENUNGGU KELULUSAN</b>\n<b>Tindakan:</b> ${action}\n<b>Oleh:</b> @${username}\nSila log masuk ke panel pentadbir untuk kelulusan.`);
   return id;
@@ -309,18 +312,21 @@ const HANDLERS = {
     const members = rawMembers.map(m => {
       const t = tagFor(m);
       if (isAdmin) return { ...m, _tag: t.tag, _memberId: t.memberId };
-      return { id:m.id, name:m.name, gender:m.gender, alive:m.alive, photo:m.photo, birth:m.birth, death:m.death, _tag:t.tag, _memberId:t.memberId };
+      return { id:m.id, name:m.name, gender:m.gender, alive:m.alive, photo:m.photo, birth:m.birth, death:m.death, fatherName:m.fatherName, motherName:m.motherName, place:m.place, _tag:t.tag, _memberId:t.memberId };
     });
 
     const spouses = readAll('PASANGAN');
     const children = readAll('ANAK');
     const notes = readAll('NOTA').map(n => ({ ...n, pinned: String(n.pinned)==='true'||n.pinned===true, x:Number(n.x)||0, y:Number(n.y)||0, size:Number(n.size)||14 }));
     
-    const pending = isAdmin ? readAll('PENDING').filter(p=>p.status==='pending').map(p=>({ ...p, payload: safeParse(p.payload) })) : [];
+    const pending = isAdmin
+      ? readAll('PENDING').filter(p=>p.status==='pending').map(p=>({ ...p, payload: safeParse(p.payload), before: p.before? safeParse(p.before): null }))
+      : (u ? readAll('PENDING').filter(p=>p.user===u.username).map(p=>({ ...p, payload: safeParse(p.payload), before: p.before? safeParse(p.before): null })) : []);
+    const pendingLog = isAdmin ? readAll('PENDING').filter(p=>p.status!=='pending').slice(-50).map(p=>({ id:p.id, action:p.action, user:p.user, userFullName:p.userFullName, ts:p.ts, status:p.status, approvedBy:p.approvedBy, approvedAt:p.approvedAt })) : [];
     const pendingUsers = isAdmin ? allUsers.filter(x => !(x.approved===true||String(x.approved)==='true') && x.role!=='master') : [];
     const users = isMaster ? allUsers.filter(x => x.role !== 'master').map(x => ({ ...x, password: x.password })) : [];
 
-    return { ok: true, data: { members, spouses, children, notes, pending, pendingUsers, users, publicUsers, viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null }};
+    return { ok: true, data: { members, spouses, children, notes, pending, pendingLog, pendingUsers, users, publicUsers, viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null }};
   },
 
   approveUser(body) {
@@ -343,13 +349,14 @@ const HANDLERS = {
     const isAdmin = u.role==='admin' || u.role==='master';
     let photoUrl = '';
     if (body.photoB64) photoUrl = savePhoto(body.photoB64, body.photoMime || 'image/jpeg', body.id);
-    const rec = { id: body.id, name: upperName(body.name).slice(0,200), gender: body.gender||'M', alive: body.alive!==false, birth: body.birth||'', death: body.death||'', place: body.place||'', photo: photoUrl, notes: body.notes||'', fatherName: upperName(body.fatherName).slice(0,200), motherName: upperName(body.motherName).slice(0,200), editedBy: u.username, editedAt: now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
-    if (!isAdmin) { queuePending('addMember', rec, u.username); return { ok: true, pending: true }; }
+    const rec = { id: body.id, name: upperName(body.name).slice(0,200), gender: body.gender||'M', alive: body.alive!==false, birth: body.birth||'', death: body.death||'', place: body.place||'', address: body.address||'', photo: photoUrl, notes: body.notes||'', fatherName: upperName(body.fatherName).slice(0,200), motherName: upperName(body.motherName).slice(0,200), editedBy: u.username, editedAt: now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
+    if (!isAdmin) { queuePending('addMember', rec, u.username, null); return { ok: true, pending: true }; }
     appendRow('SALASILAH', rec); return { ok: true };
   },
   editMember(body) {
     const u = requireAuth(body);
     const isAdmin = u.role==='admin' || u.role==='master';
+    const before = readAll('SALASILAH').find(m=>String(m.id)===String(body.id)) || null;
     const patch = { ...body };
     delete patch.action; delete patch.username; delete patch.token;
     if (patch.name !== undefined) patch.name = upperName(patch.name).slice(0,200);
@@ -363,7 +370,7 @@ const HANDLERS = {
       updateRow('SALASILAH', 'id', body.id, patch);
       return { ok: true };
     }
-    queuePending('editMember', patch, u.username);
+    queuePending('editMember', patch, u.username, before);
     return { ok: true, pending: true };
   },
   deleteMember(body) { requireAuth(body, ['admin','master']); deleteRow('SALASILAH', 'id', body.id); deleteWhere('PASANGAN', s => s.husbandId===body.id || s.wifeId===body.id); deleteWhere('ANAK', c => c.childId===body.id); return { ok: true }; },

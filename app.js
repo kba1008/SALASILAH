@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbwcnkQc_gyuWKiQR_n2Ae8p0S8B-j_dMBT0yHyNjEpG9a3v_1Z6ya-6Oy2z53P-MUEM/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbz-AgLGfoA55OvnXULYtAnbg1e6AqQmGJ38JX-CymaedAkgG2tfOTHsDEYr8EoN94br/exec";
 
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
@@ -144,7 +144,7 @@ const TIPS = [
 let tipIdx = 0;
 const tipTimer = setInterval(()=> { tipIdx=(tipIdx+1)%TIPS.length; const el=$('#tip'); if(el) el.textContent="Petua: "+TIPS[tipIdx]; }, 3000);
 
-let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], users:[] };
+let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], pendingLog:[], users:[] };
 const NODE_W = 220, NODE_H = 170, GAP_X = 60, GAP_Y = 120;
 const upperName = (s) => String(s||'').replace(/\s+/g,' ').trim().toUpperCase();
 
@@ -157,7 +157,7 @@ function loginForm(){
   openModal(`
     <div class="flex items-center justify-between mb-3">
       <div class="font-head text-2xl">Selamat Datang</div>
-      <div class="chip gold-edge">v1.4</div>
+      <div class="chip gold-edge">v1.5</div>
     </div>
     <div class="flex gap-2 mb-4">
       <button class="tab active" data-tab="login">Log Masuk</button>
@@ -350,12 +350,17 @@ function renderAll(){
 
 function renderNodes(layout){
   const wrap = $('#nodes'); wrap.innerHTML='';
+  // Tandakan ahli yang ada draf belum lulus (pending)
+  const pendingIds = new Set((DATA.pending||[]).filter(p=>p.action==='editMember' || p.action==='addMember').map(p => p.payload && p.payload.id).filter(Boolean));
+  const isAdmin = ['admin','master'].includes(STORE.user?.role);
+  const frag = document.createDocumentFragment();
   DATA.members.forEach(m=>{
     const pos = layout[m.id] || {x:200,y:200};
     const el = document.createElement('div');
     const tag = m._tag || 'none';
     const tagCls = tag==='admin' ? 'tag-admin' : (tag==='member' ? 'tag-member' : '');
-    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls}`;
+    const draftCls = (isAdmin && pendingIds.has(m.id)) ? 'tag-draft' : '';
+    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls}`;
     el.style.left = pos.x+'px'; el.style.top = pos.y+'px';
     el.dataset.id = m.id;
     const yrs = `${m.birth||'?'} – ${m.alive===false?(m.death||'?'):''}`.trim();
@@ -363,6 +368,7 @@ function renderNodes(layout){
     const badge = tag==='admin'
       ? '<span class="chip" style="background:linear-gradient(180deg,#ff8a8a,#b71c1c);color:#fff">🛡️ Admin</span>'
       : (tag==='member' ? `<span class="chip" style="background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#241704">⭐ Ahli${m._memberId?' '+escapeHtml(m._memberId):''}</span>` : '');
+    const draftBadge = draftCls ? '<span class="chip" style="background:#b71c1c;color:#fff">📝 Draf</span>' : '';
     el.innerHTML = `
       <div class="avatar">${m.photo?`<img src="${m.photo}">`:(m.name||'?').slice(0,1).toUpperCase()}</div>
       <div class="nm">${escapeHtml(m.name||'Tanpa Nama')}</div>
@@ -370,17 +376,20 @@ function renderNodes(layout){
       <div class="row">
         <span class="chip" style="background:color-mix(in oklab, var(--gold) 25%, transparent); color:var(--ink)">${ic}</span>
         ${m.alive===false?'<span class="chip" style="background:#3334; color:var(--ink)">Allahyarham</span>':'<span class="chip" style="background:color-mix(in oklab, var(--ok) 30%, transparent); color:var(--ink)">Hidup</span>'}
-        ${badge}
+        ${badge}${draftBadge}
       </div>
     `;
     el.addEventListener('click', e=>{ e.stopPropagation(); openMemberMenu(m); });
-    wrap.appendChild(el);
+    frag.appendChild(el);
   });
+  wrap.appendChild(frag);
 }
 
 function renderLinks(layout){
   const svg = $('#links');
+  const byId = Object.fromEntries(DATA.members.map(m=>[m.id, m]));
   let paths = '';
+  let labels = '';
   DATA.spouses.forEach(s=>{
     const a = layout[s.husbandId], b = layout[s.wifeId];
     if(!a || !b) return;
@@ -394,8 +403,30 @@ function renderLinks(layout){
     const py = (a||b).y + NODE_H;
     const my = (py+k.y)/2, kx = k.x + NODE_W/2;
     paths += `<path d="M ${px} ${py} L ${px} ${my} L ${kx} ${my} L ${kx} ${k.y}"/>`;
+    // Label kecil maklumat ibu/bapa pada cabang (untuk poligami / >1 perkahwinan)
+    const dad = byId[sp.husbandId], mom = byId[sp.wifeId];
+    const dn = (dad?.name||'?').split(' ')[0];
+    const mn = (mom?.name||'?').split(' ')[0];
+    const lblY = my - 6;
+    labels += `<g class="branch-lbl"><rect x="${kx-58}" y="${lblY-11}" width="116" height="14" rx="6"/><text x="${kx}" y="${lblY}" text-anchor="middle">${escapeHtml(dn)} × ${escapeHtml(mn)}</text></g>`;
   });
-  svg.innerHTML = paths;
+  svg.innerHTML = paths + labels;
+}
+
+// Sembunyi node luar viewport untuk skala besar (1000+ kad)
+function cullViewport(){
+  if(!panzoomInstance) return;
+  const stage = $('#stage').getBoundingClientRect();
+  const pad = 600;
+  const wrap = $('#nodes');
+  const t = panzoomInstance.getScale();
+  const pan = panzoomInstance.getPan();
+  $$('#nodes .node').forEach(el=>{
+    const x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+    const sx = x*t + pan.x, sy = y*t + pan.y;
+    const visible = sx + NODE_W*t > -pad && sx < stage.width + pad && sy + NODE_H*t > -pad && sy < stage.height + pad;
+    el.style.visibility = visible ? 'visible' : 'hidden';
+  });
 }
 
 function renderNotes(){
@@ -420,6 +451,10 @@ function setupPanzoom(){
   if(panzoomInstance) panzoomInstance.destroy();
   panzoomInstance = Panzoom(world, { maxScale: 3, minScale: 0.15, contain: false, canvas: true, cursor:'grab', step:.3 });
   $('#stage').addEventListener('wheel', panzoomInstance.zoomWithWheel, { passive:false });
+  let cullT; const sched = ()=>{ clearTimeout(cullT); cullT=setTimeout(cullViewport, 80); };
+  world.addEventListener('panzoomchange', sched);
+  window.addEventListener('resize', sched);
+  setTimeout(cullViewport, 100);
 }
 $('#zIn').onclick = ()=> panzoomInstance?.zoomIn();
 $('#zOut').onclick = ()=> panzoomInstance?.zoomOut();
@@ -442,16 +477,21 @@ function openMemberMenu(m){
   const adminInfo = isAdmin ? `
     <div class="bevel-soft rounded-lg p-3 mb-3 text-sm">
       ${m.place?`<div><b>Tempat/Asal:</b> ${escapeHtml(m.place)}</div>`:''}
+      ${m.address?`<div><b>Alamat:</b> ${escapeHtml(m.address)}</div>`:''}
       ${m.fatherName?`<div><b>Bapa:</b> ${escapeHtml(m.fatherName)}</div>`:''}
       ${m.motherName?`<div><b>Ibu:</b> ${escapeHtml(m.motherName)}</div>`:''}
       ${m.notes?`<div class="mt-1 text-xs ink-soft"><b>Catatan:</b> ${escapeHtml(m.notes)}</div>`:''}
-    </div>` : (role ? '' : '<p class="text-xs ink-soft mb-3">Log masuk untuk maklumat penuh.</p>');
+    </div>` : `
+    <div class="bevel-soft rounded-lg p-3 mb-3 text-sm">
+      ${m.fatherName?`<div><b>Bapa:</b> ${escapeHtml(m.fatherName)}</div>`:''}
+      ${m.motherName?`<div><b>Ibu:</b> ${escapeHtml(m.motherName)}</div>`:''}
+    </div>`;
   
   openModal(basic + adminInfo + `
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-      ${isAdmin?'<button class="btn gold-edge justify-center" data-act="edit">✏️ Edit</button>':''}
-      ${isAdmin?'<button class="btn gold-edge justify-center" data-act="spouse">💍 Tambah Pasangan</button>':''}
-      ${isAdmin?'<button class="btn gold-edge justify-center" data-act="child">👶 Tambah Anak</button>':''}
+      ${role?'<button class="btn gold-edge justify-center" data-act="edit">✏️ '+(isAdmin?'Edit':'Cadang Edit')+'</button>':''}
+      ${role?'<button class="btn gold-edge justify-center" data-act="spouse">💍 '+(isAdmin?'Tambah':'Cadang')+' Pasangan</button>':''}
+      ${role?'<button class="btn gold-edge justify-center" data-act="child">👶 '+(isAdmin?'Tambah':'Cadang')+' Anak</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="note">📝 Tambah Nota</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="move">🔀 Pindah Cabang</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
@@ -489,6 +529,7 @@ function memberForm(m){
       <div class="field"><label>Asal</label><input id="f_p" value="${escapeHtml(m.place||'')}"/></div>
       <div class="field"><label>Nama bapa</label><input id="f_fa" value="${escapeHtml(m.fatherName||'')}"/></div>
       <div class="field"><label>Nama ibu</label><input id="f_mo" value="${escapeHtml(m.motherName||'')}"/></div>
+      <div class="field sm:col-span-2"><label>Alamat menetap</label><textarea id="f_ad" rows="2">${escapeHtml(m.address||'')}</textarea></div>
       <div class="field sm:col-span-2"><label>Catatan</label><textarea id="f_n" rows="2">${escapeHtml(m.notes||'')}</textarea></div>
       <div class="field sm:col-span-2"><label>Gambar (Max 2MB)</label><input id="f_ph" type="file" accept="image/jpeg,image/png,image/webp"/></div>
     </div>
@@ -498,7 +539,7 @@ function memberForm(m){
     </div>
   `);
   $('#saveMember').onclick = async ()=>{
-    const payload = { id:m.id, name:upperName($('#f_name').value), gender:$('#f_g').value, birth:$('#f_b').value.trim(), alive:$('#f_a').value==='true', death:$('#f_d').value.trim(), place:$('#f_p').value.trim(), fatherName:upperName($('#f_fa').value), motherName:upperName($('#f_mo').value), notes:$('#f_n').value.trim() };
+    const payload = { id:m.id, name:upperName($('#f_name').value), gender:$('#f_g').value, birth:$('#f_b').value.trim(), alive:$('#f_a').value==='true', death:$('#f_d').value.trim(), place:$('#f_p').value.trim(), address:$('#f_ad').value.trim(), fatherName:upperName($('#f_fa').value), motherName:upperName($('#f_mo').value), notes:$('#f_n').value.trim() };
     if(!payload.name) return toast("Nama wajib diisi.");
     const file = $('#f_ph').files[0];
     if(file){
@@ -506,7 +547,7 @@ function memberForm(m){
       payload.photoB64 = await fileToB64(file);
       payload.photoMime = file.type;
     }
-    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); toast(r.pending?'Menunggu kelulusan pentadbir.':'Berjaya.'); closeModal(); await refresh(); }catch(e){ toast("Gagal: "+e.message); }
+    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); notify[r.pending?'warn':'success'](r.pending?'📝 Disimpan sebagai DRAF. Menunggu kelulusan pentadbir.':'Berjaya.'); closeModal(); await refresh(); }catch(e){ toast("Gagal: "+e.message); }
   };
 }
 
@@ -621,11 +662,13 @@ async function openProfile(){
 
 $('#btnAdmin').onclick = ()=> adminPanel('pending');
 function adminPanel(tab='pending'){
+  const isAdmin = ['admin','master'].includes(STORE.user?.role);
   openModal(`
     <div class="font-head text-2xl mb-3">Panel Pentadbir</div>
     <div class="flex gap-2 mb-3 flex-wrap">
-      <button class="tab ${tab==='pending'?'active':''}" data-t="pending">Perubahan</button>
+      <button class="tab ${tab==='pending'?'active':''}" data-t="pending">Perubahan ${DATA.pending?.length?`<span class="chip" style="background:#b71c1c;color:#fff;margin-left:4px">${DATA.pending.length}</span>`:''}</button>
       <button class="tab ${tab==='users'?'active':''}" data-t="users">Pengguna Baru</button>
+      <button class="tab ${tab==='log'?'active':''}" data-t="log">Log Lulus</button>
       <button class="tab ${tab==='seed'?'active':''}" data-t="seed">Cipta Akar</button>
     </div>
     <div id="adminBody" class="max-h-[60vh] overflow-y-auto pr-2 niceScroll"></div>
@@ -634,16 +677,11 @@ function adminPanel(tab='pending'){
   $$('.tab', $('#modal')).forEach(b=> b.onclick = ()=>{ adminPanel(b.dataset.t); });
   const body = $('#adminBody');
   if(tab==='pending'){
-    body.innerHTML = DATA.pending?.length ? DATA.pending.map(p=>`
-      <div class="bevel-soft rounded-lg p-2 mb-2">
-        <div class="text-xs ink-soft">Tindakan: <b>${escapeHtml(p.action)}</b> oleh @${escapeHtml(p.user)}</div>
-        <div class="flex gap-2 mt-2">
-          <button class="btn gold-edge" data-a="approve" data-id="${p.id}">Luluskan</button>
-          <button class="btn btn-ghost" style="color:var(--danger)" data-a="reject" data-id="${p.id}">Tolak</button>
-        </div>
-      </div>
-    `).join('') : '<p class="text-sm ink-soft">Tiada perubahan menunggu.</p>';
-    $$('button[data-a]', body).forEach(b=> b.onclick = async ()=>{ try{ await dispatchApi(b.dataset.a, { id:b.dataset.id }); notify.success("Selesai."); await refresh(); adminPanel('pending'); }catch(e){ toast(e.message); } });
+    body.innerHTML = DATA.pending?.length ? DATA.pending.map(p=> renderPendingCard(p, isAdmin)).join('') : '<p class="text-sm ink-soft">Tiada perubahan menunggu.</p>';
+    $$('button[data-a]', body).forEach(b=> b.onclick = async ()=>{
+      if(b.dataset.a==='reject' && !confirm('Tolak perubahan ini?')) return;
+      try{ await dispatchApi(b.dataset.a, { id:b.dataset.id }); notify.success("Selesai."); await refresh(); adminPanel('pending'); }catch(e){ toast(e.message); }
+    });
   } else if(tab==='users'){
     const pu = DATA.pendingUsers || [];
     body.innerHTML = pu.length ? pu.map(u=>`
@@ -660,7 +698,58 @@ function adminPanel(tab='pending'){
   } else if(tab==='seed'){
     body.innerHTML = `<button class="btn gold-edge" id="seedBtn">+ Tambah Moyang Pertama</button>`;
     $('#seedBtn').onclick = ()=>{ closeModal(); memberForm(null); };
+  } else if(tab==='log'){
+    const log = DATA.pendingLog || [];
+    body.innerHTML = log.length ? log.slice().reverse().map(l=>`
+      <div class="bevel-soft rounded-lg p-2 mb-2 text-xs">
+        <div><b>${escapeHtml(l.action)}</b> — <span style="color:${l.status==='approved'?'var(--ok)':'var(--danger)'}">${escapeHtml(l.status)}</span></div>
+        <div class="ink-soft">Oleh: <b>${escapeHtml(l.userFullName||l.user)}</b> (@${escapeHtml(l.user)})</div>
+        <div class="ink-soft">Diluluskan/ditolak oleh: <b>${escapeHtml(l.approvedBy||'-')}</b> pada ${escapeHtml(l.approvedAt||'-')}</div>
+      </div>
+    `).join('') : '<p class="text-sm ink-soft">Belum ada log.</p>';
   }
+}
+
+const PENDING_FIELDS = ['name','gender','alive','birth','death','place','address','fatherName','motherName','notes'];
+const PENDING_LABEL = { name:'Nama', gender:'Jantina', alive:'Status', birth:'Lahir', death:'Meninggal', place:'Asal', address:'Alamat', fatherName:'Bapa', motherName:'Ibu', notes:'Catatan' };
+function fmtVal(k,v){ if(v===undefined||v===null||v==='') return '—'; if(k==='alive') return v===true||String(v)==='true'?'Hidup':'Allahyarham'; if(k==='gender') return v==='F'?'Perempuan':'Lelaki'; return String(v); }
+function renderPendingCard(p, isAdmin){
+  const before = p.before || {};
+  const after = p.payload || {};
+  const rows = PENDING_FIELDS.map(k=>{
+    const bv = before[k], av = after[k];
+    if(bv===undefined && av===undefined) return '';
+    const changed = String(bv||'') !== String(av||'');
+    return `<tr class="${changed?'diff-changed':''}"><td class="ink-soft">${PENDING_LABEL[k]}</td><td>${escapeHtml(fmtVal(k,bv))}</td><td><b>${escapeHtml(fmtVal(k,av))}</b></td></tr>`;
+  }).join('');
+  return `
+    <div class="bevel-soft rounded-lg p-3 mb-2 pending-card">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-sm"><b>${escapeHtml(p.action)}</b> — <span class="ink-soft">oleh ${escapeHtml(p.userFullName||p.user)} (@${escapeHtml(p.user)})</span></div>
+        <div class="text-xs ink-soft">${escapeHtml(p.ts||'')}</div>
+      </div>
+      ${rows? `<div class="diff-wrap"><table class="diff"><thead><tr><th></th><th>Asal</th><th>Cadangan</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<pre class="text-xs ink-soft" style="white-space:pre-wrap">${escapeHtml(JSON.stringify(after,null,2))}</pre>`}
+      ${isAdmin? `<div class="flex gap-2 mt-3">
+        <button class="btn gold-edge" data-a="approve" data-id="${p.id}">✅ Luluskan</button>
+        <button class="btn btn-ghost" style="color:var(--danger)" data-a="reject" data-id="${p.id}">❌ Tolak</button>
+      </div>`:'<div class="text-xs ink-soft mt-2">Menunggu kelulusan pentadbir…</div>'}
+    </div>`;
+}
+
+// Akaun saya: papar draf saya jika ada
+function myDraftsButton(){
+  const u = STORE.user; if(!u) return '';
+  const mine = (DATA.pending||[]).filter(p=>p.user===u.username);
+  if(!mine.length) return '';
+  return `<button class="btn btn-ghost justify-start" id="acDrafts">📝 Draf Saya (${mine.length})</button>`;
+}
+
+// Auto refresh ringan setiap 60s supaya semua pengguna nampak update terkini
+let _autoRefT = null;
+function startAutoRefresh(){
+  if(_autoRefT) clearInterval(_autoRefT);
+  _autoRefT = setInterval(()=>{ if(document.visibilityState==='visible') refresh(); }, 60000);
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') refresh(); });
 }
 
 function updatePendingBadge(){
