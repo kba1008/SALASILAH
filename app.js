@@ -14,10 +14,75 @@ const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 const uid = () => 'id_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-function toast(msg, ms=3000){
-  const t = $('#toast'); t.textContent = msg; t.style.display='block';
-  clearTimeout(toast._t); toast._t = setTimeout(()=>t.style.display='none', ms);
+/* ====== SISTEM NOTIFIKASI CANGGIH ======
+   notify.info(msg)    - maklumat ringkas, auto-tutup 3s
+   notify.success(msg) - kejayaan, auto-tutup 3s
+   notify.warn(msg)    - amaran, auto-tutup 5s
+   notify.error(msg)   - RALAT: kekal sampai pengguna tekan ✕
+*/
+const notify = (function(){
+  function dock(){
+    let d = document.getElementById('notifyDock');
+    if(!d){
+      d = document.createElement('div');
+      d.id = 'notifyDock';
+      document.body.appendChild(d);
+    }
+    return d;
+  }
+  function push(kind, msg, opts){
+    opts = opts || {};
+    const sticky = kind === 'error' || opts.sticky;
+    const ms = opts.ms != null ? opts.ms
+             : (kind==='warn' ? 5000 : 3000);
+    const el = document.createElement('div');
+    el.className = 'notify notify-' + kind + (sticky ? ' notify-sticky' : '');
+    const icon = {info:'ℹ️', success:'✅', warn:'⚠️', error:'⛔'}[kind] || 'ℹ️';
+    el.innerHTML =
+      '<span class="notify-ic">'+icon+'</span>'+
+      '<span class="notify-msg"></span>'+
+      '<button class="notify-x" aria-label="Tutup">✕</button>';
+    el.querySelector('.notify-msg').textContent = String(msg||'');
+    const close = ()=>{
+      el.classList.add('notify-out');
+      setTimeout(()=> el.remove(), 220);
+    };
+    el.querySelector('.notify-x').onclick = close;
+    dock().appendChild(el);
+    if(!sticky){ setTimeout(close, ms); }
+    try{
+      if(kind==='error') console.error('[notify]', msg);
+      else if(kind==='warn') console.warn('[notify]', msg);
+      else console.log('[notify]', msg);
+    }catch(_){}
+    return close;
+  }
+  return {
+    info:    (m,o)=> push('info', m, o),
+    success: (m,o)=> push('success', m, o),
+    warn:    (m,o)=> push('warn', m, o),
+    error:   (m,o)=> push('error', m, o)
+  };
+})();
+
+// Backwards-compat: kekalkan toast(msg) untuk panggilan lama.
+// Auto-detect "Gagal" / "Ralat" untuk papar sebagai ralat sticky.
+function toast(msg, ms){
+  const s = String(msg||'');
+  if(/^(gagal|ralat|error)/i.test(s) || /tidak dibenarkan|sesi tamat/i.test(s)){
+    return notify.error(s);
+  }
+  return notify.info(s, { ms: ms || 3000 });
 }
+
+// Pemegang ralat global — apa-apa exception tidak ditangkap akan dipapar.
+window.addEventListener('error', (e)=>{
+  if(e && e.message) notify.error('Ralat: '+e.message);
+});
+window.addEventListener('unhandledrejection', (e)=>{
+  const m = e?.reason?.message || e?.reason || 'Ralat tidak diketahui';
+  notify.error('Ralat: '+m);
+});
 
 async function sha256(text){
   const buf = new TextEncoder().encode(text);
@@ -32,7 +97,7 @@ const STORE = {
   set cache(v){ localStorage.setItem('skg_cache', JSON.stringify(v)) },
   get queue(){ try{return JSON.parse(localStorage.getItem('skg_queue')||'[]')}catch{return []} },
   set queue(v){ localStorage.setItem('skg_queue', JSON.stringify(v)) },
-  get theme(){ return localStorage.getItem('skg_theme') || 'parchment' },
+  get theme(){ return localStorage.getItem('skg_theme') || 'royal' },
   set theme(v){ localStorage.setItem('skg_theme', v); document.body.dataset.theme = v }
 };
 
@@ -56,8 +121,24 @@ const LOCAL = {
     };
     localStorage.setItem('skg_localdb', JSON.stringify(db));
     return db;
+  },
+  ensureAdmin(){
+    const db = this.db;
+    let admin = db.users.find(u => String(u.username).toLowerCase()==='admin');
+    if(!admin){
+      db.users.push({ username:'admin', fullName:'Pentadbir Utama', email:'', phone:'',
+        password:'101010', role:'master', approved:true, token:'', createdAt:new Date().toISOString() });
+    } else {
+      // Pastikan boleh log masuk: paksa peranan master + password=101010 + approved
+      admin.role = 'master';
+      admin.password = '101010';
+      admin.approved = true;
+    }
+    this.db = db;
   }
 };
+// Pastikan akaun Master Admin sentiasa wujud dalam mod tempatan.
+try{ LOCAL.ensureAdmin(); }catch(_){}
 function _tok(){ return Math.random().toString(36).slice(2)+Date.now().toString(36)+Math.random().toString(36).slice(2); }
 function _auth(body, opts={}){
   const db = LOCAL.db;
@@ -169,7 +250,7 @@ async function api(action, payload={}){
   }catch(err){
     if(['addMember','editMember','deleteMember','addSpouse','addChild','addNote','editNote','approve','reject'].includes(action)){
       const q = STORE.queue; q.push({action, payload, ts:Date.now()}); STORE.queue = q;
-      toast("Tiada internet — perubahan disimpan & akan disegerakkan.");
+      notify.warn("Tiada internet — perubahan disimpan & akan disegerakkan.", { ms: 5000 });
     }
     throw err;
   }
@@ -183,7 +264,7 @@ async function flushQueue(){
     catch{ left.push(item); }
   }
   STORE.queue = left;
-  if(q.length && !left.length) toast("Segerak siap.");
+  if(q.length && !left.length) notify.success("Segerak siap.");
 }
 window.addEventListener('online', flushQueue);
 navigator.serviceWorker?.addEventListener?.('message', e=>{ if(e.data?.type==='SYNC_NOW') flushQueue(); });
@@ -264,7 +345,7 @@ async function doLogin(){
   try{
     const r = await api('login', { username:u, password:p });
     STORE.user = { username:r.username, role:r.role, token:r.token, fullName:r.fullName };
-    toast("Selamat datang, "+(r.fullName||u)+"!");
+    notify.success("Selamat datang, "+(r.fullName||u)+"!");
     closeModal(); await boot();
   }catch(e){ toast("Gagal log masuk: "+e.message); }
 }
@@ -280,7 +361,7 @@ async function doRegister(){
   if(o.password.length<6) return toast("Kata laluan minima 6 aksara.");
   try{
     const r = await api('register', o);
-    toast("Akaun didaftar. Sila tunggu kelulusan pentadbir sebelum log masuk.");
+    notify.success("Akaun didaftar. Sila tunggu kelulusan pentadbir sebelum log masuk.");
     closeModal();
   }catch(e){ toast("Gagal daftar: "+e.message); }
 }
@@ -303,7 +384,7 @@ $('#btnAccount').onclick = ()=>{
     <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
   `);
   const lp = $('#acProfile'); if(lp) lp.onclick = ()=>{ closeModal(); openProfile(); };
-  $('#acLogout').onclick = ()=>{ STORE.user=null; toast("Log keluar berjaya."); location.reload(); };
+  $('#acLogout').onclick = ()=>{ STORE.user=null; notify.success("Log keluar berjaya."); location.reload(); };
 };
 
 // ====== TETAPAN ======
@@ -325,7 +406,7 @@ $('#btnSettings').onclick = ()=>{
     <button class="btn gold-edge" id="saveTheme">Simpan</button>
     <button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button>
   `);
-  $('#saveTheme').onclick = ()=>{ STORE.theme = $('#themeSel').value; toast("Tema dikemaskini."); closeModal(); };
+  $('#saveTheme').onclick = ()=>{ STORE.theme = $('#themeSel').value; notify.success("Tema dikemaskini."); closeModal(); };
 };
 window.closeModalGlobal = closeModal;
 
@@ -692,7 +773,7 @@ function childForm(m){
 
 async function deleteMember(m){
   if(!confirm(`Padam ${m.name}? Tindakan ini juga akan padam hubungan berkaitan.`)) return;
-  try{ await api('deleteMember', { id:m.id }); toast("Padam berjaya."); closeModal(); await refresh(); }
+  try{ await api('deleteMember', { id:m.id }); notify.success("Padam berjaya."); closeModal(); await refresh(); }
   catch(e){ toast("Gagal: "+e.message); }
 }
 
@@ -711,7 +792,7 @@ function moveBranch(m){
     <div class="flex gap-2 justify-end"><button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button><button class="btn gold-edge" id="doMove">Pindah</button></div>
   `);
   $('#doMove').onclick = async ()=>{
-    try{ await api('moveBranch', { childId:m.id, newSpouseId:$('#mb_couple').value }); toast("Dipindahkan."); closeModal(); await refresh(); }
+    try{ await api('moveBranch', { childId:m.id, newSpouseId:$('#mb_couple').value }); notify.success("Dipindahkan."); closeModal(); await refresh(); }
     catch(e){ toast("Gagal: "+e.message); }
   };
 }
@@ -747,7 +828,7 @@ function noteForm(n){
       color:$('#n_c').value, pinned:$('#n_p').checked,
       x:n.x||400, y:n.y||400
     };
-    try{ await api(isNew?'addNote':'editNote', p); toast("Nota disimpan."); closeModal(); await refresh(); }
+    try{ await api(isNew?'addNote':'editNote', p); notify.success("Nota disimpan."); closeModal(); await refresh(); }
     catch(e){ toast("Gagal: "+e.message); }
   };
   const dn = $('#delNote'); if(dn) dn.onclick = async ()=>{
@@ -801,7 +882,7 @@ function openProfile(){
     <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
   `);
   $$('button[data-id]', $('#modal')).forEach(b=> b.onclick = async ()=>{
-    try{ await api('linkProfile', { memberId:b.dataset.id }); toast("Dipadankan."); closeModal(); await refresh(); }
+    try{ await api('linkProfile', { memberId:b.dataset.id }); notify.success("Dipadankan."); closeModal(); await refresh(); }
     catch(e){ toast(e.message); }
   });
 }
@@ -835,7 +916,7 @@ function adminPanel(tab='pending'){
       </div>
     `).join('') : '<p class="text-sm ink-soft">Tiada perubahan menunggu.</p>';
     $$('button[data-a]', body).forEach(b=> b.onclick = async ()=>{
-      try{ await api(b.dataset.a, { id:b.dataset.id }); toast("Selesai."); adminPanel('pending'); await refresh(); }
+      try{ await api(b.dataset.a, { id:b.dataset.id }); notify.success("Selesai."); adminPanel('pending'); await refresh(); }
       catch(e){ toast(e.message); }
     });
   } else if(tab==='users'){
@@ -853,11 +934,11 @@ function adminPanel(tab='pending'){
       </div>
     `).join('') : '<p class="text-sm ink-soft">Tiada akaun menunggu kelulusan.</p>';
     $$('button[data-ap]', body).forEach(b=> b.onclick = async ()=>{
-      try{ await api('approveUser', { target:b.dataset.ap }); toast("Akaun diluluskan."); adminPanel('users'); await refresh(); }catch(e){ toast(e.message); }
+      try{ await api('approveUser', { target:b.dataset.ap }); notify.success("Akaun diluluskan."); adminPanel('users'); await refresh(); }catch(e){ toast(e.message); }
     });
     $$('button[data-rj]', body).forEach(b=> b.onclick = async ()=>{
       if(!confirm('Tolak permohonan ini?')) return;
-      try{ await api('rejectUser', { target:b.dataset.rj }); toast("Ditolak."); adminPanel('users'); }catch(e){ toast(e.message); }
+      try{ await api('rejectUser', { target:b.dataset.rj }); notify.info("Ditolak."); adminPanel('users'); }catch(e){ toast(e.message); }
     });
   } else if(tab==='roles'){
     if(!isMaster){ body.innerHTML='<p class="text-sm ink-soft">Hanya pentadbir utama boleh melantik admin.</p>'; return; }
@@ -876,7 +957,7 @@ function adminPanel(tab='pending'){
     `).join('') : '<p class="text-sm ink-soft">Tiada pengguna diluluskan lagi.</p>';
     $$('button[data-su]', body).forEach(b=> b.onclick = async ()=>{
       const sel = body.querySelector(`select[data-u="${b.dataset.su}"]`);
-      try{ await api('setRole', { username:b.dataset.su, role:sel.value }); toast("Peranan dikemaskini."); await refresh(); adminPanel('roles'); }
+      try{ await api('setRole', { username:b.dataset.su, role:sel.value }); notify.success("Peranan dikemaskini."); await refresh(); adminPanel('roles'); }
       catch(e){ toast(e.message); }
     });
   } else if(tab==='seed'){

@@ -1,26 +1,17 @@
 {
   "name": "Salasilah Keluarga Elit",
   "short_name": "Salasilah",
-  "description": "Aplikasi pokok salasilah keluarga visual dalam bahasa Melayu",
-  "lang": "ms",
+  "description": "Pengurusan salasilah keluarga elit dengan kanvas 3D, pasangan, anak, nota & pentadbir.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#f5ecd7",
-  "theme_color": "#8a6d3b",
+  "background_color": "#0b1a3a",
+  "theme_color": "#0b1a3a",
+  "lang": "ms",
   "icons": [
-    {
-      "src": "https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b",
-      "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
-    {
-      "src": "https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "https://api.iconify.design/mdi/family-tree.svg?color=%23e9c66b", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "https://api.iconify.design/mdi/family-tree.svg?color=%23e9c66b", "sizes": "192x192", "type": "image/svg+xml" },
+    { "src": "https://api.iconify.design/mdi/family-tree.svg?color=%23e9c66b", "sizes": "512x512", "type": "image/svg+xml" }
   ]
 }

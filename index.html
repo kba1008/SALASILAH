@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes" />
-<meta name="theme-color" content="#8a6d3b" id="metaTheme" />
+<meta name="theme-color" content="#0b1a3a" id="metaTheme" />
 <title>Salasilah Keluarga Elit</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="https://api.iconify.design/mdi/family-tree.svg?color=%238a6d3b" />
@@ -177,14 +177,44 @@
   }
   .field input:focus, .field select:focus, .field textarea:focus{ border-color:var(--gold); box-shadow:0 0 0 3px color-mix(in oklab, var(--gold) 30%, transparent);}
 
-  /* Toast */
-  #toast{
-    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  /* Notifikasi (info/success/warn/error) — bertindan di bawah skrin */
+  #notifyDock{
+    position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+    z-index:90; display:flex; flex-direction:column; gap:8px;
+    width:min(440px, 94vw); pointer-events:none;
+  }
+  .notify{
+    pointer-events:auto;
+    display:grid; grid-template-columns:auto 1fr auto; align-items:flex-start;
+    gap:.6rem; padding:.7rem .9rem; border-radius:.85rem;
     background:linear-gradient(180deg, var(--card), var(--card-2));
     color:var(--ink); border:1px solid var(--line);
-    padding:.7rem 1rem; border-radius:.8rem; box-shadow:0 10px 30px -10px var(--shadow);
-    z-index:80; display:none; max-width:90vw; text-align:center;
+    box-shadow:0 14px 36px -12px var(--shadow), 0 4px 10px -4px var(--shadow);
+    font-size:.9rem; line-height:1.35;
+    transform:translateY(10px); opacity:0;
+    animation:notifyIn .22s cubic-bezier(.2,.7,.2,1) forwards;
   }
+  .notify-out{ animation:notifyOut .2s ease forwards; }
+  @keyframes notifyIn{ to{ transform:translateY(0); opacity:1; } }
+  @keyframes notifyOut{ to{ transform:translateY(6px); opacity:0; } }
+  .notify-ic{ font-size:1.1rem; line-height:1.2; }
+  .notify-msg{ word-break:break-word; }
+  .notify-x{
+    background:transparent; border:0; color:var(--ink-soft);
+    cursor:pointer; font-size:1rem; padding:.05rem .35rem; border-radius:.4rem;
+  }
+  .notify-x:hover{ background:color-mix(in oklab, var(--ink) 10%, transparent); color:var(--ink); }
+  .notify-info    { border-color: color-mix(in oklab, var(--line) 60%, transparent); }
+  .notify-success { border-color: color-mix(in oklab, var(--ok) 65%, transparent);
+                    box-shadow:0 14px 36px -12px var(--shadow), 0 0 0 1px color-mix(in oklab, var(--ok) 35%, transparent) inset; }
+  .notify-warn    { border-color: color-mix(in oklab, var(--gold) 75%, transparent);
+                    background:linear-gradient(180deg, color-mix(in oklab, var(--gold-2) 25%, var(--card)), var(--card-2)); }
+  .notify-error   { border-color: color-mix(in oklab, var(--danger) 75%, transparent);
+                    background:linear-gradient(180deg, color-mix(in oklab, var(--danger) 14%, var(--card)), var(--card-2));
+                    box-shadow:0 18px 40px -10px color-mix(in oklab, var(--danger) 40%, var(--shadow)),
+                               0 0 0 1px color-mix(in oklab, var(--danger) 45%, transparent) inset; }
+  .notify-sticky .notify-x{ color:var(--danger); font-weight:800; }
+  .notify-sticky .notify-x:hover{ background:color-mix(in oklab, var(--danger) 18%, transparent); }
 
   /* Splash */
   #splash{
@@ -238,7 +268,7 @@
   }
 </style>
 </head>
-<body data-theme="parchment">
+<body data-theme="royal">
 
 <!-- SPLASH -->
 <div id="splash">
@@ -295,8 +325,8 @@
   <button class="gold-edge" id="zReset" title="Reset">⟲</button>
 </div>
 
-<!-- TOAST -->
-<div id="toast"></div>
+<!-- NOTIFIKASI -->
+<div id="notifyDock"></div>
 
 <!-- MODAL ROOT -->
 <div class="scrim" id="scrim">
