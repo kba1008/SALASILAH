@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyfby28I7YY06M3YQfYFA1xkC9roVUH9t7ANVvIVV_dZ5O51C3wTLItlIk2gb-fd1Pl/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbycYAjCXDtZKQ1Pm5rOujMeKDHLIDYf9YqUydRiaj8iEzpSi0in_wMEHIYQjrO1cn9T/exec";
 
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
@@ -461,6 +461,16 @@ $('#zOut').onclick = ()=> panzoomInstance?.zoomOut();
 $('#zReset').onclick = ()=> panzoomInstance?.reset();
 $('#btnZoomFit').onclick = ()=> panzoomInstance?.reset();
 
+// Susunan paparan mengikut header Google Sheet SALASILAH.
+// Tambah/ubah di sini sahaja apabila kolum baharu ditambah — paparan tidak akan lari.
+const MEMBER_FIELDS = [
+  { key:'place',      label:'Tempat/Asal', adminOnly:true },
+  { key:'address',    label:'Alamat',      adminOnly:true },
+  { key:'fatherName', label:'Bapa',        adminOnly:false },
+  { key:'motherName', label:'Ibu',         adminOnly:false },
+  { key:'notes',      label:'Catatan',     adminOnly:true },
+];
+
 function openMemberMenu(m){
   const role = STORE.user?.role;
   const isAdmin = ['admin','master'].includes(role);
@@ -474,14 +484,11 @@ function openMemberMenu(m){
         <div class="ps">${m.gender==='F'?'Perempuan':'Lelaki'} • ${m.alive===false?'Allahyarham':'Hidup'} • ${escapeHtml(m.birth||'?')}${m.alive===false?' – '+escapeHtml(m.death||'?'):''}</div>
       </div>
     </div>`;
-  const rows = [];
-  if(isAdmin && m.place) rows.push(`<div><b>Tempat/Asal:</b> ${escapeHtml(m.place)}</div>`);
-  if(isAdmin && m.address) rows.push(`<div><b>Alamat:</b> ${escapeHtml(m.address)}</div>`);
-  if(m.fatherName) rows.push(`<div><b>Bapa:</b> ${escapeHtml(m.fatherName)}</div>`);
-  if(m.motherName) rows.push(`<div><b>Ibu:</b> ${escapeHtml(m.motherName)}</div>`);
-  if(isAdmin && m.notes) rows.push(`<div><b>Catatan:</b> ${escapeHtml(m.notes)}</div>`);
+  const rows = MEMBER_FIELDS
+    .filter(f => (!f.adminOnly || isAdmin) && m[f.key])
+    .map(f => `<div><b>${f.label}:</b> ${escapeHtml(m[f.key])}</div>`);
   const adminInfo = rows.length ? `<div class="profile-info bevel-soft">${rows.join('')}</div>` : '';
-  
+
   openModal(basic + adminInfo + `
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
       ${role?'<button class="btn gold-edge justify-center" data-act="edit">✏️ '+(isAdmin?'Edit':'Cadang Edit')+'</button>':''}

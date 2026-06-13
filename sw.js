@@ -1,5 +1,5 @@
 /* Salasilah Keluarga Elit — Service Worker (PWA) */
-const CACHE = 'skg-v1.6';
+const CACHE = 'skg-v1.7';
 const ASSETS = [
   './',
   './index.html',
