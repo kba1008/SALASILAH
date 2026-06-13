@@ -46,7 +46,7 @@ function doPost(e) {
   }
 }
 function doGet() {
-  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '2.1' });
+  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '3.2' });
 }
 function json(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
@@ -454,7 +454,7 @@ const HANDLERS = {
     const members = rawMembers.map(m => {
       const t = tagFor(m);
       if (isAdmin) return { ...m, _tag: t.tag, _memberId: t.memberId };
-      return { id:m.id, name:m.name, gender:m.gender, alive:m.alive, photo:m.photo, birth:m.birth, death:m.death, fatherName:m.fatherName, motherName:m.motherName, place:m.place, posX:m.posX, posY:m.posY, _tag:t.tag, _memberId:t.memberId };
+      return { id:m.id, name:m.name, gender:m.gender, alive:m.alive, photo:m.photo, birth:m.birth, death:m.death, fatherName:m.fatherName, motherName:m.motherName, place:m.place, posX:m.posX, posY:m.posY, isHead:m.isHead, _tag:t.tag, _memberId:t.memberId };
     });
 
     const spouses = readAll('PASANGAN');
@@ -729,9 +729,9 @@ const HANDLERS = {
     return { ok: true, updated: updated };
   },
 
-  // Admin menetapkan Kepala Salasilah (puncak family tree) untuk sesebuah keluarga.
-  // Hanya satu kepala bagi setiap keluarga: bersihkan isHead untuk seluruh subtree,
-  // kemudian tandakan ahli yang dipilih.
+  // Admin menetapkan Kepala Salasilah. Pilihan admin adalah muktamad:
+  // bersihkan semua isHead dalam keluarga yang bersambung, kemudian tandakan id pilihan.
+  // Ini mengelak kepala root berpindah sendiri kepada pasangan/root lain.
   setHead(body) {
     requireAuth(body, ['admin','master']);
     const id = body.id;
@@ -745,6 +745,15 @@ const HANDLERS = {
         const partner = String(s.husbandId)===String(cur) ? s.wifeId
                        : (String(s.wifeId)===String(cur) ? s.husbandId : null);
         if (partner && !set[partner]) { set[partner] = true; queue.push(partner); }
+      });
+      children.forEach(function(c){
+        if (String(c.childId) !== String(cur)) return;
+        spouses.filter(function(s){ return String(s.id) === String(c.spouseId); })
+          .forEach(function(s){
+            [s.husbandId, s.wifeId].forEach(function(parentId){
+              if (parentId && !set[parentId]) { set[parentId] = true; queue.push(parentId); }
+            });
+          });
       });
       spouses.filter(function(s){ return String(s.husbandId)===String(cur) || String(s.wifeId)===String(cur); })
         .forEach(function(s){
@@ -767,8 +776,7 @@ const HANDLERS = {
   },
 
   // Admin menyahkan (membuang) status Kepala Salasilah daripada seorang ahli.
-  // Selepas ini, sistem akan auto-pilih semula moyang teratas sebagai kepala
-  // (kerana tiada lagi kepala yang ditetapkan secara manual untuk keluarga itu).
+  // Selepas ini, tiada kepala akan ditanda sehingga admin lantik semula.
   unsetHead(body) {
     requireAuth(body, ['admin','master']);
     const id = body.id;

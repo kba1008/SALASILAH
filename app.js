@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbwVWqJFyHR6reiio7CI38CTbzuo7o4ufHR13UVAishaz8tARgn6Z-DMNucw-1ISrEWe/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyA1ORvxar-f3wQ4C6yR6UehN4TrQ7gi-P8pjJT251GdWGw6jp2DedoebUxwHm2Dv8T/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -227,7 +227,7 @@ function loginForm(){
   openModal(`
     <div class="flex items-center justify-between mb-3">
       <div class="font-head text-2xl">Selamat Datang</div>
-      <div class="chip gold-edge">v2.1</div>
+      <div class="chip gold-edge">v3.2</div>
     </div>
     <div class="flex gap-2 mb-4">
       <button class="tab active" data-tab="login">Log Masuk</button>
@@ -725,32 +725,14 @@ function isHeadFlag(m){
   const v = m && m.isHead;
   return v===true || v===1 || v==='1' || String(v).toLowerCase()==='true';
 }
-// "Kepala Root" = SATU ahli puncak bagi setiap keluarga (moyang teratas).
-// Hanya kepala root ini yang menggerakkan KESELURUHAN family tree apabila
-// diseret. Pasangan kepala, anak-anak, & menantu boleh digerakkan sendiri.
-// ADMIN yang menentukan kepala (m.isHead). Jika tiada yang ditetapkan untuk
-// sesebuah keluarga, sistem auto-pilih moyang teratas (ikut tahun lahir/nama).
+// "Kepala Root" = ahli yang DITANDA oleh admin sahaja.
+// Jika admin nyahkan tanda kepala, tiada kad akan memakai crown/gerak seluruh
+// tree sehingga admin lantik semula. Ini mengelak sistem auto-pindahkan tag
+// kepada pasangan atau root lain tanpa arahan admin.
 function getHeadRoots(){
   const MEMBERS = getRenderMembers();
-  const CHILDREN = getRenderChildren();
-  const childIds = new Set(CHILDREN.map(c=>c.childId));
-  const roots = MEMBERS.filter(m=>!childIds.has(m.id)).sort((a,b)=>{
-    const ka=_sortKey(a), kb=_sortKey(b); return ka[0]-kb[0] || (ka[1]<kb[1]?-1:1);
-  });
   const heads = new Set();
-  const claimed = new Set();
-  // 1) Utamakan kepala yang DITETAPKAN admin.
-  roots.forEach(r=>{
-    if(claimed.has(r.id) || !isHeadFlag(r)) return;
-    heads.add(r.id);
-    getSubtreeIds(r.id).forEach(id=>claimed.add(id));
-  });
-  // 2) Untuk keluarga yang belum ada kepala ditetapkan — auto-pilih.
-  roots.forEach(r=>{
-    if(claimed.has(r.id)) return;
-    heads.add(r.id);
-    getSubtreeIds(r.id).forEach(id=>claimed.add(id)); // tuntut seluruh keluarga
-  });
+  MEMBERS.forEach(m=>{ if(isHeadFlag(m)) heads.add(m.id); });
   return heads;
 }
 function isHeadRoot(id){ return getHeadRoots().has(id); }
@@ -1006,7 +988,7 @@ function openMemberMenu(m){
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="note">📝 Tambah Nota</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="move">🔀 Pindah Cabang</button>':''}
       ${isAdmin&&isRootMember(m.id)&&!isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="sethead">👑 Jadikan Kepala</button>':''}
-      ${isAdmin&&isRootMember(m.id)&&isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="unsethead">🚫 Nyahkan Kepala</button>':''}
+      ${isAdmin&&isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="unsethead">🚫 Nyahkan Kepala</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
     </div>
     ${lockedByOther?`<div class="bevel-soft rounded-lg p-2 mt-2 text-sm ink-soft">🔒 Sedang diedit oleh <b>@${escapeHtml(lock.user)}</b>. Edit dibuka semula selepas pentadbir membuat keputusan.</div>`:''}
