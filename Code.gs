@@ -365,6 +365,29 @@ function approveDraftSpouseIfNeeded(spouseId, owner, approver) {
   updateRow('PENDING', 'id', draft.id, { status:'approved', approvedBy:approver, approvedAt:now() });
 }
 
+
+// ===== Tetapan Sistem (master sahaja) =====
+// dragEnabled        : benarkan seret kotak salasilah
+// autoLayoutEnabled  : benarkan butang Auto Susun
+// manualPositionsEnabled : guna posX/posY tersimpan (jika false, paksa auto-layout)
+function _settingsProps(){ return PropertiesService.getDocumentProperties(); }
+function getSystemSettings(){
+  const p = _settingsProps();
+  function rd(k, def){ const v = p.getProperty(k); if(v===null||v===undefined||v==='') return def; return v==='true'; }
+  return {
+    dragEnabled:            rd('SET_dragEnabled', true),
+    autoLayoutEnabled:      rd('SET_autoLayoutEnabled', true),
+    manualPositionsEnabled: rd('SET_manualPositionsEnabled', true)
+  };
+}
+function setSystemSettings(obj){
+  const p = _settingsProps();
+  ['dragEnabled','autoLayoutEnabled','manualPositionsEnabled'].forEach(function(k){
+    if (obj && obj[k] !== undefined) p.setProperty('SET_'+k, obj[k] ? 'true' : 'false');
+  });
+  return getSystemSettings();
+}
+
 const HANDLERS = {
   register(body) {
     ensureSheets();
@@ -494,7 +517,7 @@ const HANDLERS = {
             : { username:x.username, fullName:x.fullName, role:x.role, approved:x.approved, memberId:x.memberId, whatsapp:x.whatsapp, phone:x.phone, photo:x.photo })
       : [];
 
-    return { ok: true, data: { members, spouses, children, notes, pending, returnedDrafts, pendingLog, pendingUsers, users, publicUsers, viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null }};
+    return { ok: true, data: { members, spouses, children, notes, pending, returnedDrafts, pendingLog, pendingUsers, users, publicUsers, settings: getSystemSettings(), viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null }};
   },
 
   approveUser(body) {
@@ -705,6 +728,15 @@ const HANDLERS = {
     deleteRow('PENDING', 'id', p.id);
     return { ok:true };
   },
+  getSettings(body) {
+    // Boleh dipanggil oleh sesiapa sahaja (termasuk pelawat) — pelawat perlu tahu had.
+    return { ok: true, settings: getSystemSettings() };
+  },
+  setSettings(body) {
+    requireAuth(body, ['master']);
+    const next = setSystemSettings(body.settings || {});
+    return { ok: true, settings: next };
+  },
   setRole(body) {
     const u = requireAuth(body, ['admin','master']);
     if (body.role==='master' && u.role!=='master') throw new Error('Hanya master boleh berikan peranan master.');
@@ -715,6 +747,10 @@ const HANDLERS = {
   },
   setPositions(body) {
     const u = requireAuth(body);
+    const isMaster = u.role === 'master';
+    const settings = getSystemSettings();
+    if (!isMaster && settings.dragEnabled === false) throw new Error('Fungsi seret kad telah dimatikan oleh pentadbir utama.');
+    if (!isMaster && settings.manualPositionsEnabled === false) throw new Error('Kedudukan manual telah dimatikan oleh pentadbir utama.');
     const list = Array.isArray(body.positions) ? body.positions : [];
     const junctions = Array.isArray(body.junctions) ? body.junctions : [];
     let updated = 0;

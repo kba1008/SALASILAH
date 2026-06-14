@@ -551,12 +551,16 @@ function autoLayout(){
 
 function buildLayout(){
   const placed = autoLayout();
+  // Hormati tetapan master: jika kedudukan manual dimatikan, paksa auto-layout.
+  const manualOn = (DATA.settings?.manualPositionsEnabled !== false);
   // Override dengan kedudukan tersimpan (admin telah seret kotak secara manual)
-  getRenderMembers().forEach(m=>{
-    if(m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY)){
-      placed[m.id] = { x: Number(m.posX), y: Number(m.posY) };
-    }
-  });
+  if(manualOn){
+    getRenderMembers().forEach(m=>{
+      if(m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY)){
+        placed[m.id] = { x: Number(m.posX), y: Number(m.posY) };
+      }
+    });
+  }
   return placed;
 }
 
@@ -1088,10 +1092,23 @@ function getHeadRoots(){
 }
 function isHeadRoot(id){ return getHeadRoots().has(id); }
 let _dragState = null;
+function canDragCards(){
+  const u = STORE.user;
+  if(!u) return false; // pelawat tidak dibenarkan seret
+  if(u.role === 'master') return true; // master sentiasa boleh
+  return (DATA.settings?.dragEnabled !== false);
+}
 function enableNodeDrag(el, id, layout){
+  // Pelawat / tetapan master mematikan seret: kunci sepenuhnya.
+  if(!canDragCards()){
+    el.style.touchAction = '';
+    el.style.cursor = '';
+    return;
+  }
   el.style.touchAction = 'none';
   el.addEventListener('pointerdown', (e)=>{
     if(e.button && e.button!==0) return;
+    if(!canDragCards()) return;
     // jangan ganggu klik pada gambar / butang dalam kad
     if(e.target.closest('.lb-img,button,a,input,select,textarea')) return;
     e.stopPropagation();
@@ -1547,7 +1564,7 @@ function openMemberMenu(m){
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="move">🔀 Pindah Cabang</button>':''}
       ${isAdmin&&isRootMember(m.id)&&!isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="sethead">👑 Jadikan Kepala</button>':''}
       ${isAdmin&&isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="unsethead">🚫 Nyahkan Kepala</button>':''}
-      ${isAdmin&&isHeadFlag(m)?'<button class="btn gold-edge justify-center" data-act="autohead" title="Susun automatik semua pasangan & keturunan di bawah kepala ini (3 variasi berkitar)">🌳 Auto Susun Cabang</button>':''}
+      ${isAdmin&&isHeadFlag(m)&&(DATA.settings?.autoLayoutEnabled!==false)?'<button class="btn gold-edge justify-center" data-act="autohead" title="Susun automatik semua pasangan & keturunan di bawah kepala ini (3 variasi berkitar)">🌳 Auto Susun Cabang</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
     </div>
     ${lockedByOther?`<div class="bevel-soft rounded-lg p-2 mt-2 text-sm ink-soft">🔒 Sedang diedit oleh <b>@${escapeHtml(lock.user)}</b>. Edit dibuka semula selepas pentadbir membuat keputusan.</div>`:''}
@@ -1843,6 +1860,7 @@ function adminPanel(tab='pending'){
       <button class="tab ${tab==='members'?'active':''}" data-t="members">Senarai Ahli</button>
       <button class="tab ${tab==='log'?'active':''}" data-t="log">Log Lulus</button>
       <button class="tab ${tab==='seed'?'active':''}" data-t="seed">Cipta Akar</button>
+      ${STORE.user?.role==='master' ? `<button class="tab ${tab==='settings'?'active':''}" data-t="settings">⚙️ Tetapan Sistem</button>` : ''}
     </div>
     <div id="adminBody" class="max-h-[60vh] overflow-y-auto pr-2 niceScroll"></div>
     <div class="text-right mt-3"><button class="btn btn-ghost" onclick="closeModalGlobal()">Tutup</button></div>
@@ -1913,6 +1931,53 @@ function adminPanel(tab='pending'){
   } else if(tab==='seed'){
     body.innerHTML = `<button class="btn gold-edge" id="seedBtn">+ Tambah Moyang Pertama</button>`;
     $('#seedBtn').onclick = ()=>{ closeModal(); memberForm(null); };
+  } else if(tab==='settings'){
+    if(STORE.user?.role!=='master'){
+      body.innerHTML = '<p class="text-sm ink-soft">Hanya Pentadbir Utama (Master) boleh akses tetapan ini.</p>';
+    } else {
+      const s = DATA.settings || { dragEnabled:true, autoLayoutEnabled:true, manualPositionsEnabled:true };
+      body.innerHTML = `
+        <p class="text-xs ink-soft mb-3">Tetapan ini terpakai untuk <b>SEMUA pengguna</b> (termasuk admin & pelawat). Hanya Master boleh ubah. Master sendiri tidak terikat dengan had ini.</p>
+        <div class="bevel-soft rounded-lg p-3 mb-2 flex items-center justify-between gap-3">
+          <div>
+            <div><b>🖱️ Fungsi Seret Kad (Drag)</b></div>
+            <div class="text-xs ink-soft">Benarkan admin & ahli menyeret kad salasilah pada kanvas.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="st_drag" ${s.dragEnabled!==false?'checked':''}><span></span></label>
+        </div>
+        <div class="bevel-soft rounded-lg p-3 mb-2 flex items-center justify-between gap-3">
+          <div>
+            <div><b>🌳 Mod Auto Susun</b></div>
+            <div class="text-xs ink-soft">Benarkan butang Auto Susun Cabang pada kad Kepala.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="st_auto" ${s.autoLayoutEnabled!==false?'checked':''}><span></span></label>
+        </div>
+        <div class="bevel-soft rounded-lg p-3 mb-3 flex items-center justify-between gap-3">
+          <div>
+            <div><b>📍 Mod Manual (Kedudukan Tersimpan)</b></div>
+            <div class="text-xs ink-soft">Jika dimatikan, sistem akan abaikan kedudukan tersimpan dan paksa susunan automatik.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="st_manual" ${s.manualPositionsEnabled!==false?'checked':''}><span></span></label>
+        </div>
+        <div class="text-right">
+          <button class="btn gold-edge" id="st_save">💾 Simpan Tetapan</button>
+        </div>
+      `;
+      $('#st_save').onclick = async ()=>{
+        const payload = {
+          dragEnabled: $('#st_drag').checked,
+          autoLayoutEnabled: $('#st_auto').checked,
+          manualPositionsEnabled: $('#st_manual').checked
+        };
+        try{
+          const r = await dispatchApi('setSettings', { settings: payload });
+          DATA.settings = r.settings || payload;
+          notify.success('Tetapan sistem dikemaskini. Semua pengguna akan patuh.');
+          applyRoleUI(); renderAll();
+          adminPanel('settings');
+        }catch(e){ toast('Gagal simpan: '+e.message); }
+      };
+    }
   } else if(tab==='log'){
     const log = DATA.pendingLog || [];
     body.innerHTML = log.length ? log.slice().reverse().map(l=>`
@@ -2111,7 +2176,7 @@ async function openProfileEditor(){
 (function injectAdminDragStyle(){
   const css = document.createElement('style');
   css.textContent = `
-    body[data-role="admin"] .node, body[data-role="master"] .node { cursor: move; }
+    body[data-role="admin"][data-drag="on"] .node, body[data-role="master"] .node { cursor: move; }
   `;
   document.head.appendChild(css);
   const orig = applyRoleUI;
@@ -2119,6 +2184,23 @@ async function openProfileEditor(){
     orig();
     const r = STORE.user?.role || '';
     document.body.dataset.role = (r==='admin'||r==='master') ? r : '';
+    const dragOn = (r==='master') || (!!r && (DATA.settings?.dragEnabled !== false));
+    document.body.dataset.drag = dragOn ? 'on' : 'off';
   };
 })();
 
+// Suis on/off untuk tetapan
+(function injectSwitchCss(){
+  if(document.getElementById('skgSwitchCss')) return;
+  const css = document.createElement('style');
+  css.id = 'skgSwitchCss';
+  css.textContent = `
+    .switch{position:relative;display:inline-block;width:48px;height:26px;flex-shrink:0}
+    .switch input{opacity:0;width:0;height:0}
+    .switch span{position:absolute;cursor:pointer;inset:0;background:#888;border-radius:26px;transition:.2s}
+    .switch span:before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+    .switch input:checked + span{background:var(--ok, #2e8b57)}
+    .switch input:checked + span:before{transform:translateX(22px)}
+  `;
+  document.head.appendChild(css);
+})();
