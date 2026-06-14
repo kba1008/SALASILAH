@@ -1,5 +1,5 @@
 /* ================================================================
-   Salasilah Keluarga Elit — app.js v4.4
+   Salasilah Keluarga Elit — app.js v4.7
    ================================================================ */
 
 // ====== KONFIGURASI ======
@@ -9,7 +9,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbyHyAAjUKgiicGrVudxvDHc
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
-const APP_VERSION = '4.4';
+const APP_VERSION = '4.7';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -625,10 +625,12 @@ function findHeadForMember(id){
 
 // 3 tahap jarak profesional — lebih lapang supaya kad draf, pasangan ramai
 // dan cabang besar tidak menghimpit atau menghasilkan garis bertindan.
+// Jarak dikemas (v4.6) — keluarga kecil tidak lagi terpisah terlalu jauh.
+// "padat" = paling rapat, sesuai untuk salasilah baru/sedikit ahli.
 const AUTO_VARIANTS = [
-  { gapX: 132, gapY: GAP_Y * 1.34, branchGap: 160, familyGap: 230, childGap: 126, safeGap: 92,  safeGapY: 58, lineGap: 28, label: 'lapang' },
-  { gapX: 176, gapY: GAP_Y * 1.50, branchGap: 210, familyGap: 302, childGap: 158, safeGap: 122, safeGapY: 72, lineGap: 34, label: 'lega'   },
-  { gapX: 224, gapY: GAP_Y * 1.68, branchGap: 270, familyGap: 386, childGap: 196, safeGap: 154, safeGapY: 88, lineGap: 42, label: 'galeri' },
+  { gapX: 56,  gapY: GAP_Y * 1.05, branchGap: 60,  familyGap: 96,  childGap: 56,  safeGap: 40, safeGapY: 36, lineGap: 22, label: 'padat'  },
+  { gapX: 92,  gapY: GAP_Y * 1.20, branchGap: 110, familyGap: 160, childGap: 90,  safeGap: 64, safeGapY: 46, lineGap: 26, label: 'lapang' },
+  { gapX: 140, gapY: GAP_Y * 1.40, branchGap: 170, familyGap: 240, childGap: 130, safeGap: 96, safeGapY: 60, lineGap: 32, label: 'lega'   },
 ];
 
 function cloneLayout(layout){
@@ -1051,11 +1053,53 @@ async function autoPlaceNew(hints, options){
 
 let panzoomInstance = null;
 function renderAll(){
-  const layout = buildLayout();
+  let layout = buildLayout();
+  // Penapis keselamatan akhir: tiada kad dibenarkan bertindih, walau dari
+  // posisi manual (posX/posY) atau gabungan beberapa cabang. Jaga kepala
+  // salasilah sebagai jangkar supaya keseluruhan pokok tidak teralih.
+  try{
+    const heads = (typeof getHeadRoots==='function') ? Array.from(getHeadRoots()) : [];
+    const anchorId = heads.find(h => layout[h]) || Object.keys(layout)[0];
+    layout = resolveCardCollisions(layout, { gapX: 36, gapY: 28, anchorId });
+  }catch(_){}
   renderNodes(layout);
   renderLinks(layout);
   renderNotes();
+  resizeWorld(layout);
   setupPanzoom();
+}
+
+// Kira saiz minimum #world berdasarkan kedudukan semua kad + nota,
+// supaya garisan SVG tidak terpotong / hilang bila salasilah berkembang
+// melebihi 6000x4000. Juga set viewBox sepadan supaya tiada distorsi.
+function resizeWorld(layout){
+  const world = document.getElementById('world');
+  const svg   = document.getElementById('links');
+  if(!world || !svg) return;
+  const MIN_W = 6000, MIN_H = 4000, PAD = 600;
+  let maxX = MIN_W, maxY = MIN_H;
+  try{
+    const members = (typeof getRenderMembers==='function') ? getRenderMembers() : [];
+    members.forEach(m=>{
+      const pos = (layout && layout[m.id]) || null;
+      if(!pos) return;
+      const x = Number(pos.x)||0, y = Number(pos.y)||0;
+      if(x + NODE_W + PAD > maxX) maxX = x + NODE_W + PAD;
+      if(y + NODE_H + PAD > maxY) maxY = y + NODE_H + PAD;
+    });
+    (DATA.notes||[]).forEach(n=>{
+      const x = Number(n.x)||0, y = Number(n.y)||0;
+      if(x + 260 + PAD > maxX) maxX = x + 260 + PAD;
+      if(y + 160 + PAD > maxY) maxY = y + 160 + PAD;
+    });
+  }catch(_){}
+  const W = Math.ceil(maxX), H = Math.ceil(maxY);
+  world.style.width  = W + 'px';
+  world.style.height = H + 'px';
+  svg.setAttribute('width',  W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
 }
 
 function renderNodes(layout){

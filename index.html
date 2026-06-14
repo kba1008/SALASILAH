@@ -112,6 +112,7 @@
     #world {
       position:relative; width:6000px; height:4000px;
       transform-origin:0 0;
+      /* width/height ditetap semula secara dinamik dari app.js mengikut saiz salasilah */
     }
 
     .node {
@@ -568,7 +569,7 @@
 
   <main id="stage">
     <div id="world">
-      <svg class="links" id="links" viewBox="0 0 6000 4000" preserveAspectRatio="none"></svg>
+      <svg class="links" id="links" width="6000" height="4000" viewBox="0 0 6000 4000" preserveAspectRatio="xMinYMin meet"></svg>
       <div id="nodes"></div>
       <div id="notes"></div>
     </div>
