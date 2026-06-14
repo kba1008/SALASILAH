@@ -23,6 +23,7 @@ const TELEGRAM_CHAT_ID = '';   // [PILIHAN] Masukkan chat ID kumpulan/admin
 // Akaun MASTER ADMIN Ditanam di sini! Ia akan Bypass (langkau) Google Sheet.
 const MASTER_USERNAME = 'milokopi';
 const MASTER_PASSWORD = '101010';
+const APP_VERSION = '4.1';
 
 const SHEETS = {
   PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
@@ -39,14 +40,14 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
     const handler = HANDLERS[action];
-    if (!handler) return json({ ok: false, error: 'Tindakan tidak dikenali: ' + action });
+    if (!handler) return json({ ok: false, error: 'Tindakan tidak dikenali: ' + action + ' — pelayan ini masih versi lama / belum dikemaskini.', version: APP_VERSION, actions: Object.keys(HANDLERS) });
     return json(handler(body) || { ok: true });
   } catch (err) {
     return json({ ok: false, error: String(err && err.message || err) });
   }
 }
 function doGet() {
-  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: '3.2' });
+  return json({ ok: true, msg: 'Salasilah Keluarga API aktif. Sila POST JSON ke URL ini.', version: APP_VERSION, actions: Object.keys(HANDLERS) });
 }
 function json(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);

@@ -1,14 +1,15 @@
 /* ================================================================
-   Salasilah Keluarga Elit — app.js
+   Salasilah Keluarga Elit — app.js v4.1
    ================================================================ */
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyDTCEzkMiSwpLmWQRfyFUAxO7NAxwSZ9CG1zPwbcn3ON3DXQVqgF0IvFapUrO84r8/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyAlojo6YvUpVWag7SeOXnlsm4TAlY8B5UjWblLTzVjbzp7mVfFNB6sLc-eWpoIiABq/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
+const APP_VERSION = '4.1';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -1975,7 +1976,14 @@ function adminPanel(tab='pending'){
           notify.success('Tetapan sistem dikemaskini. Semua pengguna akan patuh.');
           applyRoleUI(); renderAll();
           adminPanel('settings');
-        }catch(e){ toast('Gagal simpan: '+e.message); }
+        }catch(e){
+          const msg = String(e.message || e);
+          if (/Tindakan tidak dikenali:\s*setSettings/i.test(msg)) {
+            toast('Gagal simpan: pelayan Google Apps Script masih versi lama. Sila tampal Code.gs v'+APP_VERSION+' penuh, Save, kemudian Deploy > Manage deployments > Edit > Version: New version > Deploy.');
+          } else {
+            toast('Gagal simpan: '+msg);
+          }
+        }
       };
     }
   } else if(tab==='log'){
