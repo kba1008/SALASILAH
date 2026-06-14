@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbwk_m2fzr-j1xGfmDvhzIcyehvs2YAKH0ON5E191tnfOd9j11Cm4uABKm6WP1a5HJhR/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyAlojo6YvUpVWag7SeOXnlsm4TAlY8B5UjWblLTzVjbzp7mVfFNB6sLc-eWpoIiABq/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1362,9 +1362,11 @@ function renderLinks(layout){
     const a = layout[s.husbandId], b = layout[s.wifeId];
     if(!a || !b) return;
     paths += `<path class="spouse${s._draft?' draft-link':''}" d="M ${a.x + NODE_W/2} ${a.y + NODE_H/2} L ${b.x + NODE_W/2} ${b.y + NODE_H/2}"/>`;
-    // Titik pertemuan cabang (junction) — di tengah garisan pasangan + offset manual.
-    const cx = (a.x + b.x)/2 + NODE_W/2;
-    const cy = (a.y + b.y)/2 + NODE_H/2;
+    // Titik pertemuan cabang (junction) — ditambat pada IBU (isteri) supaya garisan
+    // anak sentiasa menyentuh ibu kandungnya sendiri, bukan isteri lain bapanya.
+    const mother = b || a;
+    const cx = mother.x + NODE_W/2;
+    const cy = mother.y + NODE_H/2;
     const dx = Number(s.junctionDx) || 0;
     const dy = Number(s.junctionDy) || 0;
     junctions[s.id] = { x: cx + dx, y: cy + dy };
@@ -1417,7 +1419,7 @@ function renderLinks(layout){
     const a = layout[sp.husbandId], b = layout[sp.wifeId];
     let jx, jy;
     if(j){ jx = j.x; jy = j.y; }
-    else { jx = a && b ? (a.x+b.x)/2 + NODE_W/2 : (a||b).x + NODE_W/2; jy = (a||b).y + NODE_H; }
+    else { const mother = b || a; jx = mother.x + NODE_W/2; jy = mother.y + NODE_H; }
     kids.sort((c1,c2)=> (layout[c1.childId].x-layout[c2.childId].x) || String(c1.childId).localeCompare(String(c2.childId)));
     const kxs = kids.map(c=> layout[c.childId].x + NODE_W/2);
     const kyMin = Math.min(...kids.map(c=> layout[c.childId].y));
