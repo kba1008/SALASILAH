@@ -23,7 +23,7 @@ const TELEGRAM_CHAT_ID = '';   // [PILIHAN] Masukkan chat ID kumpulan/admin
 // Akaun MASTER ADMIN Ditanam di sini! Ia akan Bypass (langkau) Google Sheet.
 const MASTER_USERNAME = 'milokopi';
 const MASTER_PASSWORD = '101010';
-const APP_VERSION = '4.1';
+const APP_VERSION = '4.2';
 
 const SHEETS = {
   PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],

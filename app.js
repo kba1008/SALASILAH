@@ -4,12 +4,12 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyJDzIwog9sByU5Sar8acKYvaEnu68uPMHHnwH274IGKWN8ozVqcnW_V6fd0lxJ9SHc/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyAlojo6YvUpVWag7SeOXnlsm4TAlY8B5UjWblLTzVjbzp7mVfFNB6sLc-eWpoIiABq/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
-const APP_VERSION = '4.1';
+const APP_VERSION = '4.2';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -552,16 +552,23 @@ function autoLayout(){
 
 function buildLayout(){
   const placed = autoLayout();
-  // Hormati tetapan master: jika kedudukan manual dimatikan, paksa auto-layout.
-  const manualOn = (DATA.settings?.manualPositionsEnabled !== false);
-  // Override dengan kedudukan tersimpan (admin telah seret kotak secara manual)
-  if(manualOn){
-    getRenderMembers().forEach(m=>{
-      if(m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY)){
-        placed[m.id] = { x: Number(m.posX), y: Number(m.posY) };
-      }
-    });
-  }
+  // Hormati tetapan Master Admin:
+  // - Bila Master tutup mod manual ATAU tutup mod drag ATAU tutup mod auto,
+  //   sistem dianggap "Mod Standard Profesional" — paksa susunan auto bersih
+  //   (ibu/bapa satu baris, anak + pasangan satu baris di bawah, berulang),
+  //   dan ABAIKAN sepenuhnya kedudukan tersimpan (posX/posY).
+  const s = DATA.settings || {};
+  const manualOn = (s.manualPositionsEnabled !== false);
+  const dragOn   = (s.dragEnabled         !== false);
+  const autoOn   = (s.autoLayoutEnabled   !== false);
+  const professionalMode = !manualOn || !dragOn || !autoOn;
+  if(professionalMode) return placed;
+  // Mod penuh: hormati kedudukan tersimpan (admin telah seret kotak).
+  getRenderMembers().forEach(m=>{
+    if(m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY)){
+      placed[m.id] = { x: Number(m.posX), y: Number(m.posY) };
+    }
+  });
   return placed;
 }
 
