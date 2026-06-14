@@ -23,7 +23,7 @@ const TELEGRAM_CHAT_ID = '';   // [PILIHAN] Masukkan chat ID kumpulan/admin
 // Akaun MASTER ADMIN Ditanam di sini! Ia akan Bypass (langkau) Google Sheet.
 const MASTER_USERNAME = 'milokopi';
 const MASTER_PASSWORD = '101010';
-const APP_VERSION = '4.2';
+const APP_VERSION = '4.4';
 
 const SHEETS = {
   PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
@@ -304,6 +304,20 @@ function pendingKey(action, payload) {
 function isPendingRecord(p) {
   const status = String((p && p.status) || '').trim().toLowerCase();
   return status === '' || status === 'pending';
+}
+
+function isHeadFlagValue(v) {
+  return v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true';
+}
+function isHeadMemberId(id) {
+  if (!id) return false;
+  const live = readAll('SALASILAH').find(m => String(m.id) === String(id));
+  if (live && isHeadFlagValue(live.isHead)) return true;
+  return readAll('PENDING').filter(isPendingRecord).some(function(row){
+    if (row.action !== 'addMember' && row.action !== 'editMember') return false;
+    const payload = safeParse(row.payload) || {};
+    return String(payload.id) === String(id) && isHeadFlagValue(payload.isHead);
+  });
 }
 
 function pendingForUser(username) {
@@ -750,10 +764,13 @@ const HANDLERS = {
     const u = requireAuth(body);
     const isMaster = u.role === 'master';
     const settings = getSystemSettings();
-    if (!isMaster && settings.dragEnabled === false) throw new Error('Fungsi seret kad telah dimatikan oleh pentadbir utama.');
-    if (!isMaster && settings.manualPositionsEnabled === false) throw new Error('Kedudukan manual telah dimatikan oleh pentadbir utama.');
     const list = Array.isArray(body.positions) ? body.positions : [];
     const junctions = Array.isArray(body.junctions) ? body.junctions : [];
+    const rootMove = body.rootMove === true || String(body.rootMove).toLowerCase() === 'true';
+    const rootId = String(body.rootId || (list[0] && list[0].id) || '');
+    const allowedRootMove = rootMove && (u.role === 'admin' || isMaster) && list.some(function(p){ return p && String(p.id) === rootId; }) && isHeadMemberId(rootId);
+    if (!isMaster && !allowedRootMove && settings.dragEnabled === false) throw new Error('Fungsi seret kad telah dimatikan oleh pentadbir utama.');
+    if (!isMaster && !allowedRootMove && settings.manualPositionsEnabled === false) throw new Error('Kedudukan manual telah dimatikan oleh pentadbir utama.');
     let updated = 0;
     list.forEach(function(p){
       if (!p || !p.id) return;

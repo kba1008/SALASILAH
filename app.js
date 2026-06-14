@@ -1,15 +1,15 @@
 /* ================================================================
-   Salasilah Keluarga Elit — app.js v4.1
+   Salasilah Keluarga Elit — app.js v4.4
    ================================================================ */
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyeM_BIzzTXyxEHPxlTVw6ZC9clrYLA6N4ksRdyM-HwUcG9e08gT25O2Ehegma_Rr5E/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyAlojo6YvUpVWag7SeOXnlsm4TAlY8B5UjWblLTzVjbzp7mVfFNB6sLc-eWpoIiABq/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
-const APP_VERSION = '4.2';
+const APP_VERSION = '4.4';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -552,24 +552,46 @@ function autoLayout(){
 
 function buildLayout(){
   const placed = autoLayout();
-  // Hormati tetapan Master Admin:
-  // - Bila Master tutup mod manual ATAU tutup mod drag ATAU tutup mod auto,
-  //   sistem dianggap "Mod Standard Profesional" — paksa susunan auto bersih
-  //   (ibu/bapa satu baris, anak + pasangan satu baris di bawah, berulang),
-  //   dan ABAIKAN sepenuhnya kedudukan tersimpan (posX/posY).
   const s = DATA.settings || {};
   const manualOn = (s.manualPositionsEnabled !== false);
   const dragOn   = (s.dragEnabled         !== false);
   const autoOn   = (s.autoLayoutEnabled   !== false);
   const professionalMode = !manualOn || !dragOn || !autoOn;
-  if(professionalMode) return placed;
-  // Mod penuh: hormati kedudukan tersimpan (admin telah seret kotak).
-  getRenderMembers().forEach(m=>{
+
+  const MEMBERS = getRenderMembers();
+  const byId = Object.fromEntries(MEMBERS.map(m=>[m.id, m]));
+
+  // Kepala Root sentiasa boleh diseret oleh admin/master walaupun
+  // semua tetapan susunan dimatikan. Bila Kepala Root mempunyai posX/posY
+  // tersimpan, kita gunakannya sebagai OFFSET untuk seluruh subtreenya —
+  // formasi profesional di bawahnya kekal kemas, cuma keseluruhan cabang
+  // bergerak bersama Kepala Root.
+  const heads = Array.from(getHeadRoots());
+  heads.forEach(hid=>{
+    const head = byId[hid];
+    const auto = placed[hid];
+    if(!head || !auto) return;
+    if(head.posX==null || head.posY==null) return;
+    if(!isFinite(head.posX) || !isFinite(head.posY)) return;
+    const dx = Number(head.posX) - auto.x;
+    const dy = Number(head.posY) - auto.y;
+    if(!dx && !dy) return;
+    const subtree = getSubtreeIds(hid);
+    subtree.forEach(mid=>{
+      const p = placed[mid]; if(!p) return;
+      p.x += dx; p.y += dy;
+    });
+  });
+
+  if(professionalMode) return enforceHierarchyLayout(placed);
+
+  // Mod penuh: hormati kedudukan tersimpan setiap kad (admin telah seret).
+  MEMBERS.forEach(m=>{
     if(m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY)){
       placed[m.id] = { x: Number(m.posX), y: Number(m.posY) };
     }
   });
-  return placed;
+  return enforceHierarchyLayout(placed);
 }
 
 // ===================================================================
@@ -838,7 +860,11 @@ async function autoArrangeHead(headId){
   const layout = autoLayoutSubtree(headId, v);
   const mergedLayout = buildLayout();
   Object.keys(layout).forEach(id=>{ mergedLayout[id] = layout[id]; });
-  const cleanLayout = resolveCardCollisions(mergedLayout, {
+  const hierarchyLayout = enforceHierarchyLayout(mergedLayout, {
+    anchorId: headId,
+    rowStep: NODE_H + AUTO_VARIANTS[v].gapY
+  });
+  const cleanLayout = resolveCardCollisions(hierarchyLayout, {
     gapX: AUTO_VARIANTS[v].safeGap,
     gapY: AUTO_VARIANTS[v].safeGapY,
     anchorId: headId
@@ -853,14 +879,16 @@ async function autoArrangeHead(headId){
   const junctions = (DATA.spouses||[])
     .filter(s=> arrangedIds.has(String(s.husbandId)) || arrangedIds.has(String(s.wifeId)))
     .map(s=> ({ id:s.id, dx:0, dy:0 }));
+  const rootPos = positions.find(x=>String(x.id)===String(headId));
   DATA.members = (DATA.members||[]).map(m=>{
-    const f = positions.find(x=> String(x.id)===String(m.id));
-    return f ? { ...m, posX:f.x, posY:f.y } : m;
+    if(String(m.id)===String(headId) && rootPos) return { ...m, posX:rootPos.x, posY:rootPos.y };
+    if(arrangedIds.has(String(m.id))) return { ...m, posX:'', posY:'' };
+    return m;
   });
   DATA.pending = (DATA.pending||[]).map(p=>{
     if((p.action!=='addMember' && p.action!=='editMember') || !p.payload || !p.payload.id) return p;
-    const f = positions.find(x=> String(x.id)===String(p.payload.id));
-    return f ? { ...p, payload:{ ...p.payload, posX:f.x, posY:f.y } } : p;
+    if(String(p.payload.id)===String(headId) && rootPos) return { ...p, payload:{ ...p.payload, posX:rootPos.x, posY:rootPos.y } };
+    return arrangedIds.has(String(p.payload.id)) ? { ...p, payload:{ ...p.payload, posX:'', posY:'' } } : p;
   });
   DATA.spouses = (DATA.spouses||[]).map(s=> arrangedIds.has(String(s.husbandId)) || arrangedIds.has(String(s.wifeId))
     ? { ...s, junctionDx:0, junctionDy:0 } : s);
@@ -1058,27 +1086,6 @@ function renderNodes(layout){
 // ===== Drag-and-drop kotak kad (admin/master) =====
 // - Drag kotak akar (tiada ibu/bapa) -> kesemua keturunan & pasangan bergerak sekali
 // - Drag kotak biasa -> hanya kotak itu bergerak, garis dilukis semula auto
-function getSubtreeIds(rootId){
-  const SPOUSES = getRenderSpouses();
-  const CHILDREN = getRenderChildren();
-  const set = new Set([rootId]);
-  const queue = [rootId];
-  while(queue.length){
-    const id = queue.shift();
-    // Pasangan kepada id
-    SPOUSES.forEach(s=>{
-      const partner = s.husbandId===id ? s.wifeId : (s.wifeId===id ? s.husbandId : null);
-      if(partner && !set.has(partner)){ set.add(partner); queue.push(partner); }
-    });
-    // Anak melalui mana-mana pasangan yang melibatkan id
-    SPOUSES.filter(s=>s.husbandId===id || s.wifeId===id).forEach(s=>{
-      CHILDREN.filter(c=>c.spouseId===s.id).forEach(c=>{
-        if(!set.has(c.childId)){ set.add(c.childId); queue.push(c.childId); }
-      });
-    });
-  }
-  return set;
-}
 function isRootMember(id){
   const CHILDREN = getRenderChildren();
   return !CHILDREN.find(c=>c.childId===id);
@@ -1099,6 +1106,72 @@ function getHeadRoots(){
   return heads;
 }
 function isHeadRoot(id){ return getHeadRoots().has(id); }
+function getGenerationDepths(){
+  const MEMBERS = getRenderMembers();
+  const SPOUSES = getRenderSpouses();
+  const CHILDREN = getRenderChildren();
+  const byId = Object.fromEntries(MEMBERS.map(m=>[String(m.id), m]));
+  const depths = {};
+  MEMBERS.forEach(m=>{ depths[String(m.id)] = 0; });
+  const maxPass = Math.max(12, MEMBERS.length * 3);
+  for(let pass=0; pass<maxPass; pass++){
+    let changed = false;
+    SPOUSES.forEach(s=>{
+      const a = String(s.husbandId||''), b = String(s.wifeId||'');
+      if(!byId[a] || !byId[b]) return;
+      const d = Math.max(depths[a]||0, depths[b]||0);
+      if(depths[a] !== d){ depths[a] = d; changed = true; }
+      if(depths[b] !== d){ depths[b] = d; changed = true; }
+    });
+    CHILDREN.forEach(c=>{
+      const child = String(c.childId||'');
+      const sp = SPOUSES.find(s=>String(s.id)===String(c.spouseId));
+      if(!sp || !byId[child]) return;
+      const parents = [String(sp.husbandId||''), String(sp.wifeId||'')].filter(pid=>byId[pid]);
+      if(!parents.length) return;
+      const parentDepth = Math.max(...parents.map(pid=>depths[pid]||0));
+      const next = parentDepth + 1;
+      if((depths[child]||0) < next){ depths[child] = next; changed = true; }
+    });
+    if(!changed) break;
+  }
+  return depths;
+}
+function enforceHierarchyLayout(layout, options){
+  const placed = cloneLayout(layout);
+  const depths = getGenerationDepths();
+  const baseY = Number(options?.baseY ?? ORIGIN_Y);
+  const rowStep = Number(options?.rowStep ?? ROW_STEP);
+  const anchorId = options?.anchorId ? String(options.anchorId) : '';
+  const groups = [];
+  if(anchorId && placed[anchorId]) groups.push({ headId:anchorId, ids: new Set(Object.keys(placed)) });
+  else getHeadRoots().forEach(headId=>{
+    const hid = String(headId);
+    if(!placed[hid]) return;
+    groups.push({ headId:hid, ids:getSubtreeIds(hid) });
+  });
+  const done = new Set();
+  groups.forEach(group=>{
+    const hid = String(group.headId);
+    const headDepth = depths[hid] ?? 0;
+    const headY = placed[hid] ? placed[hid].y : baseY + headDepth * rowStep;
+    const groupBaseY = headY - headDepth * rowStep;
+    group.ids.forEach(mid=>{
+      const id = String(mid); if(!placed[id]) return;
+      placed[id].y = Math.round(groupBaseY + (depths[id] ?? 0) * rowStep);
+      done.add(id);
+    });
+  });
+  Object.keys(placed).forEach(id=>{
+    if(done.has(id)) return;
+    placed[id].y = Math.round(baseY + (depths[String(id)] ?? 0) * rowStep);
+  });
+  if(anchorId && placed[anchorId] && layout[anchorId]){
+    const dx = placed[anchorId].x - Number(layout[anchorId].x);
+    if(dx) Object.keys(placed).forEach(id=>{ placed[id].x = Math.round(placed[id].x - dx); });
+  }
+  return placed;
+}
 let _dragState = null;
 function canDragCards(){
   const u = STORE.user;
@@ -1106,9 +1179,18 @@ function canDragCards(){
   if(u.role === 'master') return true; // master sentiasa boleh
   return (DATA.settings?.dragEnabled !== false);
 }
+// Admin/master sentiasa dibenarkan seret Kepala Root untuk memindahkan
+// keseluruhan salasilah di bawahnya — walaupun semua tetapan susunan ditutup
+// oleh Master Admin. Ini memberi admin kawalan kedudukan keseluruhan tree
+// tanpa membuka semula mod drag bebas untuk kad lain.
+function canDragHeadRoot(){
+  const u = STORE.user;
+  return !!u && (u.role === 'master' || u.role === 'admin');
+}
 function enableNodeDrag(el, id, layout){
-  // Pelawat / tetapan master mematikan seret: kunci sepenuhnya.
-  if(!canDragCards()){
+  const isRoot = isHeadRoot(id);
+  const allowed = canDragCards() || (isRoot && canDragHeadRoot());
+  if(!allowed){
     el.style.touchAction = '';
     el.style.cursor = '';
     return;
@@ -1116,17 +1198,18 @@ function enableNodeDrag(el, id, layout){
   el.style.touchAction = 'none';
   el.addEventListener('pointerdown', (e)=>{
     if(e.button && e.button!==0) return;
-    if(!canDragCards()) return;
+    const rootNow = isHeadRoot(id);
+    const okNow = canDragCards() || (rootNow && canDragHeadRoot());
+    if(!okNow) return;
     // jangan ganggu klik pada gambar / butang dalam kad
     if(e.target.closest('.lb-img,button,a,input,select,textarea')) return;
     e.stopPropagation();
-    const isRoot = isHeadRoot(id);
-    const ids = isRoot ? getSubtreeIds(id) : new Set([id]);
+    const ids = rootNow ? getSubtreeIds(id) : new Set([id]);
     const scale = panzoomInstance ? panzoomInstance.getScale() : 1;
     const lay = buildLayout(); // snapshot terkini
     const positions = {};
     ids.forEach(mid => { const p = lay[mid]; if(p) positions[mid] = { x:p.x, y:p.y }; });
-    _dragState = { ids, positions, scale, sx:e.clientX, sy:e.clientY, layout:lay, moved:false, isRoot };
+    _dragState = { ids, rootId:id, positions, scale, sx:e.clientX, sy:e.clientY, layout:lay, moved:false, isRoot:rootNow };
     el.setPointerCapture(e.pointerId);
     // halang panzoom semasa seret
     if(panzoomInstance) panzoomInstance.setOptions({ disablePan:true });
@@ -1139,7 +1222,7 @@ function enableNodeDrag(el, id, layout){
     if(Math.abs(dx)+Math.abs(dy) > 2) _dragState.moved = true;
     _dragState.ids.forEach(mid => {
       const start = _dragState.positions[mid]; if(!start) return;
-      const nx = start.x + dx, ny = start.y + dy;
+      const nx = start.x + dx, ny = start.y + ( _dragState.isRoot ? dy : 0 );
       _dragState.layout[mid] = { x:nx, y:ny };
       const node = document.querySelector(`#nodes .node[data-id="${mid}"]`);
       if(node){ node.style.left = nx+'px'; node.style.top = ny+'px'; }
@@ -1158,10 +1241,11 @@ function enableNodeDrag(el, id, layout){
       positions.push({ id:mid, x:Math.round(p.x), y:Math.round(p.y) });
     });
     try{
-      await dispatchApi('setPositions', { positions });
+      const savePositions = positions;
+      await dispatchApi('setPositions', { positions: savePositions, rootMove: !!st.isRoot, rootId: st.rootId });
       // segarkan DATA supaya posX/posY tersimpan kekal selepas refresh seterusnya
       DATA.members = DATA.members.map(m=>{
-        const f = positions.find(x=>String(x.id)===String(m.id));
+        const f = savePositions.find(x=>String(x.id)===String(m.id));
         return f ? { ...m, posX:f.x, posY:f.y } : m;
       });
       notify.success(st.isRoot ? 'Keseluruhan family tree dipindahkan.' : 'Kotak dipindahkan.');
