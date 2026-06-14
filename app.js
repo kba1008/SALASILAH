@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyHyAAjUKgiicGrVudxvDHc4seTGeRy5qt8U2FVrBKFZi3B0t90Sda-85mYURAIgsX0/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyAlojo6YvUpVWag7SeOXnlsm4TAlY8B5UjWblLTzVjbzp7mVfFNB6sLc-eWpoIiABq/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1004,11 +1004,35 @@ async function autoPlaceNew(hints, options){
     lay[m.id] = { x, y };
   });
 
-  const anchorId = hintIds.map(id=>findHeadForMember(id)).find(Boolean) || Array.from(getHeadRoots())[0] || '';
-  const clean = resolveCardCollisions(lay, { gapX:112, gapY:68, anchorId });
+  // Reflow KEMAS: setiap penambahan kad akan menyusun semula keseluruhan
+  // subtree di bawah Kepala Salasilah yang terjejas mengikut autoLayout
+  // (tidy-tree). Ini memastikan adik-beradik & cabang baharu yang disisip
+  // di tengah-tengah turut diejas supaya susunan kekal seimbang dan jelas.
+  const headIdsAffected = new Set();
+  const collectHead = (id)=>{ const h = findHeadForMember(id); if(h) headIdsAffected.add(String(h)); };
+  Array.from(targetIds).forEach(collectHead);
+  hintIds.forEach(collectHead);
+  const fullAuto = autoLayout();
+  const tidyLay = { ...lay };
+  const reflowIds = new Set();
+  headIdsAffected.forEach(hid=>{
+    const headAuto = fullAuto[hid];
+    const headCurrent = lay[hid] || headAuto;
+    if(!headAuto || !headCurrent) return;
+    const dx = headCurrent.x - headAuto.x;
+    const dy = headCurrent.y - headAuto.y;
+    getSubtreeIds(hid).forEach(mid=>{
+      const a = fullAuto[mid]; if(!a) return;
+      tidyLay[mid] = { x: Math.round(a.x + dx), y: Math.round(a.y + dy) };
+      reflowIds.add(String(mid));
+    });
+  });
+  const anchorId = Array.from(headIdsAffected)[0] || hintIds.map(id=>findHeadForMember(id)).find(Boolean) || Array.from(getHeadRoots())[0] || '';
+  const clean = resolveCardCollisions(tidyLay, { gapX:112, gapY:68, anchorId });
   positions = members
-    .filter(m=>clean[m.id])
+    .filter(m=>clean[m.id] && (reflowIds.size ? reflowIds.has(String(m.id)) : true))
     .map(m=>({ id:m.id, x:clean[m.id].x, y:clean[m.id].y }));
+
   if(!positions.length) return;
   DATA.members = (DATA.members||[]).map(m=>{
     const f = positions.find(x=> String(x.id)===String(m.id));
@@ -1174,26 +1198,109 @@ function enforceHierarchyLayout(layout, options){
     // Pusatkan Moyang (Kepala Salasilah) di atas keturunannya — moyang
     // sentiasa berada di tengah-tengah julat keturunannya, walau seberapa
     // besar pun cabang berkembang ke kiri atau ke kanan.
+    const SPS = getRenderSpouses();
     groups.forEach(group=>{
       const hid = String(group.headId);
       if(!placed[hid]) return;
+      // Kumpul Kepala Salasilah + semua pasangannya (baris paling atas).
+      const headRow = new Set([hid]);
+      SPS.forEach(s=>{
+        const h = String(s.husbandId), w = String(s.wifeId);
+        if(h===hid && placed[w]) headRow.add(w);
+        else if(w===hid && placed[h]) headRow.add(h);
+      });
+      // Julat keturunan (tidak termasuk baris kepala) untuk cari pusat sebenar
+      // di bawah. Jika tiada keturunan, guna julat baris kepala itu sendiri.
       let minX = Infinity, maxX = -Infinity;
       group.ids.forEach(mid=>{
-        const p = placed[String(mid)]; if(!p) return;
+        const id = String(mid);
+        if(headRow.has(id)) return;
+        const p = placed[id]; if(!p) return;
         if(p.x < minX) minX = p.x;
         if(p.x > maxX) maxX = p.x;
       });
+      if(!isFinite(minX) || !isFinite(maxX)){
+        headRow.forEach(id=>{
+          const p = placed[id]; if(!p) return;
+          if(p.x < minX) minX = p.x;
+          if(p.x > maxX) maxX = p.x;
+        });
+      }
       if(!isFinite(minX) || !isFinite(maxX)) return;
+      // Pusat semasa baris kepala (kepala + pasangan) hendaklah jatuh tepat
+      // pada pusat keturunan di bawah, supaya pasangan tidak tersorong tepi.
+      let headMinX = Infinity, headMaxX = -Infinity;
+      headRow.forEach(id=>{
+        const p = placed[id]; if(!p) return;
+        if(p.x < headMinX) headMinX = p.x;
+        if(p.x > headMaxX) headMaxX = p.x;
+      });
+      if(!isFinite(headMinX)) return;
       const targetX = Math.round((minX + maxX) / 2);
-      const shift = targetX - placed[hid].x;
+      const currentHeadCenter = Math.round((headMinX + headMaxX) / 2);
+      const shift = targetX - currentHeadCenter;
       if(!shift) return;
-      group.ids.forEach(mid=>{
-        const p = placed[String(mid)]; if(!p) return;
+      // Geser hanya baris kepala — keturunan kekal di tempatnya supaya
+      // susunan adik-beradik dan cabang tidak berubah.
+      headRow.forEach(id=>{
+        const p = placed[id]; if(!p) return;
         p.x = Math.round(p.x + shift);
       });
     });
   }
+  enforceSiblingGrouping(placed);
   return placed;
+}
+
+// Pastikan adik-beradik (anak ibu/bapa yang sama) sentiasa rapat dalam satu
+// kumpulan, tiada kad dari keluarga lain menyelit di antara mereka. Jika
+// dikesan ada "penceroboh" pada baris yang sama dengan julat-X antara
+// adik-beradik, kad penceroboh akan ditolak keluar ke tepi terdekat.
+function enforceSiblingGrouping(placed){
+  const CH = getRenderChildren();
+  const groups = {};
+  CH.forEach(c=>{
+    if(!placed[c.childId]) return;
+    (groups[c.spouseId] = groups[c.spouseId] || new Set()).add(String(c.childId));
+  });
+  const rowTol = NODE_H * 0.55;
+  for(let pass=0; pass<10; pass++){
+    let moved = false;
+    Object.values(groups).forEach(set=>{
+      if(set.size < 2) return;
+      const kids = Array.from(set);
+      // Susun ikut baris (Y berdekatan).
+      const rows = [];
+      kids.forEach(id=>{
+        const p = placed[id]; if(!p) return;
+        let r = rows.find(rr=> Math.abs(rr.y - p.y) <= rowTol);
+        if(!r){ r = { y:p.y, ids:[] }; rows.push(r); }
+        r.ids.push(id);
+      });
+      rows.forEach(row=>{
+        if(row.ids.length < 2) return;
+        const xs = row.ids.map(id=>placed[id].x);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const sibSet = new Set(row.ids);
+        Object.keys(placed).forEach(oid=>{
+          if(sibSet.has(oid)) return;
+          const op = placed[oid]; if(!op) return;
+          if(Math.abs(op.y - row.y) > rowTol) return;
+          if(op.x <= minX || op.x >= maxX) return;
+          // Penceroboh dalam julat adik-beradik — tolak ke tepi terdekat.
+          const pushRight = (maxX + COL_STEP) - op.x + 8;
+          const pushLeft  = op.x - (minX - COL_STEP) + 8;
+          op.x = Math.round(op.x + (pushRight <= pushLeft ? pushRight : -pushLeft));
+          moved = true;
+        });
+      });
+    });
+    if(!moved) break;
+    // Selepas tolak, lepaskan pertindihan biasa.
+    const cleaned = resolveCardCollisions(placed, { gapX:100, gapY:56 });
+    Object.keys(cleaned).forEach(id=>{ placed[id] = cleaned[id]; });
+  }
 }
 let _dragState = null;
 function canDragCards(){
