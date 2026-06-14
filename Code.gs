@@ -29,7 +29,7 @@ const SHEETS = {
   PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
   SALASILAH: ['id','name','gender','alive','birth','death','place','address','photo','notes','fatherName','motherName','posX','posY','isHead','editedBy','editedAt','approvedBy','approvedAt'],
   PASANGAN:  ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','junctionDx','junctionDy','editedBy','editedAt'],
-  ANAK:      ['spouseId','childId','editedBy','editedAt'],
+  ANAK:      ['spouseId','childId','parentAnchorId','editedBy','editedAt'],
   NOTA:      ['id','text','x','y','font','size','color','pinned','editedBy','editedAt'],
   PENDING:   ['id','action','payload','before','user','userFullName','reason','ts','status','approvedBy','approvedAt']
 };
@@ -609,20 +609,22 @@ const HANDLERS = {
     const u = requireAuth(body);
     const isAdmin = u.role==='admin' || u.role==='master';
     const spouseForLock = visibleSpouseForUser(body.spouseId, u.username);
-    if (!isAdmin && spouseForLock) {
+    if (!spouseForLock) throw new Error('Pasangan tidak dijumpai atau draf bukan milik anda.');
+    if (!isAdmin) {
       assertDraftAvailable(spouseForLock.husbandId, u.username);
       assertDraftAvailable(spouseForLock.wifeId, u.username);
     }
-    if (!visibleSpouseForUser(body.spouseId, u.username)) throw new Error('Pasangan tidak dijumpai atau draf bukan milik anda.');
     if (body.newChild) {
       const rec = { id: body.childId, name: upperName(body.newChild.name), gender: body.newChild.gender||'M', alive: body.newChild.alive!==false, birth: body.newChild.birth||'', death:'', place:'', photo:'', notes:'', editedBy:u.username, editedAt:now(), approvedBy: isAdmin?u.username:'', approvedAt: isAdmin?now():'' };
       if (isAdmin) appendRow('SALASILAH', rec); else queuePending('addMember', rec, u.username);
     }
-    const link = { spouseId: body.spouseId, childId: body.childId, editedBy:u.username, editedAt:now() };
+    const rawAnchor = String(body.parentAnchorId || body.anchorId || '');
+    const parentAnchorId = (rawAnchor === String(spouseForLock.husbandId) || rawAnchor === String(spouseForLock.wifeId)) ? rawAnchor : '';
+    const link = { spouseId: body.spouseId, childId: body.childId, parentAnchorId: parentAnchorId, editedBy:u.username, editedAt:now() };
     if (!isAdmin) { queuePending('addChild', link, u.username, null, body.reason); return { ok: true, pending: true }; }
     appendRow('ANAK', link); return { ok: true };
   },
-  moveBranch(body) { requireAuth(body, ['admin','master']); deleteWhere('ANAK', c => c.childId===body.childId); appendRow('ANAK', { spouseId: body.newSpouseId, childId: body.childId, editedBy:'admin', editedAt:now() }); return { ok: true }; },
+  moveBranch(body) { requireAuth(body, ['admin','master']); deleteWhere('ANAK', c => c.childId===body.childId); appendRow('ANAK', { spouseId: body.newSpouseId, childId: body.childId, parentAnchorId: body.parentAnchorId||'', editedBy:'admin', editedAt:now() }); return { ok: true }; },
 
   addNote(body) { const u = requireAuth(body, ['admin','master']); appendRow('NOTA', { id: body.id, text: String(body.text||'').slice(0,2000), x: body.x||0, y: body.y||0, font: body.font||'', size: body.size||14, color: body.color||'', pinned: !!body.pinned, editedBy: u.username, editedAt: now() }); return { ok: true }; },
   editNote(body) { const u = requireAuth(body, ['admin','master']); updateRow('NOTA', 'id', body.id, { text: String(body.text||'').slice(0,2000), x: body.x||0, y: body.y||0, font: body.font||'', size: body.size||14, color: body.color||'', pinned: !!body.pinned, editedBy: u.username, editedAt: now() }); return { ok: true }; },

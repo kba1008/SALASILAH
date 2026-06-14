@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbwk_m2fzr-j1xGfmDvhzIcyehvs2YAKH0ON5E191tnfOd9j11Cm4uABKm6WP1a5HJhR/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyAlojo6YvUpVWag7SeOXnlsm4TAlY8B5UjWblLTzVjbzp7mVfFNB6sLc-eWpoIiABq/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -967,17 +967,18 @@ async function autoPlaceNew(hints, options){
       break;
     }
 
-    // (b) ANAK — letak bawah ibu bapa, sebelah kanan adik-beradik terkanan.
+    // (b) ANAK — letak bawah parent yang dipilih semasa tambah anak.
     if(!pos){
-      const parentSpouseIds = CH.filter(c=>c.childId===m.id).map(c=>c.spouseId);
-      for(const sid of parentSpouseIds){
-        const sp = SP.find(s=>s.id===sid); if(!sp) continue;
+      const parentLinks = CH.filter(c=>c.childId===m.id);
+      for(const link of parentLinks){
+        const sp = SP.find(s=>s.id===link.spouseId); if(!sp) continue;
         const pa = lay[sp.husbandId]; const pb = lay[sp.wifeId];
-        const anchor = pa && pb
-          ? { x:(pa.x+pb.x)/2, y: Math.max(pa.y, pb.y) }
-          : (pa || pb);
+        const savedAnchor = String(link.parentAnchorId || link.anchorId || '');
+        const anchor = (savedAnchor && (String(savedAnchor)===String(sp.husbandId) || String(savedAnchor)===String(sp.wifeId)) && lay[savedAnchor])
+          ? lay[savedAnchor]
+          : (pa && pb ? { x:(pa.x+pb.x)/2, y: Math.max(pa.y, pb.y) } : (pa || pb));
         if(!anchor) continue;
-        const sibs = CH.filter(c=>c.spouseId===sid).map(c=>c.childId)
+        const sibs = CH.filter(c=>c.spouseId===link.spouseId).map(c=>c.childId)
           .filter(id=> id!==m.id && lay[id])
           .map(id=> lay[id]);
         const childY = anchor.y + ROW_STEP;
@@ -1357,44 +1358,65 @@ function renderLinks(layout){
   let paths = '';
   let labels = '';
   let handles = '';
-  const junctions = {}; // spouseId -> {x,y}
-  // Kira berapa pasangan dimiliki oleh setiap ahli. Jika seseorang ada
-  // >1 pasangan (poligami/poliandri), parent yang UNIK bagi pasangan ini
-  // ialah pasangannya (bukan dia). Garisan anak akan ditambat pada parent
-  // unik tersebut supaya tidak menyentuh pasangan lain.
+  const junctions = {}; // groupKey -> {x,y,anchorId,spouseId}
+
+  // Garisan anak mesti bermula pada kotak parent sebenar. Untuk anak baharu,
+  // parentAnchorId disimpan daripada kad yang diklik. Data lama pula jatuh balik
+  // kepada parent unik dalam kes poligami/poliandri, atau ibu dalam kes biasa.
   const spouseCount = {};
   SPOUSES.forEach(s=>{
     spouseCount[s.husbandId] = (spouseCount[s.husbandId]||0) + 1;
     spouseCount[s.wifeId] = (spouseCount[s.wifeId]||0) + 1;
   });
+  const cleanName = v => String(v||'').toLowerCase().replace(/[^a-z0-9\s]/gi,'').replace(/\s+/g,' ').trim();
+  const sameName = (a,b)=> cleanName(a) && cleanName(a) === cleanName(b);
+
+  function fallbackAnchorId(sp, childLink){
+    const child = byId[childLink.childId];
+    const dad = byId[sp.husbandId];
+    const mom = byId[sp.wifeId];
+    const husbandShared = (spouseCount[sp.husbandId]||0) > 1;
+    const wifeShared = (spouseCount[sp.wifeId]||0) > 1;
+
+    if(husbandShared && !wifeShared && layout[sp.wifeId]) return sp.wifeId;
+    if(wifeShared && !husbandShared && layout[sp.husbandId]) return sp.husbandId;
+    if(child && mom && sameName(child.motherName, mom.name) && layout[sp.wifeId]) return sp.wifeId;
+    if(child && dad && sameName(child.fatherName, dad.name) && layout[sp.husbandId]) return sp.husbandId;
+    return layout[sp.wifeId] ? sp.wifeId : sp.husbandId;
+  }
+
+  function childAnchorId(childLink, sp){
+    const saved = String(childLink.parentAnchorId || childLink.anchorId || '').trim();
+    if(saved && (String(saved)===String(sp.husbandId) || String(saved)===String(sp.wifeId)) && layout[saved]) return saved;
+    return fallbackAnchorId(sp, childLink);
+  }
+
+  function junctionFor(sp, anchorId, groupKey){
+    const anchor = layout[anchorId] || layout[sp.wifeId] || layout[sp.husbandId];
+    if(!anchor) return null;
+    const j = { x: anchor.x + NODE_W/2, y: anchor.y + NODE_H, anchorId, spouseId: sp.id };
+    if(groupKey) junctions[groupKey] = j;
+    return j;
+  }
+
   SPOUSES.forEach(s=>{
     const a = layout[s.husbandId], b = layout[s.wifeId];
     if(!a || !b) return;
     paths += `<path class="spouse${s._draft?' draft-link':''}" d="M ${a.x + NODE_W/2} ${a.y + NODE_H/2} L ${b.x + NODE_W/2} ${b.y + NODE_H/2}"/>`;
-    // Pilih "anchor parent": parent yang TIDAK dikongsi dengan pasangan lain.
-    // Lelaki kahwin 2 wanita → anchor pada isteri (ibu sebenar anak ini).
-    // Wanita kahwin 2 lelaki → anchor pada suami (bapa sebenar anak ini).
-    // Jika monogami, default pada ibu (isteri).
-    const husbandShared = (spouseCount[s.husbandId]||0) > 1;
-    const wifeShared = (spouseCount[s.wifeId]||0) > 1;
-    let anchor;
-    if(husbandShared && !wifeShared) anchor = b;        // ibu unik
-    else if(wifeShared && !husbandShared) anchor = a;   // bapa unik
-    else anchor = b || a;                                // default: ibu
-    const cx = anchor.x + NODE_W/2;
-    const cy = anchor.y + NODE_H;   // mula dari bahagian bawah kad parent
-    const dx = Number(s.junctionDx) || 0;
-    const dy = Number(s.junctionDy) || 0;
-    junctions[s.id] = { x: cx + dx, y: cy + dy, anchorId: anchor === a ? s.husbandId : s.wifeId };
   });
-  // Kumpulkan anak mengikut pasangan supaya hanya SATU batang turun dari
-  // garisan putus-putus pasangan ke busbar, kemudian busbar bercabang ke
-  // setiap anak. Ini elak garisan bertindih dari junction.
-  const childrenBySpouse = {};
+
+  // Kumpulkan anak mengikut pasangan + parent anchor. Ini menghalang anak bagi
+  // isteri/suami lain daripada berkongsi junction pada kotak yang salah.
+  const childrenByGroup = {};
   CHILDREN.forEach(c=>{
     if(!layout[c.childId]) return;
-    if(!SPOUSES.find(s=>s.id===c.spouseId)) return;
-    (childrenBySpouse[c.spouseId] = childrenBySpouse[c.spouseId] || []).push(c);
+    const sp = SPOUSES.find(s=>String(s.id)===String(c.spouseId));
+    if(!sp) return;
+    const anchorId = childAnchorId(c, sp);
+    if(!anchorId || !layout[anchorId]) return;
+    const key = `${c.spouseId}::${anchorId}`;
+    if(!childrenByGroup[key]) childrenByGroup[key] = { key, spouseId:c.spouseId, anchorId, sp, kids:[] };
+    childrenByGroup[key].kids.push(c);
   });
   const LINE_GAP = 32;
   const LINE_PAD = 46;
@@ -1422,28 +1444,19 @@ function renderLinks(layout){
     trunkSegments.push({ x:x+offset, y1, y2 });
     return offset;
   }
-  Object.keys(childrenBySpouse).sort((sidA,sidB)=>{
-    const ax = Math.min(...childrenBySpouse[sidA].map(c=> layout[c.childId].x));
-    const bx = Math.min(...childrenBySpouse[sidB].map(c=> layout[c.childId].x));
-    const ay = Math.min(...childrenBySpouse[sidA].map(c=> layout[c.childId].y));
-    const by = Math.min(...childrenBySpouse[sidB].map(c=> layout[c.childId].y));
+  Object.values(childrenByGroup).sort((gA,gB)=>{
+    const ax = Math.min(...gA.kids.map(c=> layout[c.childId].x));
+    const bx = Math.min(...gB.kids.map(c=> layout[c.childId].x));
+    const ay = Math.min(...gA.kids.map(c=> layout[c.childId].y));
+    const by = Math.min(...gB.kids.map(c=> layout[c.childId].y));
     return ay-by || ax-bx;
-  }).forEach(sid=>{
-    const sp = SPOUSES.find(s=>s.id===sid); if(!sp) return;
-    const kids = childrenBySpouse[sid];
-    const j = junctions[sp.id];
+  }).forEach(group=>{
+    const sp = group.sp;
+    const kids = group.kids;
+    const j = junctionFor(sp, group.anchorId, group.key);
     const a = layout[sp.husbandId], b = layout[sp.wifeId];
-    let jx, jy;
-    if(j){ jx = j.x; jy = j.y; }
-    else {
-      const husbandShared = (spouseCount[sp.husbandId]||0) > 1;
-      const wifeShared = (spouseCount[sp.wifeId]||0) > 1;
-      let anchor;
-      if(husbandShared && !wifeShared) anchor = b;
-      else if(wifeShared && !husbandShared) anchor = a;
-      else anchor = b || a;
-      jx = anchor.x + NODE_W/2; jy = anchor.y + NODE_H;
-    }
+    if(!j) return;
+    const jx = j.x, jy = j.y;
     kids.sort((c1,c2)=> (layout[c1.childId].x-layout[c2.childId].x) || String(c1.childId).localeCompare(String(c2.childId)));
     const kxs = kids.map(c=> layout[c.childId].x + NODE_W/2);
     const kyMin = Math.min(...kids.map(c=> layout[c.childId].y));
@@ -1459,7 +1472,6 @@ function renderLinks(layout){
     const isDraftGroup = kids.every(c=> c._draft);
     const cls = isDraftGroup ? 'draft-link' : '';
     const grpAttr = `class="child-group ${cls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
-    // Laluan siku 90°: turun dari junction ke busbar, kemudian busbar bercabang.
     const trunkOffset = trunkLaneFor(jx, jy, busY);
     if(trunkOffset){
       const tx = jx + trunkOffset;
@@ -1470,7 +1482,6 @@ function renderLinks(layout){
     if(rightX - leftX > 0.5){
       paths += `<path ${grpAttr} d="M ${leftX} ${busY} L ${rightX} ${busY}"/>`;
     }
-    // Satu titik turun untuk setiap anak
     kids.forEach(c=>{
       const k = layout[c.childId];
       const kx = k.x + NODE_W/2;
@@ -1895,7 +1906,7 @@ function childForm(m){
     <div class="flex gap-2 justify-end mt-2"><button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button><button class="btn gold-edge" id="saveChild">Simpan</button></div>
   `);
   $('#saveChild').onclick = async ()=>{
-    const payload = { spouseId: $('#ch_couple').value, childId: uid(), newChild: { id: null, name:upperName($('#ch_name').value), gender:$('#ch_g').value, alive:true }, reason:$('#ch_reason')?.value.trim()||'' };
+    const payload = { spouseId: $('#ch_couple').value, parentAnchorId: m.id, childId: uid(), newChild: { id: null, name:upperName($('#ch_name').value), gender:$('#ch_g').value, alive:true }, reason:$('#ch_reason')?.value.trim()||'' };
     payload.newChild.id = payload.childId;
     if(!payload.newChild.name) return toast("Nama anak wajib.");
     const baseLayout = buildLayout();
