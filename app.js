@@ -9,7 +9,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbwaO_wKC5sL-ylBmqaO1r71
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
-const APP_VERSION = '4.7';
+const APP_VERSION = '4.8';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -203,7 +203,7 @@ let tipIdx = 0;
 const tipTimer = setInterval(()=> { tipIdx=(tipIdx+1)%TIPS.length; const el=$('#tip'); if(el) el.textContent="Petua: "+TIPS[tipIdx]; }, 3000);
 
 let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], returnedDrafts:[], pendingLog:[], users:[] };
-const NODE_W = 220, NODE_H = 170, GAP_X = 60, GAP_Y = 120;
+const NODE_W = 220, NODE_H = 170, GAP_X = 32, GAP_Y = 70;
 const upperName = (s) => String(s||'').replace(/\s+/g,' ').trim().toUpperCase();
 
 function openModal(html){ $('#modal').innerHTML = html; $('#scrim').classList.add('show'); }
@@ -628,9 +628,9 @@ function findHeadForMember(id){
 // Jarak dikemas (v4.6) — keluarga kecil tidak lagi terpisah terlalu jauh.
 // "padat" = paling rapat, sesuai untuk salasilah baru/sedikit ahli.
 const AUTO_VARIANTS = [
-  { gapX: 56,  gapY: GAP_Y * 1.05, branchGap: 60,  familyGap: 96,  childGap: 56,  safeGap: 40, safeGapY: 36, lineGap: 22, label: 'padat'  },
-  { gapX: 92,  gapY: GAP_Y * 1.20, branchGap: 110, familyGap: 160, childGap: 90,  safeGap: 64, safeGapY: 46, lineGap: 26, label: 'lapang' },
-  { gapX: 140, gapY: GAP_Y * 1.40, branchGap: 170, familyGap: 240, childGap: 130, safeGap: 96, safeGapY: 60, lineGap: 32, label: 'lega'   },
+  { gapX: 28,  gapY: GAP_Y * 1.00, branchGap: 36,  familyGap: 56,  childGap: 32,  safeGap: 24, safeGapY: 24, lineGap: 18, label: 'padat'  },
+  { gapX: 56,  gapY: GAP_Y * 1.15, branchGap: 72,  familyGap: 110, childGap: 60,  safeGap: 44, safeGapY: 36, lineGap: 22, label: 'lapang' },
+  { gapX: 96,  gapY: GAP_Y * 1.30, branchGap: 120, familyGap: 180, childGap: 96,  safeGap: 68, safeGapY: 48, lineGap: 28, label: 'lega'   },
 ];
 
 function cloneLayout(layout){
@@ -1523,7 +1523,12 @@ function renderLinks(layout){
   SPOUSES.forEach(s=>{
     const a = layout[s.husbandId], b = layout[s.wifeId];
     if(!a || !b) return;
-    paths += `<path class="spouse${s._draft?' draft-link':''}" d="M ${a.x + NODE_W/2} ${a.y + NODE_H/2} L ${b.x + NODE_W/2} ${b.y + NODE_H/2}"/>`;
+    const _aL = a.x <= b.x;
+    const _x1 = _aL ? a.x + NODE_W : a.x;
+    const _x2 = _aL ? b.x : b.x + NODE_W;
+    const _y1 = a.y + NODE_H/2;
+    const _y2 = b.y + NODE_H/2;
+    paths += `<path class="spouse${s._draft?' draft-link':''}" d="M ${_x1} ${_y1} L ${_x2} ${_y2}"/>`;
   });
 
   // Kumpulkan anak mengikut pasangan + parent anchor. Ini menghalang anak bagi
