@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyHyAAjUKgiicGrVudxvDHc4seTGeRy5qt8U2FVrBKFZi3B0t90Sda-85mYURAIgsX0/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyAlojo6YvUpVWag7SeOXnlsm4TAlY8B5UjWblLTzVjbzp7mVfFNB6sLc-eWpoIiABq/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1170,6 +1170,28 @@ function enforceHierarchyLayout(layout, options){
   if(anchorId && placed[anchorId] && layout[anchorId]){
     const dx = placed[anchorId].x - Number(layout[anchorId].x);
     if(dx) Object.keys(placed).forEach(id=>{ placed[id].x = Math.round(placed[id].x - dx); });
+  } else {
+    // Pusatkan Moyang (Kepala Salasilah) di atas keturunannya — moyang
+    // sentiasa berada di tengah-tengah julat keturunannya, walau seberapa
+    // besar pun cabang berkembang ke kiri atau ke kanan.
+    groups.forEach(group=>{
+      const hid = String(group.headId);
+      if(!placed[hid]) return;
+      let minX = Infinity, maxX = -Infinity;
+      group.ids.forEach(mid=>{
+        const p = placed[String(mid)]; if(!p) return;
+        if(p.x < minX) minX = p.x;
+        if(p.x > maxX) maxX = p.x;
+      });
+      if(!isFinite(minX) || !isFinite(maxX)) return;
+      const targetX = Math.round((minX + maxX) / 2);
+      const shift = targetX - placed[hid].x;
+      if(!shift) return;
+      group.ids.forEach(mid=>{
+        const p = placed[String(mid)]; if(!p) return;
+        p.x = Math.round(p.x + shift);
+      });
+    });
   }
   return placed;
 }
