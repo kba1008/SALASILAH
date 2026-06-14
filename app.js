@@ -4,12 +4,12 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxckR-dTzJs26DVAUHB_cx70zJRjft0Lb_XGS-gmVWd0B-bCRB3-Ruac2YRKIUNC7IK/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwaO_wKC5sL-ylBmqaO1r71cuI_YkfQ4zb91YIcy-GFZzZwdnWDjG-MSFUvzRIHNbet/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
-const APP_VERSION = '4.9';
+const APP_VERSION = '5.0';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -1785,12 +1785,27 @@ function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({"&":"&amp;
 
 function setupPanzoom(){
   const world = $('#world');
-  if(panzoomInstance) panzoomInstance.destroy();
+  // Simpan keadaan pan/zoom semasa supaya tidak hilang selepas renderAll/refresh
+  let prev = null;
+  if(panzoomInstance){
+    try{
+      const pan = panzoomInstance.getPan();
+      prev = { x: pan.x, y: pan.y, scale: panzoomInstance.getScale() };
+    }catch(_){}
+    panzoomInstance.destroy();
+  }
   panzoomInstance = Panzoom(world, { maxScale: 3, minScale: 0.15, contain: false, canvas: true, cursor:'grab', step:.3 });
   $('#stage').addEventListener('wheel', panzoomInstance.zoomWithWheel, { passive:false });
   let cullT; const sched = ()=>{ clearTimeout(cullT); cullT=setTimeout(cullViewport, 80); };
   world.addEventListener('panzoomchange', sched);
   window.addEventListener('resize', sched);
+  // Pulihkan kedudukan & zoom sebelum render semula (selepas Simpan / refresh)
+  if(prev){
+    try{
+      panzoomInstance.zoom(prev.scale, { animate:false, force:true });
+      panzoomInstance.pan(prev.x, prev.y, { animate:false, force:true });
+    }catch(_){}
+  }
   setTimeout(cullViewport, 100);
 }
 $('#zIn').onclick = ()=> panzoomInstance?.zoomIn();
