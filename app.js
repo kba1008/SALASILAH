@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbwk_m2fzr-j1xGfmDvhzIcyehvs2YAKH0ON5E191tnfOd9j11Cm4uABKm6WP1a5HJhR/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyAlojo6YvUpVWag7SeOXnlsm4TAlY8B5UjWblLTzVjbzp7mVfFNB6sLc-eWpoIiABq/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1358,18 +1358,34 @@ function renderLinks(layout){
   let labels = '';
   let handles = '';
   const junctions = {}; // spouseId -> {x,y}
+  // Kira berapa pasangan dimiliki oleh setiap ahli. Jika seseorang ada
+  // >1 pasangan (poligami/poliandri), parent yang UNIK bagi pasangan ini
+  // ialah pasangannya (bukan dia). Garisan anak akan ditambat pada parent
+  // unik tersebut supaya tidak menyentuh pasangan lain.
+  const spouseCount = {};
+  SPOUSES.forEach(s=>{
+    spouseCount[s.husbandId] = (spouseCount[s.husbandId]||0) + 1;
+    spouseCount[s.wifeId] = (spouseCount[s.wifeId]||0) + 1;
+  });
   SPOUSES.forEach(s=>{
     const a = layout[s.husbandId], b = layout[s.wifeId];
     if(!a || !b) return;
     paths += `<path class="spouse${s._draft?' draft-link':''}" d="M ${a.x + NODE_W/2} ${a.y + NODE_H/2} L ${b.x + NODE_W/2} ${b.y + NODE_H/2}"/>`;
-    // Titik pertemuan cabang (junction) — ditambat pada IBU (isteri) supaya garisan
-    // anak sentiasa menyentuh ibu kandungnya sendiri, bukan isteri lain bapanya.
-    const mother = b || a;
-    const cx = mother.x + NODE_W/2;
-    const cy = mother.y + NODE_H/2;
+    // Pilih "anchor parent": parent yang TIDAK dikongsi dengan pasangan lain.
+    // Lelaki kahwin 2 wanita → anchor pada isteri (ibu sebenar anak ini).
+    // Wanita kahwin 2 lelaki → anchor pada suami (bapa sebenar anak ini).
+    // Jika monogami, default pada ibu (isteri).
+    const husbandShared = (spouseCount[s.husbandId]||0) > 1;
+    const wifeShared = (spouseCount[s.wifeId]||0) > 1;
+    let anchor;
+    if(husbandShared && !wifeShared) anchor = b;        // ibu unik
+    else if(wifeShared && !husbandShared) anchor = a;   // bapa unik
+    else anchor = b || a;                                // default: ibu
+    const cx = anchor.x + NODE_W/2;
+    const cy = anchor.y + NODE_H;   // mula dari bahagian bawah kad parent
     const dx = Number(s.junctionDx) || 0;
     const dy = Number(s.junctionDy) || 0;
-    junctions[s.id] = { x: cx + dx, y: cy + dy };
+    junctions[s.id] = { x: cx + dx, y: cy + dy, anchorId: anchor === a ? s.husbandId : s.wifeId };
   });
   // Kumpulkan anak mengikut pasangan supaya hanya SATU batang turun dari
   // garisan putus-putus pasangan ke busbar, kemudian busbar bercabang ke
@@ -1419,7 +1435,15 @@ function renderLinks(layout){
     const a = layout[sp.husbandId], b = layout[sp.wifeId];
     let jx, jy;
     if(j){ jx = j.x; jy = j.y; }
-    else { const mother = b || a; jx = mother.x + NODE_W/2; jy = mother.y + NODE_H; }
+    else {
+      const husbandShared = (spouseCount[sp.husbandId]||0) > 1;
+      const wifeShared = (spouseCount[sp.wifeId]||0) > 1;
+      let anchor;
+      if(husbandShared && !wifeShared) anchor = b;
+      else if(wifeShared && !husbandShared) anchor = a;
+      else anchor = b || a;
+      jx = anchor.x + NODE_W/2; jy = anchor.y + NODE_H;
+    }
     kids.sort((c1,c2)=> (layout[c1.childId].x-layout[c2.childId].x) || String(c1.childId).localeCompare(String(c2.childId)));
     const kxs = kids.map(c=> layout[c.childId].x + NODE_W/2);
     const kyMin = Math.min(...kids.map(c=> layout[c.childId].y));
