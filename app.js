@@ -1,15 +1,15 @@
 /* ================================================================
-   Salasilah Keluarga Elit — app.js v4.7
+   Salasilah Keluarga Elit — app.js v4.9
    ================================================================ */
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxckR-dTzJs26DVAUHB_cx70zJRjft0Lb_XGS-gmVWd0B-bCRB3-Ruac2YRKIUNC7IK/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwaO_wKC5sL-ylBmqaO1r71cuI_YkfQ4zb91YIcy-GFZzZwdnWDjG-MSFUvzRIHNbet/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
-const APP_VERSION = '4.8';
+const APP_VERSION = '4.9';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -1061,12 +1061,32 @@ function renderAll(){
     const heads = (typeof getHeadRoots==='function') ? Array.from(getHeadRoots()) : [];
     const anchorId = heads.find(h => layout[h]) || Object.keys(layout)[0];
     layout = resolveCardCollisions(layout, { gapX: 36, gapY: 28, anchorId });
+    layout = keepLayoutInsideDrawableWorld(layout, 220);
   }catch(_){}
   renderNodes(layout);
-  renderLinks(layout);
   renderNotes();
   resizeWorld(layout);
+  renderLinks(layout);
   setupPanzoom();
+}
+
+// Elak SVG/garisan terpotong oleh viewport 0,0 apabila susunan diseret terlalu
+// kiri/atas. Semua kad dianjak serentak secara paparan supaya hubungan kekal sama.
+function keepLayoutInsideDrawableWorld(layout, pad){
+  const placed = cloneLayout(layout || {});
+  const ids = Object.keys(placed);
+  if(!ids.length) return placed;
+  let minX = Infinity, minY = Infinity;
+  ids.forEach(id=>{
+    const p = placed[id]; if(!p) return;
+    minX = Math.min(minX, Number(p.x)||0);
+    minY = Math.min(minY, Number(p.y)||0);
+  });
+  const dx = minX < pad ? Math.ceil(pad - minX) : 0;
+  const dy = minY < pad ? Math.ceil(pad - minY) : 0;
+  if(!dx && !dy) return placed;
+  ids.forEach(id=>{ placed[id].x = Math.round((Number(placed[id].x)||0) + dx); placed[id].y = Math.round((Number(placed[id].y)||0) + dy); });
+  return placed;
 }
 
 // Kira saiz minimum #world berdasarkan kedudukan semua kad + nota,
