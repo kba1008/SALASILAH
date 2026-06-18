@@ -4,12 +4,12 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyXlC9mwOOWnCM272wSyhLiFXhcYvb9WSgcY3Ko7xB2SUZQw7hF4tFpl6nT-Im8epM/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxckR-dTzJs26DVAUHB_cx70zJRjft0Lb_XGS-gmVWd0B-bCRB3-Ruac2YRKIUNC7IK/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
-const APP_VERSION = '5.2';
+const APP_VERSION = '5.3';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -2165,9 +2165,12 @@ function _fitToTree(){
   scale = Math.max(0.15, Math.min(scale, 1));
   const cx = (minX+maxX)/2, cy = (minY+maxY)/2;
   try{
+    const panX = st.width/2 - (cx * scale);
+    const panY = st.height/2 - (cy * scale);
     panzoomInstance.zoom(scale, { animate:false, force:true });
-    panzoomInstance.pan(st.width/2/scale - cx, st.height/2/scale - cy, { animate:false, force:true });
-    try{ localStorage.setItem(VIEWPORT_KEY, JSON.stringify({ x: st.width/2/scale - cx, y: st.height/2/scale - cy, scale })); }catch(_){}
+    panzoomInstance.pan(panX, panY, { animate:false, force:true });
+    try{ localStorage.setItem(VIEWPORT_KEY, JSON.stringify({ x: panX, y: panY, scale })); }catch(_){}
+    setTimeout(cullViewport, 60);
     return true;
   }catch(_){ return false; }
 }
@@ -2177,8 +2180,12 @@ function _centerOnId(id){
   const x = parseFloat(el.style.left)||0, y = parseFloat(el.style.top)||0;
   const st = $('#stage').getBoundingClientRect();
   try{
+    const panX = -x + st.width/2 - NODE_W/2;
+    const panY = -y + st.height/2 - NODE_H/2;
     panzoomInstance.zoom(1, { animate:false, force:true });
-    panzoomInstance.pan(-x + st.width/2 - NODE_W/2, -y + st.height/2 - NODE_H/2, { animate:false, force:true });
+    panzoomInstance.pan(panX, panY, { animate:false, force:true });
+    try{ localStorage.setItem(VIEWPORT_KEY, JSON.stringify({ x: panX, y: panY, scale: 1 })); }catch(_){}
+    setTimeout(cullViewport, 60);
     el.classList.add('match');
     setTimeout(()=> el.classList.remove('match'), 2500);
     return true;
