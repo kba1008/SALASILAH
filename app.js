@@ -9,7 +9,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxckR-dTzJs26DVAUHB_cx7
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
-const APP_VERSION = '5.1';
+const APP_VERSION = '5.2';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -391,6 +391,7 @@ async function boot(){
     else notify.error(e.message);
   }
   renderAll(); updatePendingBadge();
+  _initialFocusDone = false; _initialFocus();
   setTimeout(()=>{ $('#splash').style.display='none'; clearInterval(tipTimer); }, 400);
   flushQueue();
 }
@@ -2036,7 +2037,7 @@ function memberForm(m){
       payload.photoB64 = dataUrl.split(',')[1];
       payload.photoMime = 'image/jpeg';
     }
-    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success('Berjaya.'); } closeModal(); await refresh(); if(!r.pending && isNew) await autoPlaceNew([payload.id]); }catch(e){ toast("Gagal: "+e.message); }
+    try{ const r = await dispatchApi(isNew?'addMember':'editMember', payload); _markLastEdit(payload.id); if(r.pending){ notify.warn(adminContactMsg('📝 Disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success('Berjaya. Memuat semula…'); } closeModal(); setTimeout(()=> location.reload(), 700); }catch(e){ toast("Gagal: "+e.message); }
   };
 }
 
@@ -2064,7 +2065,7 @@ function spouseForm(m){
     const baseLayout = buildLayout();
     const existingIds = getRenderMembers().map(x=>x.id);
     const partnerId = pick || payload.newPartner?.id;
-    try{ const r = await dispatchApi('addSpouse', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai."); } closeModal(); await refresh({ silent:true }); await autoPlaceNew([partnerId], { baseLayout, existingIds, forceIds:[partnerId] }); }catch(e){ toast(e.message); }
+    try{ const r = await dispatchApi('addSpouse', payload); _markLastEdit(partnerId || m.id); if(r.pending){ notify.warn(adminContactMsg('📝 Pasangan disimpan sebagai DRAF. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Selesai. Memuat semula…"); } closeModal(); setTimeout(()=> location.reload(), 700); }catch(e){ toast(e.message); }
   };
 }
 
@@ -2092,7 +2093,7 @@ function childForm(m){
     if(!payload.newChild.name) return toast("Nama anak wajib.");
     const baseLayout = buildLayout();
     const existingIds = getRenderMembers().map(x=>x.id);
-    try{ const r = await dispatchApi('addChild', payload); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya."); } closeModal(); await refresh({ silent:true }); await autoPlaceNew([payload.childId], { baseLayout, existingIds, forceIds:[payload.childId] }); }catch(e){ toast(e.message); }
+    try{ const r = await dispatchApi('addChild', payload); _markLastEdit(payload.childId); if(r.pending){ notify.warn(adminContactMsg('📝 Anak disimpan sebagai DRAF di bawah pasangan. Menunggu pengesahan pentadbir.'), { ms: 8000 }); } else { notify.success("Berjaya. Memuat semula…"); } closeModal(); setTimeout(()=> location.reload(), 700); }catch(e){ toast(e.message); }
   };
 }
 
@@ -2111,7 +2112,7 @@ function noteForm(n){
       <button class="btn gold-edge" id="saveNote">Simpan</button>
     </div>
   `);
-  $('#saveNote').onclick = async ()=>{ try{ await dispatchApi(isNew?'addNote':'editNote', {id:n.id||uid(), text:$('#n_t').value, x:n.x||400, y:n.y||400}); notify.success("Tersimpan."); closeModal(); await refresh(); }catch(e){ toast(e.message); } };
+  $('#saveNote').onclick = async ()=>{ try{ const _nid = n.id||uid(); await dispatchApi(isNew?'addNote':'editNote', {id:_nid, text:$('#n_t').value, x:n.x||400, y:n.y||400}); notify.success("Tersimpan. Memuat semula…"); closeModal(); setTimeout(()=> location.reload(), 700); }catch(e){ toast(e.message); } };
   const dn = $('#delNote'); if(dn) dn.onclick = async ()=>{ if(confirm("Padam nota?")){ try{ await dispatchApi('deleteNote', { id:n.id }); closeModal(); await refresh(); }catch(e){ toast(e.message); } } };
 }
 function openNoteMenu(n){ noteForm(n); }
@@ -2135,6 +2136,70 @@ function centerOn(id){
     setTimeout(()=> panzoomInstance.pan(-x + st.width/2 - NODE_W/2, -y + st.height/2 - NODE_H/2, { animate:true }), 50);
   }
 }
+
+// ====== AUTO-CENTER & LAST-EDIT FOCUS ======
+const LAST_EDIT_KEY = 'skg_last_edit_v1';
+function _markLastEdit(id){
+  try{ if(id) localStorage.setItem(LAST_EDIT_KEY, String(id)); }catch(_){}
+}
+function _fitToTree(){
+  if(!panzoomInstance) return false;
+  const nodes = document.querySelectorAll('#nodes .node');
+  if(!nodes.length) return false;
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  nodes.forEach(el=>{
+    const x = parseFloat(el.style.left)||0;
+    const y = parseFloat(el.style.top)||0;
+    const w = el.offsetWidth || NODE_W;
+    const h = el.offsetHeight || NODE_H;
+    if(x<minX) minX=x; if(y<minY) minY=y;
+    if(x+w>maxX) maxX=x+w; if(y+h>maxY) maxY=y+h;
+  });
+  if(!isFinite(minX)) return false;
+  const st = $('#stage').getBoundingClientRect();
+  const pad = 80;
+  const bw = (maxX-minX) + pad*2;
+  const bh = (maxY-minY) + pad*2;
+  let scale = Math.min(st.width/bw, st.height/bh, 1);
+  if(!isFinite(scale) || scale<=0) scale = 1;
+  scale = Math.max(0.15, Math.min(scale, 1));
+  const cx = (minX+maxX)/2, cy = (minY+maxY)/2;
+  try{
+    panzoomInstance.zoom(scale, { animate:false, force:true });
+    panzoomInstance.pan(st.width/2/scale - cx, st.height/2/scale - cy, { animate:false, force:true });
+    try{ localStorage.setItem(VIEWPORT_KEY, JSON.stringify({ x: st.width/2/scale - cx, y: st.height/2/scale - cy, scale })); }catch(_){}
+    return true;
+  }catch(_){ return false; }
+}
+function _centerOnId(id){
+  const el = document.querySelector(`#nodes .node[data-id="${id}"]`);
+  if(!el || !panzoomInstance) return false;
+  const x = parseFloat(el.style.left)||0, y = parseFloat(el.style.top)||0;
+  const st = $('#stage').getBoundingClientRect();
+  try{
+    panzoomInstance.zoom(1, { animate:false, force:true });
+    panzoomInstance.pan(-x + st.width/2 - NODE_W/2, -y + st.height/2 - NODE_H/2, { animate:false, force:true });
+    el.classList.add('match');
+    setTimeout(()=> el.classList.remove('match'), 2500);
+    return true;
+  }catch(_){ return false; }
+}
+let _initialFocusDone = false;
+function _initialFocus(){
+  if(_initialFocusDone) return;
+  _initialFocusDone = true;
+  let lastId = null;
+  try{ lastId = localStorage.getItem(LAST_EDIT_KEY); }catch(_){}
+  setTimeout(()=>{
+    if(lastId){
+      try{ localStorage.removeItem(LAST_EDIT_KEY); }catch(_){}
+      if(_centerOnId(lastId)) return;
+    }
+    // Sentiasa fit-to-tree pada pemuatan pertama supaya tidak pernah paparan kosong
+    _fitToTree();
+  }, 220);
+}
+
 
 async function openProfile(){
   const u = STORE.user; if(!u) return;
