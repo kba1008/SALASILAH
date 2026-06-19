@@ -9,7 +9,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
 const ADMIN_WA = "60" + ADMIN_PHONE.replace(/[^0-9]/g, "").replace(/^0/, "");
-const APP_VERSION = '5.3';
+const APP_VERSION = '5.4';
 function adminContactMsg(prefix){
   return (prefix || "📝 Disimpan sebagai DRAF.") +
     " Untuk pengesahan segera, sila hubungi pentadbir di WhatsApp / talian " + ADMIN_PHONE + ".";
@@ -203,6 +203,7 @@ let tipIdx = 0;
 const tipTimer = setInterval(()=> { tipIdx=(tipIdx+1)%TIPS.length; const el=$('#tip'); if(el) el.textContent="Petua: "+TIPS[tipIdx]; }, 3000);
 
 let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], returnedDrafts:[], pendingLog:[], users:[] };
+let LINEAGE = { active:false, targetId:'', rootId:'', pathIds:[], nodeIds:new Set(), childKeys:new Set() };
 const NODE_W = 220, NODE_H = 170, GAP_X = 32, GAP_Y = 70;
 const upperName = (s) => String(s||'').replace(/\s+/g,' ').trim().toUpperCase();
 
@@ -553,46 +554,29 @@ function autoLayout(){
 
 function buildLayout(){
   const placed = autoLayout();
-  const s = DATA.settings || {};
-  const manualOn = (s.manualPositionsEnabled !== false);
-  const dragOn   = (s.dragEnabled         !== false);
-  const autoOn   = (s.autoLayoutEnabled   !== false);
-  const professionalMode = !manualOn || !dragOn || !autoOn;
-
   const MEMBERS = getRenderMembers();
   const byId = Object.fromEntries(MEMBERS.map(m=>[m.id, m]));
+  const primaryHeadId = getPrimaryHeadRootId();
 
-  // Kepala Root sentiasa boleh diseret oleh admin/master walaupun
-  // semua tetapan susunan dimatikan. Bila Kepala Root mempunyai posX/posY
-  // tersimpan, kita gunakannya sebagai OFFSET untuk seluruh subtreenya —
-  // formasi profesional di bawahnya kekal kemas, cuma keseluruhan cabang
-  // bergerak bersama Kepala Root.
-  const heads = Array.from(getHeadRoots());
-  heads.forEach(hid=>{
-    const head = byId[hid];
-    const auto = placed[hid];
-    if(!head || !auto) return;
-    if(head.posX==null || head.posY==null) return;
-    if(!isFinite(head.posX) || !isFinite(head.posY)) return;
-    const dx = Number(head.posX) - auto.x;
-    const dy = Number(head.posY) - auto.y;
-    if(!dx && !dy) return;
-    const subtree = getSubtreeIds(hid);
-    subtree.forEach(mid=>{
-      const p = placed[mid]; if(!p) return;
-      p.x += dx; p.y += dy;
-    });
-  });
-
-  if(professionalMode) return enforceHierarchyLayout(placed);
-
-  // Mod penuh: hormati kedudukan tersimpan setiap kad (admin telah seret).
-  MEMBERS.forEach(m=>{
-    if(m.posX!=null && m.posY!=null && isFinite(m.posX) && isFinite(m.posY)){
-      placed[m.id] = { x: Number(m.posX), y: Number(m.posY) };
+  // Mod profesional sentiasa aktif: susunan diambil terus daripada struktur
+  // keluarga supaya kemas automatik setiap kali data baharu masuk. Posisi
+  // manual individu tidak lagi diutamakan kerana ia menyebabkan carta
+  // berterabur apabila ada ahli diselit di tengah salasilah.
+  if(primaryHeadId){
+    const head = byId[primaryHeadId];
+    const auto = placed[primaryHeadId];
+    if(head && auto && head.posX!=null && head.posY!=null && isFinite(head.posX) && isFinite(head.posY)){
+      const dx = Number(head.posX) - auto.x;
+      const dy = Number(head.posY) - auto.y;
+      if(dx || dy){
+        getSubtreeIds(primaryHeadId).forEach(mid=>{
+          const p = placed[mid]; if(!p) return;
+          p.x += dx; p.y += dy;
+        });
+      }
     }
-  });
-  return enforceHierarchyLayout(placed);
+  }
+  return enforceHierarchyLayout(placed, { anchorId: primaryHeadId || Object.keys(placed)[0] || '' });
 }
 
 // ===================================================================
@@ -1128,6 +1112,7 @@ function renderNodes(layout){
   const editMap = getEditPendingMap();           // id ahli sedia ada -> cadangan edit
   const isAdmin = ['admin','master'].includes(STORE.user?.role);
   const headRoots = getHeadRoots();
+  const lineageOn = !!LINEAGE.active;
   const frag = document.createDocumentFragment();
   getRenderMembers().forEach(m=>{
     const pos = layout[m.id] || {x:200,y:200};
@@ -1140,7 +1125,10 @@ function renderNodes(layout){
     const isDraft = !!pendingRec;
     const draftCls = isDraft ? 'tag-draft' : '';
     const isHead = headRoots.has(m.id);
-    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls} ${isHead?'root-head':''}`;
+    const inLineage = lineageOn && LINEAGE.nodeIds.has(String(m.id));
+    const targetLineage = lineageOn && String(LINEAGE.targetId) === String(m.id);
+    const lineageCls = lineageOn ? (inLineage ? (targetLineage ? 'lineage-node lineage-target' : 'lineage-node') : 'lineage-dim') : '';
+    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls} ${isHead?'root-head':''} ${lineageCls}`;
     if(isHead) el.title = isAdmin ? 'Kepala Salasilah — seret untuk gerakkan keseluruhan family tree' : 'Kepala Salasilah';
     el.style.left = pos.x+'px'; el.style.top = pos.y+'px';
     el.dataset.id = m.id;
@@ -1185,17 +1173,120 @@ function isHeadFlag(m){
   const v = m && m.isHead;
   return v===true || v===1 || v==='1' || String(v).toLowerCase()==='true';
 }
-// "Kepala Root" = ahli yang DITANDA oleh admin sahaja.
-// Jika admin nyahkan tanda kepala, tiada kad akan memakai crown/gerak seluruh
-// tree sehingga admin lantik semula. Ini mengelak sistem auto-pindahkan tag
-// kepada pasangan atau root lain tanpa arahan admin.
-function getHeadRoots(){
-  const MEMBERS = getRenderMembers();
-  const heads = new Set();
-  MEMBERS.forEach(m=>{ if(isHeadFlag(m)) heads.add(m.id); });
+// Semua root yang ditanda admin. Paparan hanya akan memilih SATU sahaja
+// sebagai kepala utama, iaitu root pertama yang paling atas/awal.
+function getMarkedHeadRoots(){
+  const heads = [];
+  getRenderMembers().forEach(m=>{ if(isHeadFlag(m)) heads.push(m); });
   return heads;
 }
-function isHeadRoot(id){ return getHeadRoots().has(id); }
+// "Kepala Root" dipaparkan SATU sahaja walaupun banyak tanda disimpan dalam data.
+// Ini memenuhi permintaan supaya salasilah hanya menonjolkan root utama pertama.
+function getHeadRoots(){
+  const primaryId = getPrimaryHeadRootId();
+  return primaryId ? new Set([String(primaryId)]) : new Set();
+}
+function isHeadRoot(id){ return getHeadRoots().has(String(id)); }
+function getPrimaryHeadRootId(){
+  const heads = getMarkedHeadRoots();
+  if(!heads.length) return '';
+  const rootHeads = heads.filter(m => isRootMember(m.id));
+  const candidates = rootHeads.length ? rootHeads : heads;
+  const depths = getGenerationDepths();
+  candidates.sort((a, b) => {
+    const da = Number(depths[String(a.id)] ?? 0);
+    const db = Number(depths[String(b.id)] ?? 0);
+    if(da !== db) return da - db;
+    const ay = Number(a.posY), by = Number(b.posY);
+    if(isFinite(ay) && isFinite(by) && ay !== by) return ay - by;
+    const ax = Number(a.posX), bx = Number(b.posX);
+    if(isFinite(ax) && isFinite(bx) && ax !== bx) return ax - bx;
+    return String(a.name || '').localeCompare(String(b.name || ''), 'ms', { sensitivity:'base' });
+  });
+  return candidates[0] ? String(candidates[0].id) : '';
+}
+function makeLineageChildKey(spouseId, childId){
+  return String(spouseId || '') + '::' + String(childId || '');
+}
+function clearLineageState(){
+  LINEAGE = { active:false, targetId:'', rootId:'', pathIds:[], nodeIds:new Set(), childKeys:new Set() };
+  return LINEAGE;
+}
+function computeLineageToMember(targetId){
+  const rootId = getPrimaryHeadRootId();
+  const target = String(targetId || '');
+  if(!rootId || !target) return clearLineageState();
+
+  const MEMBERS = getRenderMembers();
+  const SPOUSES = getRenderSpouses();
+  const CHILDREN = getRenderChildren();
+  const byId = Object.fromEntries(MEMBERS.map(m=>[String(m.id), m]));
+  if(!byId[rootId] || !byId[target]) return clearLineageState();
+  if(target === String(rootId)){
+    return {
+      active: true,
+      targetId: target,
+      rootId: String(rootId),
+      pathIds: [String(rootId)],
+      nodeIds: new Set([String(rootId)]),
+      childKeys: new Set()
+    };
+  }
+
+  const spouseById = Object.fromEntries(SPOUSES.map(s=>[String(s.id), s]));
+  const childrenByParent = {};
+  CHILDREN.forEach(link=>{
+    const sp = spouseById[String(link.spouseId)];
+    if(!sp || !byId[String(link.childId)]) return;
+    [sp.husbandId, sp.wifeId].forEach(parentId=>{
+      const pid = String(parentId || '');
+      if(!pid || !byId[pid]) return;
+      if(!childrenByParent[pid]) childrenByParent[pid] = [];
+      childrenByParent[pid].push({ childId:String(link.childId), spouseId:String(link.spouseId) });
+    });
+  });
+
+  const visited = new Set();
+  function walk(currentId, pathIds, childKeys){
+    const key = String(currentId);
+    if(visited.has(pathIds.join('>') + '|' + key)) return null;
+    visited.add(pathIds.join('>') + '|' + key);
+    const nexts = (childrenByParent[key] || [])
+      .slice()
+      .sort((a,b)=>{
+        const ma = byId[a.childId], mb = byId[b.childId];
+        const ka = _sortKey(ma), kb = _sortKey(mb);
+        return ka[0]-kb[0] || String(ka[1]).localeCompare(String(kb[1]), 'ms', { sensitivity:'base' });
+      });
+    for(const next of nexts){
+      if(pathIds.includes(next.childId)) continue;
+      const nextPathIds = pathIds.concat(next.childId);
+      const nextChildKeys = childKeys.concat(makeLineageChildKey(next.spouseId, next.childId));
+      if(next.childId === target){
+        return { pathIds: nextPathIds, childKeys: nextChildKeys };
+      }
+      const found = walk(next.childId, nextPathIds, nextChildKeys);
+      if(found) return found;
+    }
+    return null;
+  }
+
+  const found = walk(String(rootId), [String(rootId)], []);
+  if(!found) return clearLineageState();
+  return {
+    active: true,
+    targetId: target,
+    rootId: String(rootId),
+    pathIds: found.pathIds,
+    nodeIds: new Set(found.pathIds),
+    childKeys: new Set(found.childKeys)
+  };
+}
+function setLineageTarget(targetId){
+  LINEAGE = computeLineageToMember(targetId);
+  renderAll();
+  return LINEAGE;
+}
 function getGenerationDepths(){
   const MEMBERS = getRenderMembers();
   const SPOUSES = getRenderSpouses();
@@ -1317,22 +1408,19 @@ function enforceHierarchyLayout(layout, options){
 }
 let _dragState = null;
 function canDragCards(){
-  const u = STORE.user;
-  if(!u) return false; // pelawat tidak dibenarkan seret
-  if(u.role === 'master') return true; // master sentiasa boleh
-  return (DATA.settings?.dragEnabled !== false);
+  return false;
 }
 // Admin/master sentiasa dibenarkan seret Kepala Root untuk memindahkan
 // keseluruhan salasilah di bawahnya — walaupun semua tetapan susunan ditutup
 // oleh Master Admin. Ini memberi admin kawalan kedudukan keseluruhan tree
 // tanpa membuka semula mod drag bebas untuk kad lain.
-function canDragHeadRoot(){
+function canDragHeadRoot(id){
   const u = STORE.user;
-  return !!u && (u.role === 'master' || u.role === 'admin');
+  return !!u && (u.role === 'master' || u.role === 'admin') && String(id||'') === String(getPrimaryHeadRootId() || '');
 }
 function enableNodeDrag(el, id, layout){
   const isRoot = isHeadRoot(id);
-  const allowed = canDragCards() || (isRoot && canDragHeadRoot());
+  const allowed = canDragCards() || (isRoot && canDragHeadRoot(id));
   if(!allowed){
     el.style.touchAction = '';
     el.style.cursor = '';
@@ -1342,7 +1430,7 @@ function enableNodeDrag(el, id, layout){
   el.addEventListener('pointerdown', (e)=>{
     if(e.button && e.button!==0) return;
     const rootNow = isHeadRoot(id);
-    const okNow = canDragCards() || (rootNow && canDragHeadRoot());
+    const okNow = canDragCards() || (rootNow && canDragHeadRoot(id));
     if(!okNow) return;
     // jangan ganggu klik pada gambar / butang dalam kad
     if(e.target.closest('.lb-img,button,a,input,select,textarea')) return;
@@ -1497,6 +1585,7 @@ function renderLinks(layout){
   const SPOUSES = getRenderSpouses();
   const CHILDREN = getRenderChildren();
   const isAdmin = ['admin','master'].includes(STORE.user?.role);
+  const lineageOn = !!LINEAGE.active;
   let paths = '';
   let labels = '';
   let handles = '';
@@ -1549,7 +1638,10 @@ function renderLinks(layout){
     const _x2 = _aL ? b.x : b.x + NODE_W;
     const _y1 = a.y + NODE_H/2;
     const _y2 = b.y + NODE_H/2;
-    paths += `<path class="spouse${s._draft?' draft-link':''}" d="M ${_x1} ${_y1} L ${_x2} ${_y2}"/>`;
+    const spouseCls = ['spouse'];
+    if(s._draft) spouseCls.push('draft-link');
+    if(lineageOn) spouseCls.push('lineage-dim');
+    paths += `<path class="${spouseCls.join(' ')}" d="M ${_x1} ${_y1} L ${_x2} ${_y2}"/>`;
   });
 
   // Kumpulkan anak mengikut pasangan + parent anchor. Ini menghalang anak bagi
@@ -1617,8 +1709,12 @@ function renderLinks(layout){
     if(busY < parentBottom + 34) busY = parentBottom + 34 + lane * LINE_GAP;
     if(busY > kyMin - 28) busY = kyMin - 28;
     const isDraftGroup = kids.every(c=> c._draft);
-    const cls = isDraftGroup ? 'draft-link' : '';
-    const grpAttr = `class="child-group ${cls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
+    const highlightedGroup = lineageOn && kids.some(c => LINEAGE.childKeys.has(makeLineageChildKey(c.spouseId, c.childId)));
+    const groupClasses = ['child-group'];
+    if(isDraftGroup) groupClasses.push('draft-link');
+    if(lineageOn) groupClasses.push(highlightedGroup ? 'lineage-path' : 'lineage-dim');
+    const cls = groupClasses.join(' ');
+    const grpAttr = `class="${cls}" data-spouseid="${sp.id}" style="cursor:pointer"`;
     const trunkOffset = trunkLaneFor(jx, jy, busY);
     if(trunkOffset){
       const tx = jx + trunkOffset;
@@ -1632,13 +1728,17 @@ function renderLinks(layout){
     kids.forEach(c=>{
       const k = layout[c.childId];
       const kx = k.x + NODE_W/2;
-      const ccls = c._draft ? 'draft-link' : '';
+      const childClasses = [];
+      if(c._draft) childClasses.push('draft-link');
+      if(lineageOn) childClasses.push(LINEAGE.childKeys.has(makeLineageChildKey(c.spouseId, c.childId)) ? 'lineage-path' : 'lineage-dim');
+      const ccls = childClasses.join(' ');
       paths += `<path class="${ccls}" d="M ${kx} ${busY} L ${kx} ${k.y}"/>`;
       const dad = byId[sp.husbandId], mom = byId[sp.wifeId];
       const dn = (dad?.name||'?').split(' ')[0];
       const mn = (mom?.name||'?').split(' ')[0];
       const lblY = busY - 6;
-      labels += `<g class="branch-lbl"><rect x="${kx-58}" y="${lblY-11}" width="116" height="14" rx="6"/><text x="${kx}" y="${lblY}" text-anchor="middle">${escapeHtml(dn)} × ${escapeHtml(mn)}</text></g>`;
+      const labelOpacity = lineageOn && !LINEAGE.childKeys.has(makeLineageChildKey(c.spouseId, c.childId)) ? '0.35' : '1';
+      labels += `<g class="branch-lbl" style="opacity:${labelOpacity}"><rect x="${kx-58}" y="${lblY-11}" width="116" height="14" rx="6"/><text x="${kx}" y="${lblY}" text-anchor="middle">${escapeHtml(dn)} × ${escapeHtml(mn)}</text></g>`;
     });
   });
   // Pemegang junction — hanya admin & jika pasangan punya anak.
@@ -1783,6 +1883,71 @@ function renderNotes(){
 }
 
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+function memberGenderLabel(m){ return m?.gender === 'F' ? 'Perempuan' : 'Lelaki'; }
+function memberLifeLabel(m){ return m?.alive === false ? 'Allahyarham' : 'Hidup'; }
+function lineageSummaryHtml(m, lineage){
+  const rootMember = findM(lineage.rootId);
+  if(!lineage.active || !rootMember){
+    return `<div class="bevel-soft rounded-lg p-3 mt-3 text-sm ink-soft">Ahli ini bukan dari darah keturunan terus di bawah root utama yang sedang dipaparkan. Garisan warna tidak dinyalakan.</div>`;
+  }
+  const chain = lineage.pathIds
+    .map(id => findM(id))
+    .filter(Boolean)
+    .map(mm => escapeHtml(mm.name || mm.id))
+    .join(' → ');
+  return `<div class="bevel-soft rounded-lg p-3 mt-3 text-sm">
+    <div><b>Sorotan darah aktif</b></div>
+    <div class="ink-soft mt-1">Laluan moyang hingga ahli ini sedang diserlahkan pada carta.</div>
+    <div class="mt-2"><b>Root utama:</b> ${escapeHtml(rootMember.name || rootMember.id)}</div>
+    <div class="mt-1"><b>Rantaian:</b> ${chain}</div>
+  </div>`;
+}
+function printMemberReport(m){
+  const lineage = computeLineageToMember(m.id);
+  const rows = MEMBER_FIELDS
+    .filter(f => m[f.key])
+    .map(f => `<tr><th>${escapeHtml(f.label)}</th><td>${escapeHtml(m[f.key])}</td></tr>`)
+    .join('');
+  const lineageRows = lineage.active
+    ? lineage.pathIds.map((id, idx) => {
+        const mm = findM(id);
+        if(!mm) return '';
+        return `<tr><td>${idx + 1}</td><td>${escapeHtml(mm.name || id)}</td><td>${escapeHtml(memberGenderLabel(mm))}</td><td>${escapeHtml(mm.birth || '—')}</td></tr>`;
+      }).join('')
+    : `<tr><td colspan="4">Tiada laluan darah terus daripada root utama yang sedang dipaparkan.</td></tr>`;
+  const w = window.open('', '_blank', 'width=980,height=760');
+  if(!w){ notify.warn('Benarkan popup untuk mencetak laporan.'); return; }
+  w.document.open();
+  w.document.write(`<!doctype html>
+  <html lang="ms"><head><meta charset="utf-8"><title>Laporan Salasilah</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:28px;color:#1f2937}
+    h1,h2{margin:0 0 12px}
+    .meta{margin-bottom:18px;padding:14px 16px;border:1px solid #d1d5db;border-radius:12px;background:#f9fafb}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid #d1d5db;padding:8px 10px;text-align:left;vertical-align:top}
+    th{background:#f3f4f6;width:26%}
+    .small{color:#6b7280;font-size:12px}
+  </style></head><body>
+    <h1>Laporan Salasilah Individu</h1>
+    <div class="meta">
+      <div><b>Nama:</b> ${escapeHtml(m.name || 'Tanpa Nama')}</div>
+      <div><b>Jantina:</b> ${escapeHtml(memberGenderLabel(m))}</div>
+      <div><b>Status:</b> ${escapeHtml(memberLifeLabel(m))}</div>
+      <div><b>Tahun:</b> ${escapeHtml(m.birth || '?')}${m.alive===false ? ' – ' + escapeHtml(m.death || '?') : ''}</div>
+    </div>
+    <h2>Profil</h2>
+    <table>${rows || '<tr><td colspan="2">Tiada maklumat tambahan.</td></tr>'}</table>
+    <h2>Rantaian Keturunan</h2>
+    <table>
+      <thead><tr><th style="width:8%">#</th><th>Nama</th><th style="width:18%">Jantina</th><th style="width:18%">Tahun</th></tr></thead>
+      <tbody>${lineageRows}</tbody>
+    </table>
+    <div class="small" style="margin-top:14px">Dijana daripada Salasilah Keluarga Elit v${escapeHtml(APP_VERSION)}.</div>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>{ try{ w.focus(); w.print(); }catch(_){} }, 250);
+}
 
 const VIEWPORT_KEY = 'skg_viewport_v1';
 function _readSavedViewport(){
@@ -1847,6 +2012,7 @@ const MEMBER_FIELDS = [
 ];
 
 function openMemberMenu(m){
+  const lineage = setLineageTarget(m.id);
   const role = STORE.user?.role;
   const isAdmin = ['admin','master'].includes(role);
   const lock = (DATA.pending||[]).find(p => ['addMember','editMember'].includes(p.action) && String(p.payload?.id)===String(m.id));
@@ -1866,11 +2032,12 @@ function openMemberMenu(m){
     .map(f => `<div><b>${f.label}:</b> ${escapeHtml(m[f.key])}</div>`);
   const adminInfo = rows.length ? `<div class="profile-info bevel-soft">${rows.join('')}</div>` : '';
 
-  openModal(basic + adminInfo + `
+  openModal(basic + adminInfo + lineageSummaryHtml(m, lineage) + `
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
       ${role&&!lockedByOther?'<button class="btn gold-edge justify-center" data-act="edit">✏️ '+(isAdmin?'Edit':'Cadang Edit')+'</button>':''}
       ${role&&!lockedByOther?'<button class="btn gold-edge justify-center" data-act="spouse">💍 '+(isAdmin?'Tambah':'Cadang')+' Pasangan</button>':''}
       ${role&&!lockedByOther?'<button class="btn gold-edge justify-center" data-act="child">👶 '+(isAdmin?'Tambah':'Cadang')+' Anak</button>':''}
+      <button class="btn btn-ghost justify-center" data-act="printreport">🖨️ Print Laporan</button>
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="note">📝 Tambah Nota</button>':''}
       ${isAdmin?'<button class="btn btn-ghost justify-center" data-act="move">🔀 Pindah Cabang</button>':''}
       ${isAdmin&&isRootMember(m.id)&&!isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="sethead">👑 Jadikan Kepala</button>':''}
@@ -1886,6 +2053,7 @@ function openMemberMenu(m){
     if(act==='edit') memberForm(m);
     else if(act==='spouse') spouseForm(m);
     else if(act==='child') childForm(m);
+    else if(act==='printreport') printMemberReport(m);
     else if(act==='note') noteForm({x:300,y:300});
     else if(act==='del') deleteMember(m);
     else if(act==='move') moveBranch(m);
@@ -2202,7 +2370,9 @@ function _initialFocus(){
       try{ localStorage.removeItem(LAST_EDIT_KEY); }catch(_){}
       if(_centerOnId(lastId)) return;
     }
-    // Sentiasa fit-to-tree pada pemuatan pertama supaya tidak pernah paparan kosong
+    const primaryHeadId = getPrimaryHeadRootId();
+    if(primaryHeadId && _centerOnId(primaryHeadId)) return;
+    // Jika belum ada Kepala Salasilah, barulah fit-to-tree supaya tidak pernah paparan kosong
     _fitToTree();
   }, 220);
 }

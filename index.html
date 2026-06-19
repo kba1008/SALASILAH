@@ -171,6 +171,15 @@
     }
     .node.tag-draft .avatar img { filter:grayscale(1) opacity(.85); }
     .chip.draft-chip { background:#6f6f6f !important; color:#fff !important; }
+    .node.lineage-node {
+      outline:3px solid #34d399 !important;
+      box-shadow:0 0 0 4px rgba(52,211,153,.22), 0 18px 36px -14px rgba(16,185,129,.45);
+    }
+    .node.lineage-target {
+      outline:4px solid #10b981 !important;
+      box-shadow:0 0 0 6px rgba(16,185,129,.22), 0 24px 46px -16px rgba(16,185,129,.52);
+    }
+    .node.lineage-dim { opacity:.4; }
 
 
 
@@ -224,6 +233,13 @@
     #notes .note { pointer-events:auto; }
     svg.links path { stroke:var(--line); stroke-width:2.4; fill:none; vector-effect:non-scaling-stroke; stroke-linecap:round; stroke-linejoin:round; }
     svg.links path.spouse { stroke-dasharray:6 5; stroke:var(--gold); }
+    svg.links path.lineage-path {
+      stroke:#34d399 !important;
+      stroke-width:4.2 !important;
+      filter:drop-shadow(0 0 8px rgba(52,211,153,.55));
+      opacity:1 !important;
+    }
+    svg.links path.lineage-dim { opacity:.18; }
     /* Hubungan DRAF (belum disahkan): garisan kelabu putus-putus */
     svg.links path.draft-link { stroke:#9a9a9a !important; stroke-dasharray:4 5; opacity:.8; filter:none; }
     /* Pemegang junction — admin boleh seret untuk susun pertemuan cabang */
