@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxqXbVpdnUZlqafN55lGWYDbzxJCMSomlhLIrAtNw7SbtTTP3zxHqVqxO-uLGDXNU5K/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1883,6 +1883,9 @@ function renderNotes(){
 }
 
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+function findM(id){
+  return getRenderMembers().find(x => String(x.id) === String(id)) || null;
+}
 function memberGenderLabel(m){ return m?.gender === 'F' ? 'Perempuan' : 'Lelaki'; }
 function memberLifeLabel(m){ return m?.alive === false ? 'Allahyarham' : 'Hidup'; }
 function lineageSummaryHtml(m, lineage){
