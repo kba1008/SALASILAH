@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbwtliuJf1ZN2sugWtoA5gxJae3ntw-1WJ_oAxwYgq30iUgz5G2onS7jCYf-DRu8klQ7/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxNthVsDWd5gw1_7t52SbEw_HNmMjSCvULKhbaxhUSA_GiXq-D9OuHCJCEyFuEKnNVR/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -82,7 +82,11 @@ const STORE = {
   set theme(v){ localStorage.setItem('skg_theme', v); document.body.dataset.theme = v },
   // Set ID kepala root yang dikunci lokasi — posisi tidak akan berubah oleh auto-layout
   get lockedHeads(){ try{ return new Set(JSON.parse(localStorage.getItem('skg_locked_heads')||'[]')); }catch{ return new Set(); } },
-  set lockedHeads(v){ localStorage.setItem('skg_locked_heads', JSON.stringify([...v])); }
+  set lockedHeads(v){ localStorage.setItem('skg_locked_heads', JSON.stringify([...v])); },
+  // Peta {id → {x,y}} menyimpan koordinat sebenar kepala yang dikunci
+  // supaya posisi terpulih selepas refresh walaupun posX/posY tiada di server
+  get lockedPositions(){ try{ return JSON.parse(localStorage.getItem('skg_locked_pos')||'{}'); }catch{ return {}; } },
+  set lockedPositions(v){ localStorage.setItem('skg_locked_pos', JSON.stringify(v)); }
 };
 
 document.body.dataset.theme = STORE.theme;
@@ -563,13 +567,27 @@ function buildLayout(){
   // Sebelum ini hanya primary head dipulihkan. Kini SEMUA kepala root
   // yang ada posX/posY tersimpan akan dipulihkan bersama seluruh subtreenya.
   // Ini memastikan posisi tidak hilang selepas refresh.
+  //
+  // KEUTAMAAN posisi (tinggi → rendah):
+  //   1. lockedPositions (localStorage) — jika kepala dikunci, ini mengatasi segalanya
+  //   2. posX/posY dari server (hasil drag yang disimpan)
+  //   3. autoLayout (susunan automatik lalai)
+  const _lockedPos = STORE.lockedPositions;
   MEMBERS.filter(m => isHeadFlag(m)).forEach(m => {
     const hid = String(m.id);
     const auto = placed[hid];
     if(!auto) return;
-    if(m.posX == null || m.posY == null || !isFinite(Number(m.posX)) || !isFinite(Number(m.posY))) return;
-    const dx = Number(m.posX) - auto.x;
-    const dy = Number(m.posY) - auto.y;
+    // Tentukan sasaran posisi: utamakan lockedPositions, kemudian posX/posY server
+    let targetX = null, targetY = null;
+    const lp = _lockedPos[hid];
+    if(isHeadLocked(hid) && lp && isFinite(lp.x) && isFinite(lp.y)){
+      targetX = lp.x; targetY = lp.y;
+    } else if(m.posX != null && m.posY != null && isFinite(Number(m.posX)) && isFinite(Number(m.posY))){
+      targetX = Number(m.posX); targetY = Number(m.posY);
+    }
+    if(targetX == null) return; // tiada posisi tersimpan — biarkan autoLayout
+    const dx = targetX - auto.x;
+    const dy = targetY - auto.y;
     if(!dx && !dy) return;
     // Geser kepala dan SELURUH subtreenya — root lain tidak disentuh
     getSubtreeIds(hid).forEach(mid => {
@@ -1272,16 +1290,38 @@ function isHeadRoot(id){ return getHeadRoots().has(String(id)); }
 // auto-layout. Posisi disimpan terus dalam localStorage.
 function isHeadLocked(id){ return STORE.lockedHeads.has(String(id)); }
 function lockHeadPos(id){
+  const sid = String(id);
+  // Simpan koordinat SEBENAR masa kunci supaya dapat dipulihkan selepas refresh
+  // walaupun posX/posY belum tersimpan ke server.
+  const pos = _lastLayout?.[sid];
+  if(pos && isFinite(pos.x) && isFinite(pos.y)){
+    const lp = STORE.lockedPositions;
+    lp[sid] = { x: Math.round(pos.x), y: Math.round(pos.y) };
+    STORE.lockedPositions = lp;
+  } else {
+    // Fallback: guna posX/posY dari data ahli jika _lastLayout belum ada
+    const m = findM(sid);
+    if(m && m.posX != null && isFinite(Number(m.posX))){
+      const lp = STORE.lockedPositions;
+      lp[sid] = { x: Math.round(Number(m.posX)), y: Math.round(Number(m.posY||0)) };
+      STORE.lockedPositions = lp;
+    }
+  }
   const locked = STORE.lockedHeads;
-  locked.add(String(id));
+  locked.add(sid);
   STORE.lockedHeads = locked;
   notify.success('🔒 Lokasi kepala dikunci — posisi tidak akan berubah oleh auto-susun.');
   renderAll();
 }
 function unlockHeadPos(id){
+  const sid = String(id);
   const locked = STORE.lockedHeads;
-  locked.delete(String(id));
+  locked.delete(sid);
   STORE.lockedHeads = locked;
+  // Buang koordinat tersimpan juga
+  const lp = STORE.lockedPositions;
+  delete lp[sid];
+  STORE.lockedPositions = lp;
   notify.info('🔓 Kunci lokasi dilepaskan — posisi boleh berubah oleh auto-susun.');
   renderAll();
 }
@@ -1421,17 +1461,21 @@ function computeLineageToMember(targetId){
     if(visitedHeads.has(parentMemberId) || !byId[parentMemberId]) break; // elak gelung
     visitedHeads.add(parentMemberId);
 
-    // Cari kepala pokok yang mengandungi parentMemberId, kemudian dapatkan
-    // laluan PENUH dari kepala pokok itu turun hingga ke parentMemberId.
-    // Ini memastikan semua nenek-moyang antara kepala pokok dan parentMemberId
-    // turut disertakan dalam rantaian — bukan hanya parentMemberId sahaja.
-    const parentTreeHeadId = findHeadForMember(parentMemberId);
+    // Cari kepala pokok yang mengandungi parentMemberId dengan mencari dalam
+    // SEMUA kepala root (bukan getHeadRoots() yang hanya pulangkan primary head).
+    // Ini kritikal apabila parentMemberId berada dalam pokok bukan-primary.
+    let parentTreeHeadId = null;
+    for(const h of allHeads){
+      if(visitedHeads.has(h)) continue;
+      if(h === directRootId) continue;
+      if(getSubtreeIds(h).has(parentMemberId)){ parentTreeHeadId = h; break; }
+    }
     let prependIds;
-    if(parentTreeHeadId && !visitedHeads.has(String(parentTreeHeadId))){
-      const subPath = findPathFromTo(String(parentTreeHeadId), parentMemberId);
+    if(parentTreeHeadId){
+      const subPath = findPathFromTo(parentTreeHeadId, parentMemberId);
       prependIds = subPath || [parentMemberId]; // fallback: parentMemberId sahaja
-      visitedHeads.add(String(parentTreeHeadId));
-      currentHead = String(parentTreeHeadId); // terus susur ke atas dari kepala ini
+      visitedHeads.add(parentTreeHeadId);
+      currentHead = parentTreeHeadId; // terus susur ke atas dari kepala ini
     } else {
       // Kepala pokok tidak dijumpai atau sudah dilawati — tambah parentMemberId sahaja
       prependIds = [parentMemberId];
@@ -1530,6 +1574,14 @@ function enforceHierarchyLayout(layout, options){
   const done = new Set();
   groups.forEach(group=>{
     const hid = String(group.headId);
+    // Kepala terkunci: KEKAL Y-nya dari lockedPositions — jangan paksa formula depth
+    if(isHeadLocked(hid)){
+      const lp = STORE.lockedPositions[hid];
+      if(lp && isFinite(lp.y) && placed[hid]) placed[hid].y = lp.y;
+      // Biarkan subtree kekalkan Y relatif semasa — jangan override dengan formula
+      group.ids.forEach(mid=>{ done.add(String(mid)); });
+      return;
+    }
     const headDepth = depths[hid] ?? 0;
     const headY = placed[hid] ? placed[hid].y : baseY + headDepth * rowStep;
     const groupBaseY = headY - headDepth * rowStep;
@@ -2002,7 +2054,7 @@ function renderLinks(layout){
       LINEAGE.nodeIds.has(String(link.parentMemberId)) &&
       LINEAGE.nodeIds.has(String(link.childMemberId));
     const rlCls = 'root-link' + (inPath ? ' lineage-path' : (lineageOn ? ' lineage-dim' : ''));
-    paths += `<path class="${rlCls}" data-rootlink="${escapeHtml(String(link.id))}" d="M ${ux} ${uy} C ${ux} ${midY} ${lx} ${midY} ${lx} ${ly}"/>`;
+    paths += `<path class="${rlCls}" data-rootlink="${escapeHtml(String(link.id))}" d="M ${ux} ${uy} L ${lx} ${ly}"/>`;
   });
   svg.innerHTML = paths + labels + handles;
   if(isAdmin){
