@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxqXbVpdnUZlqafN55lGWYDbzxJCMSomlhLIrAtNw7SbtTTP3zxHqVqxO-uLGDXNU5K/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1151,6 +1151,7 @@ function renderNodes(layout){
       </div>
     `;
     el.addEventListener('click', e=>{
+      if(_suppressNextClick) return;
       e.stopPropagation();
       if(isDraft && (isAdmin || pendingRec?.user!==STORE.user?.username)) openDraftReview(m, pendingRec);
       else openMemberMenu(m);
@@ -1284,7 +1285,9 @@ function computeLineageToMember(targetId){
 }
 function setLineageTarget(targetId){
   LINEAGE = computeLineageToMember(targetId);
-  renderAll();
+  // Defer renderAll to avoid disrupting the current event handler (click) that
+  // calls this function. Destroying/recreating panzoom mid-click causes errors.
+  requestAnimationFrame(()=>{ try{ renderAll(); }catch(_){} });
   return LINEAGE;
 }
 function getGenerationDepths(){
@@ -1407,6 +1410,7 @@ function enforceHierarchyLayout(layout, options){
   return placed;
 }
 let _dragState = null;
+let _suppressNextClick = false;
 function canDragCards(){
   return false;
 }
@@ -1466,6 +1470,8 @@ function enableNodeDrag(el, id, layout){
     if(panzoomInstance) panzoomInstance.setOptions({ disablePan:false });
     document.body.style.cursor = '';
     if(!st.moved) return;
+    _suppressNextClick = true;
+    setTimeout(()=>{ _suppressNextClick = false; }, 80);
     const positions = [];
     st.ids.forEach(mid => {
       const p = st.layout[mid]; if(!p) return;
@@ -1966,6 +1972,10 @@ function _saveViewport(){
     localStorage.setItem(VIEWPORT_KEY, JSON.stringify({ x:pan.x, y:pan.y, scale }));
   }catch(_){}
 }
+// Rujukan storan pendengar supaya boleh dibuang sebelum dicipta semula
+let _panzoomWheelHandler = null;
+let _panzoomChangeHandler = null;
+let _panzoomResizeHandler = null;
 function setupPanzoom(){
   const world = $('#world');
   // Simpan keadaan pan/zoom semasa supaya tidak hilang selepas renderAll/refresh
@@ -1977,17 +1987,24 @@ function setupPanzoom(){
     }catch(_){}
     panzoomInstance.destroy();
   }
+  // Buang pendengar lama supaya tidak bertimbun setiap renderAll
+  if(_panzoomWheelHandler){ try{ $('#stage').removeEventListener('wheel', _panzoomWheelHandler); }catch(_){} }
+  if(_panzoomChangeHandler){ try{ world.removeEventListener('panzoomchange', _panzoomChangeHandler); }catch(_){} }
+  if(_panzoomResizeHandler){ try{ window.removeEventListener('resize', _panzoomResizeHandler); }catch(_){} }
   // Fallback ke viewport tersimpan dalam localStorage (untuk refresh penuh F5)
   if(!prev) prev = _readSavedViewport();
   panzoomInstance = Panzoom(world, { maxScale: 3, minScale: 0.15, contain: false, canvas: true, cursor:'grab', step:.3 });
-  $('#stage').addEventListener('wheel', panzoomInstance.zoomWithWheel, { passive:false });
+  _panzoomWheelHandler = panzoomInstance.zoomWithWheel;
+  $('#stage').addEventListener('wheel', _panzoomWheelHandler, { passive:false });
   let cullT; const sched = ()=>{ clearTimeout(cullT); cullT=setTimeout(cullViewport, 80); };
   let saveT;
-  world.addEventListener('panzoomchange', ()=>{
+  _panzoomChangeHandler = ()=>{
     sched();
     clearTimeout(saveT); saveT = setTimeout(_saveViewport, 250);
-  });
-  window.addEventListener('resize', sched);
+  };
+  world.addEventListener('panzoomchange', _panzoomChangeHandler);
+  _panzoomResizeHandler = sched;
+  window.addEventListener('resize', _panzoomResizeHandler);
   // Pulihkan kedudukan & zoom sebelum render semula (selepas Simpan / refresh)
   if(prev){
     try{
@@ -2369,13 +2386,37 @@ function _initialFocus(){
   let lastId = null;
   try{ lastId = localStorage.getItem(LAST_EDIT_KEY); }catch(_){}
   setTimeout(()=>{
+    // Jika ada rekod edit terakhir, fokus pada ahli itu
     if(lastId){
       try{ localStorage.removeItem(LAST_EDIT_KEY); }catch(_){}
       if(_centerOnId(lastId)) return;
     }
     const primaryHeadId = getPrimaryHeadRootId();
-    if(primaryHeadId && _centerOnId(primaryHeadId)) return;
-    // Jika belum ada Kepala Salasilah, barulah fit-to-tree supaya tidak pernah paparan kosong
+    if(primaryHeadId){
+      // Papar semua pokok dahulu supaya pengguna nampak gambaran penuh, kemudian
+      // geser ke Kepala Root dengan animasi supaya kelihatan di tengah skrin.
+      _fitToTree();
+      setTimeout(()=>{
+        // Selepas fit-to-tree, tengahkan khusus pada Kepala Root dengan zoom sesuai
+        const el = document.querySelector(`#nodes .node[data-id="${primaryHeadId}"]`);
+        if(!el || !panzoomInstance) return;
+        const x = parseFloat(el.style.left)||0, y = parseFloat(el.style.top)||0;
+        const st = $('#stage').getBoundingClientRect();
+        const scale = Math.min(panzoomInstance.getScale(), 0.8); // jangan lebih 0.8 supaya anak-cucu kelihatan
+        try{
+          const panX = st.width/2 - (x + NODE_W/2) * scale;
+          const panY = st.height/2 - (y + NODE_H/2) * scale;
+          panzoomInstance.zoom(scale, { animate:true });
+          setTimeout(()=> panzoomInstance.pan(panX, panY, { animate:true }), 60);
+          try{ localStorage.setItem(VIEWPORT_KEY, JSON.stringify({ x:panX, y:panY, scale })); }catch(_){}
+          setTimeout(cullViewport, 300);
+          el.classList.add('match');
+          setTimeout(()=> el.classList.remove('match'), 2500);
+        }catch(_){}
+      }, 350);
+      return;
+    }
+    // Jika belum ada Kepala Salasilah, papar keseluruhan pokok
     _fitToTree();
   }, 220);
 }
