@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycby0xVYaes6dHuX_DYjZUFN6dplj1ERfqH2cK9JOzvXXQuQeLGqxX38pZ2vQg8VXYw8b/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -576,7 +576,53 @@ function buildLayout(){
       }
     }
   }
-  return enforceHierarchyLayout(placed, { anchorId: primaryHeadId || Object.keys(placed)[0] || '' });
+  const result = enforceHierarchyLayout(placed, { anchorId: primaryHeadId || Object.keys(placed)[0] || '' });
+
+  // BUG FIX #3 — Pemusatan Kepala di atas keturunannya.
+  // enforceHierarchyLayout mengekalkan kedudukan X kepala berdasarkan anchorId.
+  // Ini menyebabkan kepala mungkin tidak berada di tengah-tengah anak-cucunya.
+  // Kita jalankan satu lagi pas pemusatan selepas layout siap.
+  const SPS_c = getRenderSpouses();
+  Array.from(getHeadRoots()).forEach(hid=>{
+    if(!result[hid]) return;
+    const subtreeIds = getSubtreeIds(hid);
+    // Tentukan baris kepala: kepala + pasangannya yang satu baris
+    const headRowIds = new Set([String(hid)]);
+    SPS_c.forEach(s=>{
+      const h = String(s.husbandId), w = String(s.wifeId);
+      if(h===String(hid) && result[w]) headRowIds.add(w);
+      else if(w===String(hid) && result[h]) headRowIds.add(h);
+    });
+    // Kira had X semua keturunan (TIDAK termasuk baris kepala)
+    let minX = Infinity, maxX = -Infinity;
+    subtreeIds.forEach(mid=>{
+      const sid = String(mid);
+      if(headRowIds.has(sid)) return;
+      const p = result[sid]; if(!p) return;
+      if(p.x < minX) minX = p.x;
+      if(p.x + NODE_W > maxX) maxX = p.x + NODE_W;
+    });
+    if(!isFinite(minX)) return; // tiada keturunan — kepala kekal di tempat
+    // Kira had X baris kepala
+    let headMinX = Infinity, headMaxX = -Infinity;
+    headRowIds.forEach(sid=>{
+      const p = result[sid]; if(!p) return;
+      if(p.x < headMinX) headMinX = p.x;
+      if(p.x + NODE_W > headMaxX) headMaxX = p.x + NODE_W;
+    });
+    if(!isFinite(headMinX)) return;
+    const targetCenter = (minX + maxX) / 2;
+    const currentCenter = (headMinX + headMaxX) / 2;
+    const shift = Math.round(targetCenter - currentCenter);
+    if(!shift) return;
+    // Geser hanya baris kepala sahaja — keturunan kekal di tempatnya
+    headRowIds.forEach(sid=>{
+      const p = result[sid]; if(!p) return;
+      p.x = Math.round(p.x + shift);
+    });
+  });
+
+  return result;
 }
 
 // ===================================================================
@@ -1230,14 +1276,9 @@ function computeLineageToMember(targetId){
   const byId = Object.fromEntries(MEMBERS.map(m=>[String(m.id), m]));
   if(!byId[rootId] || !byId[target]) return clearLineageState();
   if(target === String(rootId)){
-    return {
-      active: true,
-      targetId: target,
-      rootId: String(rootId),
-      pathIds: [String(rootId)],
-      nodeIds: new Set([String(rootId)]),
-      childKeys: new Set()
-    };
+    // Klik pada Kepala Salasilah sendiri — tiada laluan untuk diserlahkan.
+    // Kembalikan keadaan kosong supaya nod lain tidak diredupkan/hilang.
+    return clearLineageState();
   }
 
   const spouseById = Object.fromEntries(SPOUSES.map(s=>[String(s.id), s]));
@@ -1447,11 +1488,15 @@ function canDragHeadRoot(id){
   const u = STORE.user;
   if(!u || (u.role !== 'master' && u.role !== 'admin')) return false;
   const m = getRenderMembers().find(x => String(x.id) === String(id));
-  return !!m && isHeadFlag(m);
+  if(!m) return false;
+  // Benarkan seret untuk: (1) mana-mana nod bertanda Kepala, ATAU (2) root orphan (tiada ibu/bapa)
+  // Ini membolehkan root baharu yang belum bertanda Kepala pun boleh diseret bersama subtreenya.
+  return isHeadFlag(m) || isRootMember(m.id);
 }
 function enableNodeDrag(el, id, layout){
   const m = getRenderMembers().find(x => String(x.id) === String(id));
-  const isHead = !!m && isHeadFlag(m); // mana-mana kepala, bukan primary sahaja
+  // isHead: true jika nod adalah Kepala ATAU root orphan (tiada ibu/bapa) — kedua-dua boleh gerak bersama subtree
+  const isHead = !!m && (isHeadFlag(m) || isRootMember(m.id));
   const allowed = canDragCards() || canDragHeadRoot(id);
   if(!allowed){
     el.style.touchAction = '';
@@ -1461,7 +1506,7 @@ function enableNodeDrag(el, id, layout){
   el.style.touchAction = 'none';
   el.addEventListener('pointerdown', (e)=>{
     if(e.button && e.button!==0) return;
-    const headNow = (()=>{ const mm=getRenderMembers().find(x=>String(x.id)===String(id)); return !!mm&&isHeadFlag(mm); })();
+    const headNow = (()=>{ const mm=getRenderMembers().find(x=>String(x.id)===String(id)); return !!mm&&(isHeadFlag(mm)||isRootMember(mm.id)); })();
     const okNow = canDragCards() || canDragHeadRoot(id);
     if(!okNow) return;
     // jangan ganggu klik pada gambar / butang dalam kad
@@ -2066,6 +2111,8 @@ $('#btnZoomFit').onclick = ()=> { try{ localStorage.removeItem(VIEWPORT_KEY); }c
 $('#btnRefresh').onclick = async ()=>{
   const btn = $('#btnRefresh');
   if(btn){ btn.disabled = true; btn.textContent = '⏳'; }
+  // Bersihkan sorotan lineage dulu supaya paparan tidak terperangkap dalam keadaan redupkan
+  clearLineageState(); _applyLineageToDOM();
   try{ await refresh(); }finally{
     if(btn){ btn.disabled = false; btn.textContent = '🔄'; }
   }
