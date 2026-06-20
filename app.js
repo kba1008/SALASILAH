@@ -79,7 +79,10 @@ const STORE = {
   get queue(){ try{return JSON.parse(localStorage.getItem('skg_queue')||'[]')}catch{return []} },
   set queue(v){ localStorage.setItem('skg_queue', JSON.stringify(v)) },
   get theme(){ return localStorage.getItem('skg_theme') || 'royal' },
-  set theme(v){ localStorage.setItem('skg_theme', v); document.body.dataset.theme = v }
+  set theme(v){ localStorage.setItem('skg_theme', v); document.body.dataset.theme = v },
+  // Set ID kepala root yang dikunci lokasi — posisi tidak akan berubah oleh auto-layout
+  get lockedHeads(){ try{ return new Set(JSON.parse(localStorage.getItem('skg_locked_heads')||'[]')); }catch{ return new Set(); } },
+  set lockedHeads(v){ localStorage.setItem('skg_locked_heads', JSON.stringify([...v])); }
 };
 
 document.body.dataset.theme = STORE.theme;
@@ -585,9 +588,12 @@ function buildLayout(){
   // ─── Pemusatan: tengahkan kepala di atas keturunannya ───
   // HANYA untuk kepala yang BELUM ada posisi tersimpan (belum pernah di-drag).
   // Kepala yang sudah di-drag dan disimpan posX tidak boleh digeser oleh auto.
+  // Kepala yang dikunci lokasi TIDAK PERNAH digeser oleh auto-centering.
   const SPS_c = getRenderSpouses();
   MEMBERS.filter(m => isHeadFlag(m)).forEach(m => {
     const hid = String(m.id);
+    // Jika dikunci lokasi — JANGAN auto-tengah langsung
+    if(isHeadLocked(hid)) return;
     // Jika admin sudah set posisi — KEKAL di situ, JANGAN auto-tengah
     if(m.posX != null && isFinite(Number(m.posX))) return;
     if(!result[hid]) return;
@@ -1196,11 +1202,12 @@ function renderNodes(layout){
     const isDraft = !!pendingRec;
     const draftCls = isDraft ? 'tag-draft' : '';
     const isHead = headRoots.has(m.id);
+    const isLocked = isHead && isHeadLocked(m.id);
     const inLineage = lineageOn && LINEAGE.nodeIds.has(String(m.id));
     const targetLineage = lineageOn && String(LINEAGE.targetId) === String(m.id);
     const lineageCls = lineageOn ? (inLineage ? (targetLineage ? 'lineage-node lineage-target' : 'lineage-node') : 'lineage-dim') : '';
-    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls} ${isHead?'root-head':''} ${lineageCls}`;
-    if(isHead) el.title = isAdmin ? 'Kepala Salasilah — seret untuk gerakkan keseluruhan family tree' : 'Kepala Salasilah';
+    el.className = `node ${m.gender==='F'?'female':'male'} ${m.alive===false?'deceased':''} ${tagCls} ${draftCls} ${isHead?'root-head':''} ${isLocked?'pos-locked':''} ${lineageCls}`;
+    if(isHead) el.title = isLocked ? 'Kepala Salasilah — 🔒 Lokasi dikunci' : (isAdmin ? 'Kepala Salasilah — seret untuk gerakkan keseluruhan family tree' : 'Kepala Salasilah');
     el.style.left = pos.x+'px'; el.style.top = pos.y+'px';
     el.dataset.id = m.id;
     const yrs = `${m.birth||'?'} – ${m.alive===false?(m.death||'?'):''}`.trim();
@@ -1218,7 +1225,7 @@ function renderNodes(layout){
       <div class="row">
         <span class="chip" style="background:color-mix(in oklab, var(--gold) 25%, transparent); color:var(--ink)">${ic}</span>
         ${m.alive===false?'<span class="chip" style="background:#3334; color:var(--ink)">Allahyarham</span>':'<span class="chip" style="background:color-mix(in oklab, var(--ok) 30%, transparent); color:var(--ink)">Hidup</span>'}
-        ${isHead?'<span class="chip root-head-chip">👑 Kepala</span>':''}${badge}${draftBadge}
+        ${isHead?'<span class="chip root-head-chip">👑 Kepala</span>':''}${isLocked?'<span class="chip" style="background:rgba(0,180,120,.25);color:var(--ok);border:1px solid var(--ok)">🔒</span>':''}${badge}${draftBadge}
       </div>
     `;
     el.addEventListener('click', e=>{
@@ -1259,6 +1266,26 @@ function getHeadRoots(){
   return primaryId ? new Set([String(primaryId)]) : new Set();
 }
 function isHeadRoot(id){ return getHeadRoots().has(String(id)); }
+
+// ── Kunci Lokasi Kepala Root ──────────────────────────────────────────────
+// Bila dikunci, kepala root tidak akan digerakkan oleh auto-centering atau
+// auto-layout. Posisi disimpan terus dalam localStorage.
+function isHeadLocked(id){ return STORE.lockedHeads.has(String(id)); }
+function lockHeadPos(id){
+  const locked = STORE.lockedHeads;
+  locked.add(String(id));
+  STORE.lockedHeads = locked;
+  notify.success('🔒 Lokasi kepala dikunci — posisi tidak akan berubah oleh auto-susun.');
+  renderAll();
+}
+function unlockHeadPos(id){
+  const locked = STORE.lockedHeads;
+  locked.delete(String(id));
+  STORE.lockedHeads = locked;
+  notify.info('🔓 Kunci lokasi dilepaskan — posisi boleh berubah oleh auto-susun.');
+  renderAll();
+}
+
 function getPrimaryHeadRootId(){
   const heads = getMarkedHeadRoots();
   if(!heads.length) return '';
@@ -1349,6 +1376,26 @@ function computeLineageToMember(targetId){
     return walk(String(rootId), [String(rootId)], []);
   }
 
+  // Cari laluan terus dari fromId ke toId menggunakan childrenByParent yang sama.
+  // Digunakan untuk mendapatkan sub-laluan penuh dari kepala pokok ibu-bapa
+  // hingga ke ahli parentMemberId apabila menyusur ke atas melalui rootLink.
+  function findPathFromTo(fromId, toId){
+    const vis = new Set();
+    function walk(cur, path){
+      const k = String(cur);
+      if(vis.has(k)) return null;
+      vis.add(k);
+      if(k === String(toId)) return path;
+      for(const next of (childrenByParent[k] || [])){
+        if(path.includes(next.childId)) continue;
+        const r = walk(next.childId, path.concat(next.childId));
+        if(r) return r;
+      }
+      return null;
+    }
+    return walk(String(fromId), [String(fromId)]);
+  }
+
   // Cuba SETIAP kepala root — gunakan yang pertama berjaya jumpa laluan
   let directRootId = null;
   let directFound  = null;
@@ -1361,20 +1408,36 @@ function computeLineageToMember(targetId){
 
   // ── Sambungan rootLink ke atas (nenek moyang merentasi pokok) ──────────
   // Selepas jumpa laluan dalam root B, susur ke atas melalui rootLink:
-  //   rootA.head → rootB.head → ... → target
-  // Ini menjadikan garisan emas rootLink menyala sebagai sebahagian dari
-  // rantaian darah keturunan yang penuh.
+  //   rootA.head → ... → parentMember → rootB.head → ... → target
+  // Ini termasuk LALUAN PENUH dari kepala pokok ibu-bapa hingga ke parentMember,
+  // bukan sekadar parentMember sahaja, supaya rantaian darah lengkap dan betul.
   let fullPathIds  = directFound.pathIds;  // bermula dengan directRootId
   let fullChildKeys = directFound.childKeys;
   let currentHead  = directRootId;
   const visitedHeads = new Set([currentHead]);
 
   while(rootLinkParentOf[currentHead]){
-    const parentHead = rootLinkParentOf[currentHead];
-    if(visitedHeads.has(parentHead) || !byId[parentHead]) break; // elak gelung
-    visitedHeads.add(parentHead);
-    fullPathIds = [parentHead, ...fullPathIds]; // awalan — nenek moyang lebih tua
-    currentHead = parentHead;
+    const parentMemberId = String(rootLinkParentOf[currentHead]);
+    if(visitedHeads.has(parentMemberId) || !byId[parentMemberId]) break; // elak gelung
+    visitedHeads.add(parentMemberId);
+
+    // Cari kepala pokok yang mengandungi parentMemberId, kemudian dapatkan
+    // laluan PENUH dari kepala pokok itu turun hingga ke parentMemberId.
+    // Ini memastikan semua nenek-moyang antara kepala pokok dan parentMemberId
+    // turut disertakan dalam rantaian — bukan hanya parentMemberId sahaja.
+    const parentTreeHeadId = findHeadForMember(parentMemberId);
+    let prependIds;
+    if(parentTreeHeadId && !visitedHeads.has(String(parentTreeHeadId))){
+      const subPath = findPathFromTo(String(parentTreeHeadId), parentMemberId);
+      prependIds = subPath || [parentMemberId]; // fallback: parentMemberId sahaja
+      visitedHeads.add(String(parentTreeHeadId));
+      currentHead = String(parentTreeHeadId); // terus susur ke atas dari kepala ini
+    } else {
+      // Kepala pokok tidak dijumpai atau sudah dilawati — tambah parentMemberId sahaja
+      prependIds = [parentMemberId];
+      currentHead = parentMemberId;
+    }
+    fullPathIds = [...prependIds, ...fullPathIds];
   }
 
   return {
@@ -1487,10 +1550,13 @@ function enforceHierarchyLayout(layout, options){
     // Pusatkan Moyang (Kepala Salasilah) di atas keturunannya — moyang
     // sentiasa berada di tengah-tengah julat keturunannya, walau seberapa
     // besar pun cabang berkembang ke kiri atau ke kanan.
+    // PENGECUALIAN: Kepala yang dikunci lokasi TIDAK digeser sama sekali.
     const SPS = getRenderSpouses();
     groups.forEach(group=>{
       const hid = String(group.headId);
       if(!placed[hid]) return;
+      // Langkau centering jika kepala dikunci lokasi
+      if(isHeadLocked(hid)) return;
       // Kumpul Kepala Salasilah + semua pasangannya (baris paling atas).
       const headRow = new Set([hid]);
       SPS.forEach(s=>{
@@ -2099,13 +2165,43 @@ function printMemberReport(m){
     .filter(f => m[f.key])
     .map(f => `<tr><th>${escapeHtml(f.label)}</th><td>${escapeHtml(m[f.key])}</td></tr>`)
     .join('');
+
+  // Susun pathIds mengikut kedudukan Y kad di kanvas:
+  // kad paling atas (Y terkecil) = moyang paling tinggi = nombor 1 dalam laporan.
+  // Gunakan _lastLayout jika ada, fallback ke posY ahli tersimpan.
+  const getCardY = (id) => {
+    const ly = _lastLayout?.[String(id)];
+    if(ly && isFinite(ly.y)) return ly.y;
+    const mb = findM(id);
+    const py = Number(mb?.posY);
+    return isFinite(py) ? py : 999999;
+  };
+  const sortedPathIds = lineage.active
+    ? lineage.pathIds.slice().sort((a, b) => getCardY(a) - getCardY(b))
+    : [];
+
+  // Tentukan ahli mana yang merupakan kepala root (untuk label khas dalam jadual)
+  const allHeadRoots = getHeadRoots();
+
   const lineageRows = lineage.active
-    ? lineage.pathIds.map((id, idx) => {
+    ? sortedPathIds.map((id, idx) => {
         const mm = findM(id);
         if(!mm) return '';
-        return `<tr><td>${idx + 1}</td><td>${escapeHtml(mm.name || id)}</td><td>${escapeHtml(memberGenderLabel(mm))}</td><td>${escapeHtml(mm.birth || '—')}</td></tr>`;
+        const isHead = allHeadRoots.has(String(mm.id));
+        const isTarget = String(mm.id) === String(m.id);
+        const headBadge = isHead ? ' 👑' : '';
+        const targetBadge = isTarget ? ' ★' : '';
+        const rowStyle = isTarget
+          ? ' style="background:#fef9c3;font-weight:bold"'
+          : (isHead ? ' style="background:#fefce8"' : '');
+        const linkedNote = (() => {
+          const lk = (DATA.rootLinks||[]).find(r => String(r.childMemberId) === String(mm.id));
+          return lk ? '<br><small style="color:#9a7a00">🔗 Kepala disambungkan ke pokok ini</small>' : '';
+        })();
+        return `<tr${rowStyle}><td>${idx + 1}</td><td>${escapeHtml(mm.name || id)}${headBadge}${targetBadge}${linkedNote}</td><td>${escapeHtml(memberGenderLabel(mm))}</td><td>${escapeHtml(mm.birth || '—')}${mm.alive===false&&mm.death?' – '+escapeHtml(mm.death):''}</td></tr>`;
       }).join('')
     : `<tr><td colspan="4">Tiada laluan darah terus daripada root utama yang sedang dipaparkan.</td></tr>`;
+
   const w = window.open('', '_blank', 'width=980,height=760');
   if(!w){ notify.warn('Benarkan popup untuk mencetak laporan.'); return; }
   w.document.open();
@@ -2119,6 +2215,7 @@ function printMemberReport(m){
     th,td{border:1px solid #d1d5db;padding:8px 10px;text-align:left;vertical-align:top}
     th{background:#f3f4f6;width:26%}
     .small{color:#6b7280;font-size:12px}
+    .legend{margin-top:10px;font-size:12px;color:#6b7280}
   </style></head><body>
     <h1>Laporan Salasilah Individu</h1>
     <div class="meta">
@@ -2129,12 +2226,15 @@ function printMemberReport(m){
     </div>
     <h2>Profil</h2>
     <table>${rows || '<tr><td colspan="2">Tiada maklumat tambahan.</td></tr>'}</table>
-    <h2>Rantaian Keturunan</h2>
+    <h2>Rantaian Darah Keturunan</h2>
+    <p style="font-size:13px;color:#6b7280;margin:4px 0 10px">Disusun mengikut kedudukan kad dari atas ke bawah pada kanvas salasilah.
+    Ahli paling atas = moyang paling tinggi dalam rantaian darah.</p>
     <table>
-      <thead><tr><th style="width:8%">#</th><th>Nama</th><th style="width:18%">Jantina</th><th style="width:18%">Tahun</th></tr></thead>
+      <thead><tr><th style="width:8%">#</th><th>Nama</th><th style="width:18%">Jantina</th><th style="width:18%">Tahun Lahir – Wafat</th></tr></thead>
       <tbody>${lineageRows}</tbody>
     </table>
-    <div class="small" style="margin-top:14px">Dijana daripada Salasilah Keluarga Elit v${escapeHtml(APP_VERSION)}.</div>
+    <div class="legend">👑 Kepala Salasilah &nbsp;|&nbsp; ★ Ahli ini &nbsp;|&nbsp; 🔗 Kepala disambungkan melalui rootLink</div>
+    <div class="small" style="margin-top:10px">Dijana daripada Salasilah Keluarga Elit v${escapeHtml(APP_VERSION)}.</div>
   </body></html>`);
   w.document.close();
   setTimeout(()=>{ try{ w.focus(); w.print(); }catch(_){} }, 250);
@@ -2256,6 +2356,8 @@ function openMemberMenu(m){
       ${isAdmin&&isRootMember(m.id)&&!isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="sethead">👑 Jadikan Kepala</button>':''}
       ${isAdmin&&isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="unsethead">🚫 Nyahkan Kepala</button>':''}
       ${isAdmin&&isHeadFlag(m)&&(DATA.settings?.autoLayoutEnabled!==false)?'<button class="btn gold-edge justify-center" data-act="autohead" title="Susun automatik semua pasangan & keturunan di bawah kepala ini (3 variasi berkitar)">🌳 Auto Susun Cabang</button>':''}
+      ${isAdmin&&isHeadFlag(m)&&!isHeadLocked(m.id)?'<button class="btn btn-ghost justify-center" data-act="lockpos" title="Kunci lokasi kepala supaya tidak berubah oleh auto-susun">🔒 Kunci Lokasi</button>':''}
+      ${isAdmin&&isHeadFlag(m)&&isHeadLocked(m.id)?'<button class="btn btn-ghost justify-center" style="color:var(--ok)" data-act="unlockpos" title="Benarkan auto-susun menggerakkan kedudukan kepala semula">🔓 Buka Kunci Lokasi</button>':''}
       ${(()=>{ if(!isAdmin||!isHeadFlag(m)) return ''; const ex=(DATA.rootLinks||[]).find(r=>String(r.childMemberId)===String(m.id)); return ex?`<button class="btn btn-ghost justify-center" data-act="unlinkroot" title="Putus sambungan root sedia ada">🔗 Putus Sambungan Root</button>`:`<button class="btn gold-edge justify-center" data-act="linkroot" title="Sambungkan kepala ini ke nenek-moyang dalam root lain">🔗 Sambung ke Root Lain</button>`; })()}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
     </div>
@@ -2274,6 +2376,8 @@ function openMemberMenu(m){
     else if(act==='sethead') setHeadRoot(m);
     else if(act==='unsethead') unsetHeadRoot(m);
     else if(act==='autohead'){ closeModal(); autoArrangeHead(m.id); }
+    else if(act==='lockpos'){ closeModal(); lockHeadPos(m.id); }
+    else if(act==='unlockpos'){ closeModal(); unlockHeadPos(m.id); }
     else if(act==='linkroot') linkRootForm(m);
     else if(act==='unlinkroot') unlinkRoot(m);
   });
