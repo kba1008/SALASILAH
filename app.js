@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyIAH3SEqKIxAlZtWjX5EMsuIfUQLu92o5HqUggalIyA3z9UA9q-I6CiDk9PH1ZOoLO/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxNthVsDWd5gw1_7t52SbEw_HNmMjSCvULKhbaxhUSA_GiXq-D9OuHCJCEyFuEKnNVR/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -648,6 +648,25 @@ function buildLayout(){
     });
   });
 
+  // ─── PIN MUTLAK: kepala terkunci dibekukan ke koordinat tersimpan ───
+  // Jaminan akhir selepas semua centering — tiada operasi dalam buildLayout
+  // boleh mengubah kedudukan kepala yang dikunci, termasuk enforceHierarchy
+  // dan auto-centering di atas. Kepala DAN subtreenya dianjak bersama.
+  const _pinLockedPos = STORE.lockedPositions;
+  MEMBERS.filter(m => isHeadFlag(m) && isHeadLocked(m.id)).forEach(m => {
+    const hid = String(m.id);
+    const lp = _pinLockedPos[hid];
+    if(!lp || !isFinite(lp.x) || !isFinite(lp.y) || !result[hid]) return;
+    const ppDx = Math.round(lp.x) - result[hid].x;
+    const ppDy = Math.round(lp.y) - result[hid].y;
+    if(!ppDx && !ppDy) return;
+    getSubtreeIds(hid).forEach(mid => {
+      const p = result[String(mid)]; if(!p) return;
+      p.x = Math.round(p.x + ppDx);
+      p.y = Math.round(p.y + ppDy);
+    });
+  });
+
   return result;
 }
 
@@ -730,6 +749,8 @@ function resolveCardCollisions(layout, options){
   const gapY = Number(options.gapY ?? 56);
   const anchorId = options.anchorId ? String(options.anchorId) : '';
   const anchorBefore = anchorId && placed[anchorId] ? { ...placed[anchorId] } : null;
+  // frozenIds: nod-nod ini TIDAK BOLEH bergerak — yang lain perlu bagi jalan
+  const frozenIds = new Set(options.frozenIds || []);
   const ids = Object.keys(placed);
   if(ids.length < 2) return placed;
 
@@ -746,6 +767,8 @@ function resolveCardCollisions(layout, options){
       row.ids.sort((a,b)=> placed[a].x - placed[b].x);
       let next = -Infinity;
       row.ids.forEach(id=>{
+        // Nod beku: kemas kini `next` berdasarkan posisinya, tapi jangan gerakkan ia
+        if(frozenIds.has(id)){ next = Math.max(next, placed[id].x + NODE_W + gapX); return; }
         if(placed[id].x < next){ placed[id].x = next; moved = true; }
         next = placed[id].x + NODE_W + gapX;
       });
@@ -754,19 +777,23 @@ function resolveCardCollisions(layout, options){
     const sorted = ids.slice().sort((a,b)=> placed[a].y - placed[b].y || placed[a].x - placed[b].x);
     for(let i=0; i<sorted.length; i++){
       for(let j=i+1; j<sorted.length; j++){
-        const a = placed[sorted[i]], b = placed[sorted[j]];
+        const idA = sorted[i], idB = sorted[j];
+        const a = placed[idA], b = placed[idB];
         if(b.y - a.y > NODE_H + gapY + 4) break;
         if(!layoutsOverlap(a, b, gapX, gapY)) continue;
         const ax = a.x + NODE_W/2, bx = b.x + NODE_W/2;
         const ay = a.y + NODE_H/2, by = b.y + NODE_H/2;
         const overlapX = NODE_W + gapX - Math.abs(ax-bx);
         const overlapY = NODE_H + gapY - Math.abs(ay-by);
+        const aFrozen = frozenIds.has(idA), bFrozen = frozenIds.has(idB);
+        if(aFrozen && bFrozen) continue; // kedua-dua beku — biarkan pertindihan
         if(overlapX <= overlapY * 1.35 || Math.abs(ay-by) < NODE_H * 0.75){
-          b.x += (bx >= ax ? 1 : -1) * Math.ceil(overlapX + 8);
+          if(!bFrozen){ b.x += (bx >= ax ? 1 : -1) * Math.ceil(overlapX + 8); moved = true; }
+          else if(!aFrozen){ a.x += (ax >= bx ? 1 : -1) * Math.ceil(overlapX + 8); moved = true; }
         } else {
-          b.y += (by >= ay ? 1 : -1) * Math.ceil(overlapY + 8);
+          if(!bFrozen){ b.y += (by >= ay ? 1 : -1) * Math.ceil(overlapY + 8); moved = true; }
+          else if(!aFrozen){ a.y += (ay >= by ? 1 : -1) * Math.ceil(overlapY + 8); moved = true; }
         }
-        moved = true;
       }
     }
     if(!moved) break;
@@ -1136,11 +1163,31 @@ function renderAll(){
   // Penapis keselamatan akhir: tiada kad dibenarkan bertindih, walau dari
   // posisi manual (posX/posY) atau gabungan beberapa cabang. Jaga kepala
   // salasilah sebagai jangkar supaya keseluruhan pokok tidak teralih.
+  // Kepala terkunci TIDAK BOLEH bergerak oleh resolveCardCollisions.
   try{
+    const MEMS_r = getRenderMembers();
+    const lockedHeadIds = MEMS_r.filter(m => isHeadFlag(m) && isHeadLocked(m.id)).map(m => String(m.id));
     const heads = (typeof getHeadRoots==='function') ? Array.from(getHeadRoots()) : [];
     const anchorId = heads.find(h => layout[h]) || Object.keys(layout)[0];
-    layout = resolveCardCollisions(layout, { gapX: 36, gapY: 28, anchorId });
+    layout = resolveCardCollisions(layout, { gapX: 36, gapY: 28, anchorId, frozenIds: lockedHeadIds });
+    // Simpan posisi kepala terkunci sebelum anjak dunia — untuk hitung delta
+    const preWorldPos = {};
+    lockedHeadIds.forEach(hid => { if(layout[hid]) preWorldPos[hid] = { x: layout[hid].x, y: layout[hid].y }; });
     layout = keepLayoutInsideDrawableWorld(layout, 220);
+    // Serap anjak global dari keepLayoutInsideDrawableWorld ke dalam lockedPositions
+    // supaya posisi tersimpan kekal segerak dengan ruang koordinat semasa.
+    if(lockedHeadIds.length){
+      const _lp = STORE.lockedPositions;
+      let _lpDirty = false;
+      lockedHeadIds.forEach(hid => {
+        const pre = preWorldPos[hid]; if(!pre || !layout[hid] || !_lp[hid]) return;
+        const sdx = layout[hid].x - pre.x, sdy = layout[hid].y - pre.y;
+        if(!sdx && !sdy) return;
+        _lp[hid] = { x: Math.round(_lp[hid].x + sdx), y: Math.round(_lp[hid].y + sdy) };
+        _lpDirty = true;
+      });
+      if(_lpDirty) STORE.lockedPositions = _lp;
+    }
   }catch(_){}
   _lastLayout = layout;   // simpan untuk digunakan semula oleh _applyLineageToDOM
   renderNodes(layout);
