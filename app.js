@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycby0xVYaes6dHuX_DYjZUFN6dplj1ERfqH2cK9JOzvXXQuQeLGqxX38pZ2vQg8VXYw8b/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -629,18 +629,35 @@ function buildLayout(){
 // AUTO LAYOUT — terhad kepada CABANG di bawah Kepala Salasilah sahaja
 // ===================================================================
 // Kumpul semua id (pasangan + keturunan) di bawah satu Kepala Salasilah.
+// PENTING: Berhenti apabila jumpa kepala root LAIN supaya drag satu root
+//          tidak sekali-gus menggerakkan root-root yang lain.
 function getSubtreeIds(headId){
   const SP = getRenderSpouses();
   const CH = getRenderChildren();
-  const ids = new Set([headId]);
-  const queue = [headId];
+  const MEMBERS = getRenderMembers();
+  const byId = Object.fromEntries(MEMBERS.map(m=>[String(m.id), m]));
+  const ids = new Set([String(headId)]);
+  const queue = [String(headId)];
   while(queue.length){
     const id = queue.shift();
     SP.filter(s=> s.husbandId===id || s.wifeId===id).forEach(s=>{
       const pid = s.husbandId===id ? s.wifeId : s.husbandId;
-      if(pid) ids.add(pid);
+      if(!pid) return;
+      const spid = String(pid);
+      // Jangan masukkan kepala root LAIN ke dalam subtree ini.
+      // Jika pasangan adalah kepala root berbeza, langkau terus.
+      const pm = byId[spid];
+      if(pm && isHeadFlag(pm) && spid !== String(headId)) return;
+      if(!ids.has(spid)) ids.add(spid);
       CH.filter(c=> c.spouseId===s.id).forEach(c=>{
-        if(c.childId && !ids.has(c.childId)){ ids.add(c.childId); queue.push(c.childId); }
+        if(!c.childId) return;
+        const cid = String(c.childId);
+        if(ids.has(cid)) return;
+        // Jangan masukkan anak yang merupakan kepala root lain.
+        const cm = byId[cid];
+        if(cm && isHeadFlag(cm) && cid !== String(headId)) return;
+        ids.add(cid);
+        queue.push(cid);
       });
     });
   }
@@ -1489,14 +1506,16 @@ function canDragHeadRoot(id){
   if(!u || (u.role !== 'master' && u.role !== 'admin')) return false;
   const m = getRenderMembers().find(x => String(x.id) === String(id));
   if(!m) return false;
-  // Benarkan seret untuk: (1) mana-mana nod bertanda Kepala, ATAU (2) root orphan (tiada ibu/bapa)
-  // Ini membolehkan root baharu yang belum bertanda Kepala pun boleh diseret bersama subtreenya.
+  // (1) Nod bertanda Kepala: seret gerakkan seluruh subtree keluarganya.
+  // (2) Root orphan (tiada ibu/bapa, belum bertanda Kepala): seret sebagai kad tunggal sahaja.
+  //     Untuk gerakkan subtree penuh, tetapkan dahulu sebagai 👑 Kepala Salasilah.
   return isHeadFlag(m) || isRootMember(m.id);
 }
 function enableNodeDrag(el, id, layout){
   const m = getRenderMembers().find(x => String(x.id) === String(id));
-  // isHead: true jika nod adalah Kepala ATAU root orphan (tiada ibu/bapa) — kedua-dua boleh gerak bersama subtree
-  const isHead = !!m && (isHeadFlag(m) || isRootMember(m.id));
+  // isHead: HANYA nod yang betul-betul bertanda Kepala (isHead=true) yang menggerak subtree.
+  // Root orphan yang belum ditanda Kepala akan gerak sebagai kad tunggal sahaja.
+  const isHead = !!m && isHeadFlag(m);
   const allowed = canDragCards() || canDragHeadRoot(id);
   if(!allowed){
     el.style.touchAction = '';
@@ -1506,7 +1525,8 @@ function enableNodeDrag(el, id, layout){
   el.style.touchAction = 'none';
   el.addEventListener('pointerdown', (e)=>{
     if(e.button && e.button!==0) return;
-    const headNow = (()=>{ const mm=getRenderMembers().find(x=>String(x.id)===String(id)); return !!mm&&(isHeadFlag(mm)||isRootMember(mm.id)); })();
+    // headNow: semak semula masa sebenar — hanya isHeadFlag yang layak gerak subtree
+    const headNow = (()=>{ const mm=getRenderMembers().find(x=>String(x.id)===String(id)); return !!mm&&isHeadFlag(mm); })();
     const okNow = canDragCards() || canDragHeadRoot(id);
     if(!okNow) return;
     // jangan ganggu klik pada gambar / butang dalam kad
