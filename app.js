@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxqXbVpdnUZlqafN55lGWYDbzxJCMSomlhLIrAtNw7SbtTTP3zxHqVqxO-uLGDXNU5K/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1291,6 +1291,7 @@ function setLineageTarget(targetId){
   return LINEAGE;
 }
 // Kemas kini sorotan salasilah pada nod yang sudah ada di DOM tanpa renderAll.
+// SVG pautan TIDAK disentuh supaya garisan tidak hilang — kelas nod sudah mencukupi.
 function _applyLineageToDOM(){
   const lineageOn = !!LINEAGE.active;
   document.querySelectorAll('#nodes .node').forEach(el=>{
@@ -1301,8 +1302,9 @@ function _applyLineageToDOM(){
     el.classList.toggle('lineage-node',   lineageOn && inLineage && !isTarget);
     el.classList.toggle('lineage-target', isTarget);
   });
-  // Lukis semula garis pautan sahaja — panzoom tidak disentuh langsung
-  try{ renderLinks(buildLayout()); }catch(_){}
+  // Garisan SVG ditinggalkan seperti sedia ada — renderLinks TIDAK dipanggil
+  // di sini kerana ia akan membuang kelas lineage-dim pada SEMUA garis pasangan
+  // (opacity 0.18) menjadikan kesemua garisan hampir tidak kelihatan.
 }
 function getGenerationDepths(){
   const MEMBERS = getRenderMembers();
