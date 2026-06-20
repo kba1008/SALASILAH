@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycby0xVYaes6dHuX_DYjZUFN6dplj1ERfqH2cK9JOzvXXQuQeLGqxX38pZ2vQg8VXYw8b/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -555,57 +555,57 @@ function autoLayout(){
 function buildLayout(){
   const placed = autoLayout();
   const MEMBERS = getRenderMembers();
-  const byId = Object.fromEntries(MEMBERS.map(m=>[m.id, m]));
-  const primaryHeadId = getPrimaryHeadRootId();
 
-  // Mod profesional sentiasa aktif: susunan diambil terus daripada struktur
-  // keluarga supaya kemas automatik setiap kali data baharu masuk. Posisi
-  // manual individu tidak lagi diutamakan kerana ia menyebabkan carta
-  // berterabur apabila ada ahli diselit di tengah salasilah.
-  if(primaryHeadId){
-    const head = byId[primaryHeadId];
-    const auto = placed[primaryHeadId];
-    if(head && auto && head.posX!=null && head.posY!=null && isFinite(head.posX) && isFinite(head.posY)){
-      const dx = Number(head.posX) - auto.x;
-      const dy = Number(head.posY) - auto.y;
-      if(dx || dy){
-        getSubtreeIds(primaryHeadId).forEach(mid=>{
-          const p = placed[mid]; if(!p) return;
-          p.x += dx; p.y += dy;
-        });
-      }
-    }
-  }
-  const result = enforceHierarchyLayout(placed, { anchorId: primaryHeadId || Object.keys(placed)[0] || '' });
+  // ─── PEMBETULAN 1: Pulihkan posisi tersimpan untuk SETIAP kepala root ───
+  // Sebelum ini hanya primary head dipulihkan. Kini SEMUA kepala root
+  // yang ada posX/posY tersimpan akan dipulihkan bersama seluruh subtreenya.
+  // Ini memastikan posisi tidak hilang selepas refresh.
+  MEMBERS.filter(m => isHeadFlag(m)).forEach(m => {
+    const hid = String(m.id);
+    const auto = placed[hid];
+    if(!auto) return;
+    if(m.posX == null || m.posY == null || !isFinite(Number(m.posX)) || !isFinite(Number(m.posY))) return;
+    const dx = Number(m.posX) - auto.x;
+    const dy = Number(m.posY) - auto.y;
+    if(!dx && !dy) return;
+    // Geser kepala dan SELURUH subtreenya — root lain tidak disentuh
+    getSubtreeIds(hid).forEach(mid => {
+      const p = placed[mid]; if(!p) return;
+      p.x += dx; p.y += dy;
+    });
+  });
 
-  // BUG FIX #3 — Pemusatan Kepala di atas keturunannya.
-  // enforceHierarchyLayout mengekalkan kedudukan X kepala berdasarkan anchorId.
-  // Ini menyebabkan kepala mungkin tidak berada di tengah-tengah anak-cucunya.
-  // Kita jalankan satu lagi pas pemusatan selepas layout siap.
+  // ─── PEMBETULAN 3 (asal): enforceHierarchyLayout TANPA anchorId ───
+  // Memanggil dengan anchorId menyebabkan SEMUA node dikumpul dalam satu
+  // kumpulan besar dan Y semua root dikira semula berdasarkan primary head —
+  // ini punca kepala-kepala lain turut bergerak. Tanpa anchorId, setiap
+  // root diproses secara BERASINGAN dalam kumpulan sendiri.
+  const result = enforceHierarchyLayout(placed, {});
+
+  // ─── Pemusatan: tengahkan setiap kepala di atas keturunannya ───
+  // Dijalankan untuk SEMUA kepala (bukan primary sahaja).
   const SPS_c = getRenderSpouses();
-  Array.from(getHeadRoots()).forEach(hid=>{
+  MEMBERS.filter(m => isHeadFlag(m)).forEach(m => {
+    const hid = String(m.id);
     if(!result[hid]) return;
     const subtreeIds = getSubtreeIds(hid);
-    // Tentukan baris kepala: kepala + pasangannya yang satu baris
-    const headRowIds = new Set([String(hid)]);
-    SPS_c.forEach(s=>{
+    const headRowIds = new Set([hid]);
+    SPS_c.forEach(s => {
       const h = String(s.husbandId), w = String(s.wifeId);
-      if(h===String(hid) && result[w]) headRowIds.add(w);
-      else if(w===String(hid) && result[h]) headRowIds.add(h);
+      if(h === hid && result[w]) headRowIds.add(w);
+      else if(w === hid && result[h]) headRowIds.add(h);
     });
-    // Kira had X semua keturunan (TIDAK termasuk baris kepala)
     let minX = Infinity, maxX = -Infinity;
-    subtreeIds.forEach(mid=>{
+    subtreeIds.forEach(mid => {
       const sid = String(mid);
       if(headRowIds.has(sid)) return;
       const p = result[sid]; if(!p) return;
       if(p.x < minX) minX = p.x;
       if(p.x + NODE_W > maxX) maxX = p.x + NODE_W;
     });
-    if(!isFinite(minX)) return; // tiada keturunan — kepala kekal di tempat
-    // Kira had X baris kepala
+    if(!isFinite(minX)) return;
     let headMinX = Infinity, headMaxX = -Infinity;
-    headRowIds.forEach(sid=>{
+    headRowIds.forEach(sid => {
       const p = result[sid]; if(!p) return;
       if(p.x < headMinX) headMinX = p.x;
       if(p.x + NODE_W > headMaxX) headMaxX = p.x + NODE_W;
@@ -615,8 +615,7 @@ function buildLayout(){
     const currentCenter = (headMinX + headMaxX) / 2;
     const shift = Math.round(targetCenter - currentCenter);
     if(!shift) return;
-    // Geser hanya baris kepala sahaja — keturunan kekal di tempatnya
-    headRowIds.forEach(sid=>{
+    headRowIds.forEach(sid => {
       const p = result[sid]; if(!p) return;
       p.x = Math.round(p.x + shift);
     });
@@ -1535,9 +1534,24 @@ function enableNodeDrag(el, id, layout){
     // Kepala: gerak seluruh subtree; kad biasa: hanya kad itu sahaja
     const ids = headNow ? getSubtreeIds(id) : new Set([String(id)]);
     const scale = panzoomInstance ? panzoomInstance.getScale() : 1;
-    const lay = buildLayout(); // snapshot terkini
+    // ─── PEMBETULAN 2: Gunakan posisi DOM sebenar sebagai titik mula drag ───
+    // buildLayout() mungkin berbeza dengan posisi visual semasa kerana
+    // centering/enforceHierarchy. Akibatnya nod "melompat" apabila drag mula.
+    // Penyelesaian: baca terus daripada el.style.left/top DOM node.
+    const lay = _lastLayout ? Object.assign({}, _lastLayout) : buildLayout();
     const positions = {};
-    ids.forEach(mid => { const p = lay[mid]; if(p) positions[mid] = { x:p.x, y:p.y }; });
+    ids.forEach(mid => {
+      const sid = String(mid);
+      const domNode = document.querySelector(`#nodes .node[data-id="${sid}"]`);
+      if(domNode){
+        const domX = parseFloat(domNode.style.left) || 0;
+        const domY = parseFloat(domNode.style.top) || 0;
+        positions[sid] = { x: domX, y: domY };
+        lay[sid] = { x: domX, y: domY }; // sync layout dengan DOM
+      } else {
+        const p = lay[sid]; if(p) positions[sid] = { x: p.x, y: p.y };
+      }
+    });
     _dragState = { ids, rootId:id, positions, scale, sx:e.clientX, sy:e.clientY, layout:lay, moved:false, isRoot:headNow };
     el.setPointerCapture(e.pointerId);
     // halang panzoom semasa seret
