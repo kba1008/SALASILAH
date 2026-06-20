@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbyIAH3SEqKIxAlZtWjX5EMsuIfUQLu92o5HqUggalIyA3z9UA9q-I6CiDk9PH1ZOoLO/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxNthVsDWd5gw1_7t52SbEw_HNmMjSCvULKhbaxhUSA_GiXq-D9OuHCJCEyFuEKnNVR/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1692,6 +1692,11 @@ function enableNodeDrag(el, id, layout){
     const headNow = (()=>{ const mm=getRenderMembers().find(x=>String(x.id)===String(id)); return !!mm&&isHeadFlag(mm); })();
     const okNow = canDragCards() || canDragHeadRoot(id);
     if(!okNow) return;
+    // Kepala yang dikunci TIDAK boleh diseret — mesti unlock dulu
+    if(headNow && isHeadLocked(id)){
+      notify.warn('🔒 Kepala ini dikunci. Buka kunci dahulu sebelum menggerakkannya.');
+      return;
+    }
     // jangan ganggu klik pada gambar / butang dalam kad
     if(e.target.closest('.lb-img,button,a,input,select,textarea')) return;
     e.stopPropagation();
@@ -2032,29 +2037,78 @@ function renderLinks(layout){
       handles += `<circle class="junction-handle" data-spouseid="${sid}" cx="${j.x}" cy="${j.y}" r="7"/>`;
     });
   }
-  // Garisan sambungan antara Root — emas melengkung, menunjukkan aliran darah merentasi pokok.
-  // PEMBETULAN: Lukis dari bawah kotak ATAS ke atas kotak BAWAH berdasarkan
-  // kedudukan Y sebenar dalam paparan — bukan berdasarkan label parent/child dalam data.
-  // Jika root baru (childMember) berada LEBIH ATAS dari root lama (parentMember),
-  // garisan mesti keluar dari bawah root baru dan masuk ke atas root lama.
+  // Garisan sambungan antara Root — penyambung magnet pintar.
+  // Garisan keluar dari SISI TERDEKAT kotak (atas/bawah/kiri/kanan) bergantung
+  // pada arah relatif antara dua kotak, kemudian berbelok 90° ke kotak sasaran.
   (DATA.rootLinks || []).forEach(link=>{
     const pa = layout[String(link.parentMemberId)];
     const ca = layout[String(link.childMemberId)];
     if(!pa || !ca) return;
-    // Tentukan kotak mana lebih atas (Y lebih kecil = lebih atas dalam canvas)
-    const upperL = pa.y <= ca.y ? pa : ca;
-    const lowerL = pa.y <= ca.y ? ca : pa;
-    const ux = upperL.x + NODE_W/2, uy = upperL.y + NODE_H; // bawah kotak atas
-    const lx = lowerL.x + NODE_W/2, ly = lowerL.y;           // atas kotak bawah
-    const midY = (uy + ly) / 2;
-    // Garisan rootLink terserlah HANYA apabila KEDUA-DUA kepala berada dalam
-    // rantaian lineage — ini bermakna garisan itu memang sebahagian dari
-    // rantaian darah yang sedang disorot (bukan sekadar berdekatan dengannya).
+
+    // Pusat kedua-dua kotak
+    const paCx = pa.x + NODE_W/2, paCy = pa.y + NODE_H/2;
+    const caCx = ca.x + NODE_W/2, caCy = ca.y + NODE_H/2;
+    const dx = caCx - paCx;   // positif = ca berada di kanan pa
+    const dy = caCy - paCy;   // positif = ca berada di bawah pa
+
+    // Tentukan sisi keluar/masuk berdasarkan sudut relatif antara dua pusat.
+    // Bandingkan nisbah dx/NODE_W dengan dy/NODE_H (saiz kotak berbeza lebar/tinggi).
+    let ex, ey, ex2, ey2;        // exit point (pa) & entry point (ca)
+    let isVertical;
+    const normDx = Math.abs(dx) / NODE_W;
+    const normDy = Math.abs(dy) / NODE_H;
+
+    if(normDy >= normDx){
+      // Sambungan lebih menegak — keluar dari atas/bawah
+      isVertical = true;
+      if(dy >= 0){
+        // ca di bawah pa: keluar bawah pa, masuk atas ca
+        ex = paCx; ey = pa.y + NODE_H;
+        ex2 = caCx; ey2 = ca.y;
+      } else {
+        // ca di atas pa: keluar atas pa, masuk bawah ca
+        ex = paCx; ey = pa.y;
+        ex2 = caCx; ey2 = ca.y + NODE_H;
+      }
+    } else {
+      // Sambungan lebih mendatar — keluar dari kiri/kanan
+      isVertical = false;
+      if(dx >= 0){
+        // ca di kanan pa: keluar kanan pa, masuk kiri ca
+        ex = pa.x + NODE_W; ey = paCy;
+        ex2 = ca.x; ey2 = caCy;
+      } else {
+        // ca di kiri pa: keluar kiri pa, masuk kanan ca
+        ex = pa.x; ey = paCy;
+        ex2 = ca.x + NODE_W; ey2 = caCy;
+      }
+    }
+
+    // Bina path siku dua-segmen: bergerak arah utama dulu, kemudian arah silang.
+    let d;
+    if(isVertical){
+      const midY = Math.round((ey + ey2) / 2);
+      if(Math.abs(ex - ex2) < 2){
+        // Hampir sama X — garis lurus sahaja
+        d = `M ${ex} ${ey} L ${ex2} ${ey2}`;
+      } else {
+        d = `M ${ex} ${ey} L ${ex} ${midY} L ${ex2} ${midY} L ${ex2} ${ey2}`;
+      }
+    } else {
+      const midX = Math.round((ex + ex2) / 2);
+      if(Math.abs(ey - ey2) < 2){
+        // Hampir sama Y — garis lurus sahaja
+        d = `M ${ex} ${ey} L ${ex2} ${ey2}`;
+      } else {
+        d = `M ${ex} ${ey} L ${midX} ${ey} L ${midX} ${ey2} L ${ex2} ${ey2}`;
+      }
+    }
+
     const inPath = lineageOn &&
       LINEAGE.nodeIds.has(String(link.parentMemberId)) &&
       LINEAGE.nodeIds.has(String(link.childMemberId));
     const rlCls = 'root-link' + (inPath ? ' lineage-path' : (lineageOn ? ' lineage-dim' : ''));
-    paths += `<path class="${rlCls}" data-rootlink="${escapeHtml(String(link.id))}" d="M ${ux} ${uy} L ${lx} ${ly}"/>`;
+    paths += `<path class="${rlCls}" data-rootlink="${escapeHtml(String(link.id))}" d="${d}"/>`;
   });
   svg.innerHTML = paths + labels + handles;
   if(isAdmin){
