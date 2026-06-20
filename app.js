@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxqXbVpdnUZlqafN55lGWYDbzxJCMSomlhLIrAtNw7SbtTTP3zxHqVqxO-uLGDXNU5K/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -208,7 +208,7 @@ const NODE_W = 220, NODE_H = 170, GAP_X = 32, GAP_Y = 70;
 const upperName = (s) => String(s||'').replace(/\s+/g,' ').trim().toUpperCase();
 
 function openModal(html){ $('#modal').innerHTML = html; $('#scrim').classList.add('show'); }
-function closeModal(){ $('#scrim').classList.remove('show'); }
+function closeModal(){ $('#scrim').classList.remove('show'); clearLineageState(); _applyLineageToDOM(); }
 $('#scrim').addEventListener('click', e => { if(e.target.id==='scrim') closeModal(); });
 window.closeModalGlobal = closeModal;
 
@@ -1285,10 +1285,24 @@ function computeLineageToMember(targetId){
 }
 function setLineageTarget(targetId){
   LINEAGE = computeLineageToMember(targetId);
-  // Defer renderAll to avoid disrupting the current event handler (click) that
-  // calls this function. Destroying/recreating panzoom mid-click causes errors.
-  requestAnimationFrame(()=>{ try{ renderAll(); }catch(_){} });
+  // Kemaskini kelas CSS pada nod sedia ada secara terus — TANPA memusnahkan/
+  // mencipta semula panzoom supaya viewport tidak melompat.
+  _applyLineageToDOM();
   return LINEAGE;
+}
+// Kemas kini sorotan salasilah pada nod yang sudah ada di DOM tanpa renderAll.
+function _applyLineageToDOM(){
+  const lineageOn = !!LINEAGE.active;
+  document.querySelectorAll('#nodes .node').forEach(el=>{
+    const id = String(el.dataset.id || '');
+    const inLineage = lineageOn && LINEAGE.nodeIds.has(id);
+    const isTarget  = lineageOn && String(LINEAGE.targetId) === id;
+    el.classList.toggle('lineage-dim',    lineageOn && !inLineage);
+    el.classList.toggle('lineage-node',   lineageOn && inLineage && !isTarget);
+    el.classList.toggle('lineage-target', isTarget);
+  });
+  // Lukis semula garis pautan sahaja — panzoom tidak disentuh langsung
+  try{ renderLinks(buildLayout()); }catch(_){}
 }
 function getGenerationDepths(){
   const MEMBERS = getRenderMembers();
@@ -1414,17 +1428,18 @@ let _suppressNextClick = false;
 function canDragCards(){
   return false;
 }
-// Admin/master sentiasa dibenarkan seret Kepala Root untuk memindahkan
-// keseluruhan salasilah di bawahnya — walaupun semua tetapan susunan ditutup
-// oleh Master Admin. Ini memberi admin kawalan kedudukan keseluruhan tree
-// tanpa membuka semula mod drag bebas untuk kad lain.
+// Admin/master boleh seret MANA-MANA nod yang bertanda Kepala (bukan primary sahaja).
+// Menyeret kepala akan memindahkan SELURUH subtree di bawahnya sekali.
 function canDragHeadRoot(id){
   const u = STORE.user;
-  return !!u && (u.role === 'master' || u.role === 'admin') && String(id||'') === String(getPrimaryHeadRootId() || '');
+  if(!u || (u.role !== 'master' && u.role !== 'admin')) return false;
+  const m = getRenderMembers().find(x => String(x.id) === String(id));
+  return !!m && isHeadFlag(m);
 }
 function enableNodeDrag(el, id, layout){
-  const isRoot = isHeadRoot(id);
-  const allowed = canDragCards() || (isRoot && canDragHeadRoot(id));
+  const m = getRenderMembers().find(x => String(x.id) === String(id));
+  const isHead = !!m && isHeadFlag(m); // mana-mana kepala, bukan primary sahaja
+  const allowed = canDragCards() || canDragHeadRoot(id);
   if(!allowed){
     el.style.touchAction = '';
     el.style.cursor = '';
@@ -1433,18 +1448,19 @@ function enableNodeDrag(el, id, layout){
   el.style.touchAction = 'none';
   el.addEventListener('pointerdown', (e)=>{
     if(e.button && e.button!==0) return;
-    const rootNow = isHeadRoot(id);
-    const okNow = canDragCards() || (rootNow && canDragHeadRoot(id));
+    const headNow = (()=>{ const mm=getRenderMembers().find(x=>String(x.id)===String(id)); return !!mm&&isHeadFlag(mm); })();
+    const okNow = canDragCards() || canDragHeadRoot(id);
     if(!okNow) return;
     // jangan ganggu klik pada gambar / butang dalam kad
     if(e.target.closest('.lb-img,button,a,input,select,textarea')) return;
     e.stopPropagation();
-    const ids = rootNow ? getSubtreeIds(id) : new Set([id]);
+    // Kepala: gerak seluruh subtree; kad biasa: hanya kad itu sahaja
+    const ids = headNow ? getSubtreeIds(id) : new Set([String(id)]);
     const scale = panzoomInstance ? panzoomInstance.getScale() : 1;
     const lay = buildLayout(); // snapshot terkini
     const positions = {};
     ids.forEach(mid => { const p = lay[mid]; if(p) positions[mid] = { x:p.x, y:p.y }; });
-    _dragState = { ids, rootId:id, positions, scale, sx:e.clientX, sy:e.clientY, layout:lay, moved:false, isRoot:rootNow };
+    _dragState = { ids, rootId:id, positions, scale, sx:e.clientX, sy:e.clientY, layout:lay, moved:false, isRoot:headNow };
     el.setPointerCapture(e.pointerId);
     // halang panzoom semasa seret
     if(panzoomInstance) panzoomInstance.setOptions({ disablePan:true });
@@ -2386,39 +2402,17 @@ function _initialFocus(){
   let lastId = null;
   try{ lastId = localStorage.getItem(LAST_EDIT_KEY); }catch(_){}
   setTimeout(()=>{
-    // Jika ada rekod edit terakhir, fokus pada ahli itu
+    // Keutamaan 1: ada kad yang baru diedit/ditambah — paparkan kad itu
     if(lastId){
       try{ localStorage.removeItem(LAST_EDIT_KEY); }catch(_){}
       if(_centerOnId(lastId)) return;
     }
+    // Keutamaan 2: tengahkan pada Kepala Salasilah utama
     const primaryHeadId = getPrimaryHeadRootId();
-    if(primaryHeadId){
-      // Papar semua pokok dahulu supaya pengguna nampak gambaran penuh, kemudian
-      // geser ke Kepala Root dengan animasi supaya kelihatan di tengah skrin.
-      _fitToTree();
-      setTimeout(()=>{
-        // Selepas fit-to-tree, tengahkan khusus pada Kepala Root dengan zoom sesuai
-        const el = document.querySelector(`#nodes .node[data-id="${primaryHeadId}"]`);
-        if(!el || !panzoomInstance) return;
-        const x = parseFloat(el.style.left)||0, y = parseFloat(el.style.top)||0;
-        const st = $('#stage').getBoundingClientRect();
-        const scale = Math.min(panzoomInstance.getScale(), 0.8); // jangan lebih 0.8 supaya anak-cucu kelihatan
-        try{
-          const panX = st.width/2 - (x + NODE_W/2) * scale;
-          const panY = st.height/2 - (y + NODE_H/2) * scale;
-          panzoomInstance.zoom(scale, { animate:true });
-          setTimeout(()=> panzoomInstance.pan(panX, panY, { animate:true }), 60);
-          try{ localStorage.setItem(VIEWPORT_KEY, JSON.stringify({ x:panX, y:panY, scale })); }catch(_){}
-          setTimeout(cullViewport, 300);
-          el.classList.add('match');
-          setTimeout(()=> el.classList.remove('match'), 2500);
-        }catch(_){}
-      }, 350);
-      return;
-    }
-    // Jika belum ada Kepala Salasilah, papar keseluruhan pokok
+    if(primaryHeadId && _centerOnId(primaryHeadId)) return;
+    // Keutamaan 3: tiada kepala, paparkan semua nod sekaligus
     _fitToTree();
-  }, 220);
+  }, 350);
 }
 
 
@@ -2711,7 +2705,7 @@ function updatePendingBadge(){
   const b = $('#pendingBadge'); if(b){ b.style.display = n>0?'':'none'; b.textContent = n; }
 }
 
-async function refresh(options){ try{ let r = await api('bootstrap'); if (STORE.user && r?.data && !r.data.viewer) { if (await silentRelogin()) r = await api('bootstrap'); } DATA = { ...DATA, ...r.data }; STORE.cache = DATA; }catch(e){} if(!(options&&options.silent)) renderAll(); updatePendingBadge(); }
+async function refresh(options){ try{ let r = await api('bootstrap'); if (STORE.user && r?.data && !r.data.viewer) { if (await silentRelogin()) r = await api('bootstrap'); } DATA = { ...DATA, ...r.data }; STORE.cache = DATA; }catch(e){} if(!(options&&options.silent)){ const modalOpen = $('#scrim')?.classList.contains('show'); if(!modalOpen) renderAll(); } updatePendingBadge(); }
 
 if('serviceWorker' in navigator){ window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 
