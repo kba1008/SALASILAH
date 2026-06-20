@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycby0xVYaes6dHuX_DYjZUFN6dplj1ERfqH2cK9JOzvXXQuQeLGqxX38pZ2vQg8VXYw8b/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1037,6 +1037,11 @@ async function autoPlaceNew(hints, options){
 
 
 let panzoomInstance = null;
+// Layout terakhir yang digunakan oleh renderAll — dikongsi semula oleh
+// _applyLineageToDOM supaya garisan SVG SENTIASA dilukis menggunakan
+// koordinat yang tepat-tepat sama dengan kedudukan kad dalam DOM.
+let _lastLayout = null;
+
 function renderAll(){
   let layout = buildLayout();
   // Penapis keselamatan akhir: tiada kad dibenarkan bertindih, walau dari
@@ -1048,6 +1053,7 @@ function renderAll(){
     layout = resolveCardCollisions(layout, { gapX: 36, gapY: 28, anchorId });
     layout = keepLayoutInsideDrawableWorld(layout, 220);
   }catch(_){}
+  _lastLayout = layout;   // simpan untuk digunakan semula oleh _applyLineageToDOM
   renderNodes(layout);
   renderNotes();
   resizeWorld(layout);
@@ -1291,6 +1297,8 @@ function setLineageTarget(targetId){
   return LINEAGE;
 }
 // Kemas kini sorotan salasilah pada nod + garisan SVG tanpa sentuh panzoom.
+// WAJIB guna _lastLayout (bukan buildLayout() semula) supaya koordinat garisan
+// tepat sama dengan koordinat kad dalam DOM — mengelak garisan hilang/terpotong.
 function _applyLineageToDOM(){
   const lineageOn = !!LINEAGE.active;
   document.querySelectorAll('#nodes .node').forEach(el=>{
@@ -1301,11 +1309,13 @@ function _applyLineageToDOM(){
     el.classList.toggle('lineage-node',   lineageOn && inLineage && !isTarget);
     el.classList.toggle('lineage-target', isTarget);
   });
-  // Lukis semula garisan SVG dengan warna salasilah — pasangan pada laluan
-  // keturunan akan berwarna hijau terang; yang lain malap (0.18 opacity).
-  // Ini selamat kerana renderLinks kini menyemak LINEAGE.childKeys
-  // sebelum menggunakan lineage-dim pada garis pasangan.
-  try{ renderLinks(buildLayout()); }catch(_){}
+  // Guna layout yang SAMA dengan yang dihasilkan oleh renderAll — dijamin sepadan
+  // dengan viewBox SVG dan kedudukan kad dalam DOM. Ini mengelak garisan dilukis
+  // di luar viewBox dan hilang (terpotong). Hanya renderLinks dipanggil semula
+  // supaya panzoom tidak disentuh dan viewport tidak melompat.
+  const layout = _lastLayout;
+  if(!layout) return;
+  try{ renderLinks(layout); }catch(_){}
 }
 function getGenerationDepths(){
   const MEMBERS = getRenderMembers();
