@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxqXbVpdnUZlqafN55lGWYDbzxJCMSomlhLIrAtNw7SbtTTP3zxHqVqxO-uLGDXNU5K/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -1290,8 +1290,7 @@ function setLineageTarget(targetId){
   _applyLineageToDOM();
   return LINEAGE;
 }
-// Kemas kini sorotan salasilah pada nod yang sudah ada di DOM tanpa renderAll.
-// SVG pautan TIDAK disentuh supaya garisan tidak hilang — kelas nod sudah mencukupi.
+// Kemas kini sorotan salasilah pada nod + garisan SVG tanpa sentuh panzoom.
 function _applyLineageToDOM(){
   const lineageOn = !!LINEAGE.active;
   document.querySelectorAll('#nodes .node').forEach(el=>{
@@ -1302,9 +1301,11 @@ function _applyLineageToDOM(){
     el.classList.toggle('lineage-node',   lineageOn && inLineage && !isTarget);
     el.classList.toggle('lineage-target', isTarget);
   });
-  // Garisan SVG ditinggalkan seperti sedia ada — renderLinks TIDAK dipanggil
-  // di sini kerana ia akan membuang kelas lineage-dim pada SEMUA garis pasangan
-  // (opacity 0.18) menjadikan kesemua garisan hampir tidak kelihatan.
+  // Lukis semula garisan SVG dengan warna salasilah — pasangan pada laluan
+  // keturunan akan berwarna hijau terang; yang lain malap (0.18 opacity).
+  // Ini selamat kerana renderLinks kini menyemak LINEAGE.childKeys
+  // sebelum menggunakan lineage-dim pada garis pasangan.
+  try{ renderLinks(buildLayout()); }catch(_){}
 }
 function getGenerationDepths(){
   const MEMBERS = getRenderMembers();
@@ -1664,7 +1665,11 @@ function renderLinks(layout){
     const _y2 = b.y + NODE_H/2;
     const spouseCls = ['spouse'];
     if(s._draft) spouseCls.push('draft-link');
-    if(lineageOn) spouseCls.push('lineage-dim');
+    if(lineageOn){
+      // Serlahkan garis pasangan hanya jika pasangan ini ada anak dalam laluan salasilah
+      const coupleInPath = [...LINEAGE.childKeys].some(k => k.startsWith(String(s.id) + '::'));
+      spouseCls.push(coupleInPath ? 'lineage-path' : 'lineage-dim');
+    }
     paths += `<path class="${spouseCls.join(' ')}" d="M ${_x1} ${_y1} L ${_x2} ${_y2}"/>`;
   });
 
