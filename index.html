@@ -239,7 +239,19 @@
       filter:drop-shadow(0 0 8px rgba(52,211,153,.55));
       opacity:1 !important;
     }
-    svg.links path.lineage-dim { opacity:.18; }
+    svg.links path.lineage-dim { opacity:.4; }
+    /* Sambungan antara Root — garisan emas melengkung berputus-putus */
+    svg.links path.root-link {
+      stroke:#f59e0b; stroke-width:3; stroke-dasharray:10 6;
+      fill:none; opacity:.9;
+      filter:drop-shadow(0 0 7px rgba(245,158,11,.55));
+      vector-effect:non-scaling-stroke;
+    }
+    svg.links path.root-link.lineage-path {
+      stroke:#34d399 !important; stroke-dasharray:10 6;
+      filter:drop-shadow(0 0 10px rgba(52,211,153,.7));
+      opacity:1 !important;
+    }
     /* Hubungan DRAF (belum disahkan): garisan kelabu putus-putus */
     svg.links path.draft-link { stroke:#9a9a9a !important; stroke-dasharray:4 5; opacity:.8; filter:none; }
     /* Pemegang junction — admin boleh seret untuk susun pertemuan cabang */
@@ -594,6 +606,7 @@
     <div class="flex items-center gap-1">
       <button id="btnAutoTree" class="btn btn-ghost" title="Auto Family Tree — susun salasilah automatik" style="display:none">🌳<span class="hidden sm:inline" style="margin-left:4px;font-size:12px">Auto</span></button>
       <button id="btnAddNote" class="btn btn-ghost" title="Tambah nota" style="display:none">📝</button>
+      <button id="btnRefresh" class="btn btn-ghost" title="Muat Semula & Fokus ke Kepala Salasilah">🔄</button>
       <button id="btnZoomFit" class="btn btn-ghost" title="Muat skrin">⛶</button>
       <button id="btnAdmin" class="btn btn-ghost relative" title="Pentadbir" style="display:none">🛡️<span id="pendingBadge" style="display:none">0</span></button>
       <button id="btnSettings" class="btn btn-ghost" title="Tetapan">⚙️</button>

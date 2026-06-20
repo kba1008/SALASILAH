@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycbxqXbVpdnUZlqafN55lGWYDbzxJCMSomlhLIrAtNw7SbtTTP3zxHqVqxO-uLGDXNU5K/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -202,7 +202,7 @@ const TIPS = [
 let tipIdx = 0;
 const tipTimer = setInterval(()=> { tipIdx=(tipIdx+1)%TIPS.length; const el=$('#tip'); if(el) el.textContent="Petua: "+TIPS[tipIdx]; }, 3000);
 
-let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], returnedDrafts:[], pendingLog:[], users:[] };
+let DATA = { members:[], spouses:[], children:[], notes:[], pending:[], returnedDrafts:[], pendingLog:[], users:[], rootLinks:[] };
 let LINEAGE = { active:false, targetId:'', rootId:'', pathIds:[], nodeIds:new Set(), childKeys:new Set() };
 const NODE_W = 220, NODE_H = 170, GAP_X = 32, GAP_Y = 70;
 const upperName = (s) => String(s||'').replace(/\s+/g,' ').trim().toUpperCase();
@@ -1779,6 +1779,18 @@ function renderLinks(layout){
       handles += `<circle class="junction-handle" data-spouseid="${sid}" cx="${j.x}" cy="${j.y}" r="7"/>`;
     });
   }
+  // Garisan sambungan antara Root — emas melengkung, menunjukkan aliran darah merentasi pokok
+  (DATA.rootLinks || []).forEach(link=>{
+    const pa = layout[String(link.parentMemberId)];
+    const ca = layout[String(link.childMemberId)];
+    if(!pa || !ca) return;
+    const px = pa.x + NODE_W/2, py = pa.y + NODE_H;
+    const cx = ca.x + NODE_W/2, cy = ca.y;
+    const midY = (py + cy) / 2;
+    const inPath = lineageOn && (LINEAGE.nodeIds.has(String(link.parentMemberId)) || LINEAGE.nodeIds.has(String(link.childMemberId)));
+    const rlCls = 'root-link' + (inPath ? ' lineage-path' : (lineageOn ? ' lineage-dim' : ''));
+    paths += `<path class="${rlCls}" data-rootlink="${escapeHtml(String(link.id))}" d="M ${px} ${py} C ${px} ${midY} ${cx} ${midY} ${cx} ${cy}"/>`;
+  });
   svg.innerHTML = paths + labels + handles;
   if(isAdmin){
     wireJunctionHandles(svg);
@@ -2041,6 +2053,15 @@ $('#zIn').onclick = ()=> panzoomInstance?.zoomIn();
 $('#zOut').onclick = ()=> panzoomInstance?.zoomOut();
 $('#zReset').onclick = ()=> { try{ localStorage.removeItem(VIEWPORT_KEY); }catch(_){} panzoomInstance?.reset(); };
 $('#btnZoomFit').onclick = ()=> { try{ localStorage.removeItem(VIEWPORT_KEY); }catch(_){} panzoomInstance?.reset(); };
+$('#btnRefresh').onclick = async ()=>{
+  const btn = $('#btnRefresh');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳'; }
+  try{ await refresh(); }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '🔄'; }
+  }
+  const headId = getPrimaryHeadRootId();
+  setTimeout(()=>{ if(headId && _centerOnId(headId)) return; _fitToTree(); }, 150);
+};
 const _btnAutoTree = document.getElementById('btnAutoTree');
 if(_btnAutoTree) _btnAutoTree.style.display = 'none';
 
@@ -2086,6 +2107,7 @@ function openMemberMenu(m){
       ${isAdmin&&isRootMember(m.id)&&!isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="sethead">👑 Jadikan Kepala</button>':''}
       ${isAdmin&&isHeadFlag(m)?'<button class="btn btn-ghost justify-center" data-act="unsethead">🚫 Nyahkan Kepala</button>':''}
       ${isAdmin&&isHeadFlag(m)&&(DATA.settings?.autoLayoutEnabled!==false)?'<button class="btn gold-edge justify-center" data-act="autohead" title="Susun automatik semua pasangan & keturunan di bawah kepala ini (3 variasi berkitar)">🌳 Auto Susun Cabang</button>':''}
+      ${(()=>{ if(!isAdmin||!isHeadFlag(m)) return ''; const ex=(DATA.rootLinks||[]).find(r=>String(r.childMemberId)===String(m.id)); return ex?`<button class="btn btn-ghost justify-center" data-act="unlinkroot" title="Putus sambungan root sedia ada">🔗 Putus Sambungan Root</button>`:`<button class="btn gold-edge justify-center" data-act="linkroot" title="Sambungkan kepala ini ke nenek-moyang dalam root lain">🔗 Sambung ke Root Lain</button>`; })()}
       ${isAdmin?'<button class="btn btn-ghost justify-center" style="color:var(--danger)" data-act="del">🗑️ Padam</button>':''}
     </div>
     ${lockedByOther?`<div class="bevel-soft rounded-lg p-2 mt-2 text-sm ink-soft">🔒 Sedang diedit oleh <b>@${escapeHtml(lock.user)}</b>. Edit dibuka semula selepas pentadbir membuat keputusan.</div>`:''}
@@ -2103,6 +2125,8 @@ function openMemberMenu(m){
     else if(act==='sethead') setHeadRoot(m);
     else if(act==='unsethead') unsetHeadRoot(m);
     else if(act==='autohead'){ closeModal(); autoArrangeHead(m.id); }
+    else if(act==='linkroot') linkRootForm(m);
+    else if(act==='unlinkroot') unlinkRoot(m);
   });
 }
 
@@ -2124,6 +2148,65 @@ async function unsetHeadRoot(m){
     notify.success('🚫 ' + (m.name||'Ahli') + ' bukan lagi Kepala Salasilah.');
     closeModal();
     await refresh();
+  }catch(e){ toast(e.message); }
+}
+
+// Borang untuk menyambungkan Kepala Root ini ke nenek-moyang dalam Root lain.
+function linkRootForm(headMember){
+  const allMembers = getRenderMembers().filter(m => String(m.id) !== String(headMember.id));
+  const opts = allMembers.map(m => `<option value="${escapeHtml(String(m.id))}">${escapeHtml(m.name||'?')} ${m.gender?'('+escapeHtml(m.gender)+')':''}</option>`).join('');
+  openModal(`
+    <div class="font-head text-xl mb-3">🔗 Sambung ke Root Lain</div>
+    <p class="text-sm ink-soft mb-3">Pilih nenek-moyang <b>${escapeHtml(headMember.name||'')}</b> dari Root lain. Sambungan ini akan digambarkan sebagai garisan emas putus-putus antara kedua-dua Root.</p>
+    <div class="field">
+      <label>Cari Nenek-Moyang</label>
+      <input id="rlSearch" type="text" class="bevel-soft rounded-lg p-2 w-full" placeholder="Taip nama untuk tapis..."/>
+    </div>
+    <div class="field">
+      <label>Pilih Nenek-Moyang (Ibu/Bapa dari Root lain)</label>
+      <select id="rlParent" size="6" class="bevel-soft rounded-lg p-2 w-full" style="min-height:120px">${opts}</select>
+    </div>
+    <div class="field">
+      <label>Nota (pilihan)</label>
+      <input id="rlNote" type="text" class="bevel-soft rounded-lg p-2 w-full" placeholder="cth: Nenek-moyang dari Keturunan Dato' X"/>
+    </div>
+    <div class="flex gap-2 mt-3 justify-end">
+      <button class="btn btn-ghost" onclick="closeModalGlobal()">Batal</button>
+      <button id="rlSubmit" class="btn gold-edge">✅ Sambung</button>
+    </div>
+  `);
+  // Tapis senarai mengikut carian
+  const sel = $('#rlParent'), search = $('#rlSearch');
+  if(search && sel){
+    search.addEventListener('input', ()=>{
+      const q = search.value.toLowerCase();
+      Array.from(sel.options).forEach(o=>{ o.hidden = q && !o.textContent.toLowerCase().includes(q); });
+    });
+  }
+  const submit = $('#rlSubmit');
+  if(submit) submit.onclick = async ()=>{
+    const parentId = $('#rlParent')?.value;
+    const note = ($('#rlNote')?.value||'').trim();
+    if(!parentId){ toast('Sila pilih nenek-moyang.'); return; }
+    submit.disabled = true;
+    try{
+      await dispatchApi('setRootLink', { childMemberId: headMember.id, parentMemberId: parentId, note });
+      notify.success('🔗 Sambungan Root berjaya dibuat.');
+      closeModal(); await refresh();
+    }catch(e){ toast(e.message); submit.disabled = false; }
+  };
+}
+
+// Admin memutuskan sambungan Root yang sedia ada.
+async function unlinkRoot(headMember){
+  const link = (DATA.rootLinks||[]).find(r=>String(r.childMemberId)===String(headMember.id));
+  if(!link){ toast('Tiada sambungan Root untuk diputuskan.'); return; }
+  const parent = getRenderMembers().find(m=>String(m.id)===String(link.parentMemberId));
+  if(!confirm(`Putuskan sambungan antara "${headMember.name}" dan "${parent?.name||link.parentMemberId}"?`)) return;
+  try{
+    await dispatchApi('deleteRootLink', { id: link.id });
+    notify.success('🔗 Sambungan Root telah diputuskan.');
+    closeModal(); await refresh();
   }catch(e){ toast(e.message); }
 }
 

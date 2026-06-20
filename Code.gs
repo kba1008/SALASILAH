@@ -26,12 +26,13 @@ const MASTER_PASSWORD = '101010';
 const APP_VERSION = '4.4';
 
 const SHEETS = {
-  PENGGUNA:  ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
-  SALASILAH: ['id','name','gender','alive','birth','death','place','address','photo','notes','fatherName','motherName','posX','posY','isHead','editedBy','editedAt','approvedBy','approvedAt'],
-  PASANGAN:  ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','junctionDx','junctionDy','editedBy','editedAt'],
-  ANAK:      ['spouseId','childId','parentAnchorId','editedBy','editedAt'],
-  NOTA:      ['id','text','x','y','font','size','color','pinned','editedBy','editedAt'],
-  PENDING:   ['id','action','payload','before','user','userFullName','reason','ts','status','approvedBy','approvedAt']
+  PENGGUNA:      ['username','fullName','fatherName','motherName','address','whatsapp','occupation','photo','email','phone','password','passwordHash','salt','role','approved','token','memberId','createdAt'],
+  SALASILAH:     ['id','name','gender','alive','birth','death','place','address','photo','notes','fatherName','motherName','posX','posY','isHead','editedBy','editedAt','approvedBy','approvedAt'],
+  PASANGAN:      ['id','husbandId','wifeId','status','marriageDate','divorceDate','deathDate','junctionDx','junctionDy','editedBy','editedAt'],
+  ANAK:          ['spouseId','childId','parentAnchorId','editedBy','editedAt'],
+  NOTA:          ['id','text','x','y','font','size','color','pinned','editedBy','editedAt'],
+  PENDING:       ['id','action','payload','before','user','userFullName','reason','ts','status','approvedBy','approvedAt'],
+  ROOT_LINKS:    ['id','parentMemberId','childMemberId','note','editedBy','editedAt']
 };
 const MEMBER_ID_PREFIX = 'KEL';
 
@@ -532,7 +533,8 @@ const HANDLERS = {
             : { username:x.username, fullName:x.fullName, role:x.role, approved:x.approved, memberId:x.memberId, whatsapp:x.whatsapp, phone:x.phone, photo:x.photo })
       : [];
 
-    return { ok: true, data: { members, spouses, children, notes, pending, returnedDrafts, pendingLog, pendingUsers, users, publicUsers, settings: getSystemSettings(), viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null }};
+    const rootLinks = readAll('ROOT_LINKS');
+    return { ok: true, data: { members, spouses, children, notes, pending, returnedDrafts, pendingLog, pendingUsers, users, publicUsers, rootLinks, settings: getSystemSettings(), viewer: u ? { username:u.username, role:u.role, fullName:u.fullName, memberId:u.memberId, photo:u.photo } : null }};
   },
 
   approveUser(body) {
@@ -896,6 +898,34 @@ const HANDLERS = {
       }
     });
     return { ok: true, updated: updated };
+  },
+
+  // Simpan atau kemas kini sambungan antara dua Root (nenek-moyang merentasi pokok).
+  setRootLink(body) {
+    const u = requireAuth(body, ['admin','master']);
+    const childId  = String(body.childMemberId  || '').trim();
+    const parentId = String(body.parentMemberId || '').trim();
+    if(!childId || !parentId) throw new Error('childMemberId dan parentMemberId diperlukan.');
+    if(childId === parentId) throw new Error('Ahli yang sama tidak boleh disambungkan kepada dirinya sendiri.');
+    // Satu kepala hanya boleh ada SATU sambungan Root (padam lama sebelum tambah baharu)
+    const existing = readAll('ROOT_LINKS').find(r=>String(r.childMemberId)===childId);
+    if(existing) deleteRow('ROOT_LINKS', 'id', existing.id);
+    const id = 'rl_' + new Date().getTime() + '_' + Math.random().toString(36).slice(2,7);
+    appendRow('ROOT_LINKS', {
+      id, parentMemberId:parentId, childMemberId:childId,
+      note: String(body.note||'').slice(0,500),
+      editedBy: u.username, editedAt: now()
+    });
+    return { ok:true, id };
+  },
+
+  // Padam sambungan Root mengikut id.
+  deleteRootLink(body) {
+    requireAuth(body, ['admin','master']);
+    const id = String(body.id||'').trim();
+    if(!id) throw new Error('id diperlukan.');
+    deleteRow('ROOT_LINKS', 'id', id);
+    return { ok:true };
   },
 
   updateMyProfile(body) {
