@@ -4,7 +4,7 @@
 
 // ====== KONFIGURASI ======
 // 🔗 Tampal URL Web App Google Apps Script anda di sini:
-const API_URL = "https://script.google.com/macros/s/AKfycby0xVYaes6dHuX_DYjZUFN6dplj1ERfqH2cK9JOzvXXQuQeLGqxX38pZ2vQg8VXYw8b/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxDdRRFpy41wLoWeUR8XNMW8n3DDxsvOh4Kc2KrAl9NVCUAFpil_Mdxk1aJsuml81rh/exec";
 
 // 📞 Talian / WhatsApp pentadbir untuk pengesahan maklumat salasilah.
 const ADMIN_PHONE = "01110661077";
@@ -575,18 +575,21 @@ function buildLayout(){
     });
   });
 
-  // ─── PEMBETULAN 3 (asal): enforceHierarchyLayout TANPA anchorId ───
-  // Memanggil dengan anchorId menyebabkan SEMUA node dikumpul dalam satu
-  // kumpulan besar dan Y semua root dikira semula berdasarkan primary head —
-  // ini punca kepala-kepala lain turut bergerak. Tanpa anchorId, setiap
-  // root diproses secara BERASINGAN dalam kumpulan sendiri.
-  const result = enforceHierarchyLayout(placed, {});
+  // ─── enforceHierarchyLayout dengan SEMUA kepala root ───
+  // Hantar allHeadIds supaya fungsi proses SETIAP kepala dalam kumpulan sendiri.
+  // Tanpa ini, getHeadRoots() hanya pulangkan primary head → node lain jatuh
+  // ke formula baseY+depth*rowStep yang override posisi tersimpan admin.
+  const allHeadIds = MEMBERS.filter(m => isHeadFlag(m)).map(m => String(m.id));
+  const result = enforceHierarchyLayout(placed, { allHeadIds });
 
-  // ─── Pemusatan: tengahkan setiap kepala di atas keturunannya ───
-  // Dijalankan untuk SEMUA kepala (bukan primary sahaja).
+  // ─── Pemusatan: tengahkan kepala di atas keturunannya ───
+  // HANYA untuk kepala yang BELUM ada posisi tersimpan (belum pernah di-drag).
+  // Kepala yang sudah di-drag dan disimpan posX tidak boleh digeser oleh auto.
   const SPS_c = getRenderSpouses();
   MEMBERS.filter(m => isHeadFlag(m)).forEach(m => {
     const hid = String(m.id);
+    // Jika admin sudah set posisi — KEKAL di situ, JANGAN auto-tengah
+    if(m.posX != null && isFinite(Number(m.posX))) return;
     if(!result[hid]) return;
     const subtreeIds = getSubtreeIds(hid);
     const headRowIds = new Set([hid]);
@@ -1282,21 +1285,29 @@ function clearLineageState(){
   return LINEAGE;
 }
 function computeLineageToMember(targetId){
-  const rootId = getPrimaryHeadRootId();
   const target = String(targetId || '');
-  if(!rootId || !target) return clearLineageState();
+  if(!target) return clearLineageState();
 
   const MEMBERS = getRenderMembers();
   const SPOUSES = getRenderSpouses();
   const CHILDREN = getRenderChildren();
   const byId = Object.fromEntries(MEMBERS.map(m=>[String(m.id), m]));
-  if(!byId[rootId] || !byId[target]) return clearLineageState();
-  if(target === String(rootId)){
-    // Klik pada Kepala Salasilah sendiri — tiada laluan untuk diserlahkan.
-    // Kembalikan keadaan kosong supaya nod lain tidak diredupkan/hilang.
-    return clearLineageState();
-  }
+  if(!byId[target]) return clearLineageState();
 
+  // Kumpul SEMUA kepala root
+  const allHeads = MEMBERS.filter(m => isHeadFlag(m)).map(m => String(m.id));
+  if(!allHeads.length) return clearLineageState();
+
+  // Klik pada kepala yang TIDAK ada sambungan rootLink ke atas — kosongkan.
+  // Jika kepala itu sendiri ada rootLink (ada nenek moyang), biar ia jatuh ke
+  // laluan rootLink di bawah supaya sambungan emas terpamer.
+  const rootLinkParentOf = {}; // childMemberId -> parentMemberId
+  (DATA.rootLinks || []).forEach(lk=>{
+    rootLinkParentOf[String(lk.childMemberId)] = String(lk.parentMemberId);
+  });
+  if(allHeads.includes(target) && !rootLinkParentOf[target]) return clearLineageState();
+
+  // Bina peta anak sekali — dikongsi semua percubaan kepala
   const spouseById = Object.fromEntries(SPOUSES.map(s=>[String(s.id), s]));
   const childrenByParent = {};
   CHILDREN.forEach(link=>{
@@ -1310,40 +1321,69 @@ function computeLineageToMember(targetId){
     });
   });
 
-  const visited = new Set();
-  function walk(currentId, pathIds, childKeys){
-    const key = String(currentId);
-    if(visited.has(pathIds.join('>') + '|' + key)) return null;
-    visited.add(pathIds.join('>') + '|' + key);
-    const nexts = (childrenByParent[key] || [])
-      .slice()
-      .sort((a,b)=>{
-        const ma = byId[a.childId], mb = byId[b.childId];
-        const ka = _sortKey(ma), kb = _sortKey(mb);
-        return ka[0]-kb[0] || String(ka[1]).localeCompare(String(kb[1]), 'ms', { sensitivity:'base' });
-      });
-    for(const next of nexts){
-      if(pathIds.includes(next.childId)) continue;
-      const nextPathIds = pathIds.concat(next.childId);
-      const nextChildKeys = childKeys.concat(makeLineageChildKey(next.spouseId, next.childId));
-      if(next.childId === target){
-        return { pathIds: nextPathIds, childKeys: nextChildKeys };
+  function tryWalkFrom(rootId){
+    const visited = new Set();
+    function walk(currentId, pathIds, childKeys){
+      const key = String(currentId);
+      const stateKey = pathIds.join('>') + '|' + key;
+      if(visited.has(stateKey)) return null;
+      visited.add(stateKey);
+      if(key === target) return { pathIds, childKeys };
+      const nexts = (childrenByParent[key] || [])
+        .slice()
+        .sort((a,b)=>{
+          const ma = byId[a.childId], mb = byId[b.childId];
+          const ka = _sortKey(ma), kb = _sortKey(mb);
+          return ka[0]-kb[0] || String(ka[1]).localeCompare(String(kb[1]), 'ms', { sensitivity:'base' });
+        });
+      for(const next of nexts){
+        if(pathIds.includes(next.childId)) continue;
+        const nextPathIds = pathIds.concat(next.childId);
+        const nextChildKeys = childKeys.concat(makeLineageChildKey(next.spouseId, next.childId));
+        if(next.childId === target) return { pathIds: nextPathIds, childKeys: nextChildKeys };
+        const found = walk(next.childId, nextPathIds, nextChildKeys);
+        if(found) return found;
       }
-      const found = walk(next.childId, nextPathIds, nextChildKeys);
-      if(found) return found;
+      return null;
     }
-    return null;
+    return walk(String(rootId), [String(rootId)], []);
   }
 
-  const found = walk(String(rootId), [String(rootId)], []);
-  if(!found) return clearLineageState();
+  // Cuba SETIAP kepala root — gunakan yang pertama berjaya jumpa laluan
+  let directRootId = null;
+  let directFound  = null;
+  for(const rootId of allHeads){
+    if(!byId[rootId]) continue;
+    const found = tryWalkFrom(rootId);
+    if(found){ directRootId = rootId; directFound = found; break; }
+  }
+  if(!directFound) return clearLineageState();
+
+  // ── Sambungan rootLink ke atas (nenek moyang merentasi pokok) ──────────
+  // Selepas jumpa laluan dalam root B, susur ke atas melalui rootLink:
+  //   rootA.head → rootB.head → ... → target
+  // Ini menjadikan garisan emas rootLink menyala sebagai sebahagian dari
+  // rantaian darah keturunan yang penuh.
+  let fullPathIds  = directFound.pathIds;  // bermula dengan directRootId
+  let fullChildKeys = directFound.childKeys;
+  let currentHead  = directRootId;
+  const visitedHeads = new Set([currentHead]);
+
+  while(rootLinkParentOf[currentHead]){
+    const parentHead = rootLinkParentOf[currentHead];
+    if(visitedHeads.has(parentHead) || !byId[parentHead]) break; // elak gelung
+    visitedHeads.add(parentHead);
+    fullPathIds = [parentHead, ...fullPathIds]; // awalan — nenek moyang lebih tua
+    currentHead = parentHead;
+  }
+
   return {
     active: true,
     targetId: target,
-    rootId: String(rootId),
-    pathIds: found.pathIds,
-    nodeIds: new Set(found.pathIds),
-    childKeys: new Set(found.childKeys)
+    rootId: fullPathIds[0], // kepala paling lama dalam rantaian
+    pathIds: fullPathIds,
+    nodeIds: new Set(fullPathIds),
+    childKeys: new Set(fullChildKeys)
   };
 }
 function setLineageTarget(targetId){
@@ -1413,11 +1453,17 @@ function enforceHierarchyLayout(layout, options){
   const anchorId = options?.anchorId ? String(options.anchorId) : '';
   const groups = [];
   if(anchorId && placed[anchorId]) groups.push({ headId:anchorId, ids: new Set(Object.keys(placed)) });
-  else getHeadRoots().forEach(headId=>{
-    const hid = String(headId);
-    if(!placed[hid]) return;
-    groups.push({ headId:hid, ids:getSubtreeIds(hid) });
-  });
+  else {
+    // PEMBETULAN: guna allHeadIds jika dibekalkan, bukan getHeadRoots() yang
+    // hanya pulangkan primary head. Ini memastikan SEMUA kepala root diproses
+    // dalam kumpulan sendiri dan posisi tersimpan mereka tidak di-override.
+    const headIds = options?.allHeadIds || Array.from(getHeadRoots());
+    headIds.forEach(headId=>{
+      const hid = String(headId);
+      if(!placed[hid]) return;
+      groups.push({ headId:hid, ids:getSubtreeIds(hid) });
+    });
+  }
   const done = new Set();
   groups.forEach(group=>{
     const hid = String(group.headId);
@@ -1868,17 +1914,29 @@ function renderLinks(layout){
       handles += `<circle class="junction-handle" data-spouseid="${sid}" cx="${j.x}" cy="${j.y}" r="7"/>`;
     });
   }
-  // Garisan sambungan antara Root — emas melengkung, menunjukkan aliran darah merentasi pokok
+  // Garisan sambungan antara Root — emas melengkung, menunjukkan aliran darah merentasi pokok.
+  // PEMBETULAN: Lukis dari bawah kotak ATAS ke atas kotak BAWAH berdasarkan
+  // kedudukan Y sebenar dalam paparan — bukan berdasarkan label parent/child dalam data.
+  // Jika root baru (childMember) berada LEBIH ATAS dari root lama (parentMember),
+  // garisan mesti keluar dari bawah root baru dan masuk ke atas root lama.
   (DATA.rootLinks || []).forEach(link=>{
     const pa = layout[String(link.parentMemberId)];
     const ca = layout[String(link.childMemberId)];
     if(!pa || !ca) return;
-    const px = pa.x + NODE_W/2, py = pa.y + NODE_H;
-    const cx = ca.x + NODE_W/2, cy = ca.y;
-    const midY = (py + cy) / 2;
-    const inPath = lineageOn && (LINEAGE.nodeIds.has(String(link.parentMemberId)) || LINEAGE.nodeIds.has(String(link.childMemberId)));
+    // Tentukan kotak mana lebih atas (Y lebih kecil = lebih atas dalam canvas)
+    const upperL = pa.y <= ca.y ? pa : ca;
+    const lowerL = pa.y <= ca.y ? ca : pa;
+    const ux = upperL.x + NODE_W/2, uy = upperL.y + NODE_H; // bawah kotak atas
+    const lx = lowerL.x + NODE_W/2, ly = lowerL.y;           // atas kotak bawah
+    const midY = (uy + ly) / 2;
+    // Garisan rootLink terserlah HANYA apabila KEDUA-DUA kepala berada dalam
+    // rantaian lineage — ini bermakna garisan itu memang sebahagian dari
+    // rantaian darah yang sedang disorot (bukan sekadar berdekatan dengannya).
+    const inPath = lineageOn &&
+      LINEAGE.nodeIds.has(String(link.parentMemberId)) &&
+      LINEAGE.nodeIds.has(String(link.childMemberId));
     const rlCls = 'root-link' + (inPath ? ' lineage-path' : (lineageOn ? ' lineage-dim' : ''));
-    paths += `<path class="${rlCls}" data-rootlink="${escapeHtml(String(link.id))}" d="M ${px} ${py} C ${px} ${midY} ${cx} ${midY} ${cx} ${cy}"/>`;
+    paths += `<path class="${rlCls}" data-rootlink="${escapeHtml(String(link.id))}" d="M ${ux} ${uy} C ${ux} ${midY} ${lx} ${midY} ${lx} ${ly}"/>`;
   });
   svg.innerHTML = paths + labels + handles;
   if(isAdmin){
@@ -2284,7 +2342,13 @@ function linkRootForm(headMember){
       await dispatchApi('setRootLink', { childMemberId: headMember.id, parentMemberId: parentId, note });
       notify.success('🔗 Sambungan Root berjaya dibuat.');
       closeModal(); await refresh();
-    }catch(e){ toast(e.message); submit.disabled = false; }
+    }catch(e){
+      const msg = String(e.message || e);
+      if(/Tindakan tidak dikenali/i.test(msg)){
+        toast('⚠️ Pelayan lama — belum sokong setRootLink. Sila: Extensions → Apps Script → tampal Code.gs baharu → Save → Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.');
+      } else { toast(msg); }
+      submit.disabled = false;
+    }
   };
 }
 
